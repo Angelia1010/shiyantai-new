@@ -1,0 +1,8 @@
+INFO:     Will watch for changes in these directories: ['E:\\503\\test_bench\\test_bench_model\\pump_test_bench\\app\\services']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [14112] using WatchFiles
+DEBUG:asyncio:Using selector: SelectSelector
+INFO:     Started server process [13340]
+INFO:     Waiting for application startup.
+INFO:llm_analysis_server:液压系统数据分析服务启动
+INFO:     Application startup complete.

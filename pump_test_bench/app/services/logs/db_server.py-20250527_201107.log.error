@@ -1,0 +1,600 @@
+INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
+INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("fault_diagnosis_tasks_2")
+INFO:sqlalchemy.engine.Engine:[raw sql] ()
+INFO:sqlalchemy.engine.Engine:COMMIT
+INFO:werkzeug:[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5001
+ * Running on http://192.168.1.107:5001
+INFO:werkzeug:[33mPress CTRL+C to quit[0m
+INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[generated in 0.00904s] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[generated in 0.00208s] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:11:58] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 2.017s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 1.996s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:12:00] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 2.025s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 2.004s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:12:00] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 22.64s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 22.62s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:12:21] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 29.71s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 29.69s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:12:28] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 55.62s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 55.6s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:12:54] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 56.23s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 56.21s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:12:55] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 61.22s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 61.2s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:13:00] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 62.02s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 62s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:13:00] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 62.05s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 62.03s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:13:01] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2 
+WHERE fault_diagnosis_tasks_2.task_id = ?
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[generated in 0.00290s] ('555', 1, 0)
+INFO:sqlalchemy.engine.Engine:INSERT INTO fault_diagnosis_tasks_2 (task_id, type, files, status, path, report_data) VALUES (?, ?, ?, ?, ?, ?)
+INFO:sqlalchemy.engine.Engine:[generated in 0.00104s] ('555', '1', '标准泵3.12（加长喷嘴距离）.xlsx', 'Stop', 'E:\\503\\test_bench\\test_bench_model\\pump_test_bench\\app\\test_data', None)
+INFO:sqlalchemy.engine.Engine:COMMIT
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:13:11] "GET /createJob?task_id=555&file_name=标准泵3.12（加长喷嘴距离）.xlsx&path=E:\\503\\test_bench\\test_bench_model\\pump_test_bench\\app\\test_data&type=1&fault=1 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2 
+WHERE fault_diagnosis_tasks_2.task_id = ?
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 0.05779s ago] ('555', 1, 0)
+C:\Users\buaar\AppData\Roaming\Python\Python313\site-packages\docx\styles\styles.py:130: UserWarning: style lookup by style_id is deprecated. Use style name as key instead.
+  return self._get_style_id_from_style(self[style_name], style_type)
+INFO:sqlalchemy.engine.Engine:UPDATE fault_diagnosis_tasks_2 SET files=?, status=?, report_data=? WHERE fault_diagnosis_tasks_2.id = ?
+INFO:sqlalchemy.engine.Engine:[generated in 0.00239s] ('标准泵3.12（加长喷嘴距离）.xlsx,E:\\503\\test_bench\\test_bench_model\\pump_test_bench\\app\\test_data\\标准泵3.12（加长喷嘴距离）.xlsx', 'Completed', <memory at 0x0000017C548B1B40>, 47)
+INFO:sqlalchemy.engine.Engine:COMMIT
+INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2 
+WHERE fault_diagnosis_tasks_2.id = ?
+INFO:sqlalchemy.engine.Engine:[generated in 0.00067s] (47,)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:13:11] "GET /store_report?task_id=555&file_name=标准泵3.12（加长喷嘴距离）.xlsx&path=E:\\503\\test_bench\\test_bench_model\\pump_test_bench\\app\\test_data&type=1&fault=1 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 75.72s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 75.69s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:13:14] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 78.7s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 78.68s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:13:17] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 82.27s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 82.25s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:13:21] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 83.7s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 83.68s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:13:22] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2 
+WHERE fault_diagnosis_tasks_2.task_id = ?
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 13.67s ago] ('555', 1, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:13:24] "GET /retrieve_report/555 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 87.29s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 87.26s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:13:26] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 88.7s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 88.68s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:13:27] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 94.28s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 94.26s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:13:33] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 94.3s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 94.28s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:13:33] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 97.27s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 97.25s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:13:36] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 99.38s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 99.36s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:13:38] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 103.7s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 103.7s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:13:42] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 108.7s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 108.7s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:13:47] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 114s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 114s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:13:53] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 120s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 120s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:13:58] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 120s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 120s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:13:58] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 120.9s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 120.8s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:13:59] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 123.7s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 123.7s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:14:02] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 128.7s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 128.7s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:14:07] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 133.7s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 133.7s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:14:12] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 138.7s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 138.7s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:14:17] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 145.8s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 145.7s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:14:24] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 148.7s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 148.7s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:14:27] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 153.7s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 153.7s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:14:32] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 158.7s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 158.7s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:14:37] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 163.7s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 163.7s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:14:42] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 182s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 182s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:15:01] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 182.1s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 182s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:15:01] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 240s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 240s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:15:58] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 240.3s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 240.4s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:15:59] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 302.1s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 302s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:17:01] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 302.1s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 302.1s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:17:01] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 360s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 360.1s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:17:59] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 360.2s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 360.2s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:17:59] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 422s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 422s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:19:01] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 422.1s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 422s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:19:01] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 480s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 480s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:19:58] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 480.3s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 480.3s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:19:59] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 542s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 542s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:21:00] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 542.1s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 542s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:21:01] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 602.3s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 602.3s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:22:01] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 602.3s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 602.3s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:22:01] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 660s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 660s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:22:58] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 660s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 660s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:22:58] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 722s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 722s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:24:00] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 722s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 722s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:24:00] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 782s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 782s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:25:00] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 782.1s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 782s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:25:01] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 787.3s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 787.3s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:25:06] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 840s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 840s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:25:58] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 840s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 840s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:25:58] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 902s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 902s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:27:00] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 902s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 902s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 20:27:01] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -

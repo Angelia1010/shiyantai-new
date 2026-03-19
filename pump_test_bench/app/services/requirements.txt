@@ -1,0 +1,7 @@
+flask
+pandas
+watchdog
+openpyxl
+xlrd
+flask-SQLAlchemy 
+python-docx

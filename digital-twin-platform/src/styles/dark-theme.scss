@@ -1,0 +1,340 @@
+/* src/styles/dark-theme.scss */
+/* 深色主题核心变量 */
+:root {
+    --dark-bg: #1a1a1a; // 页面背景
+    --dark-bg-lighter: #252525; // 组件背景
+    --dark-text: #e6e6e6; // 主要文字
+    --dark-text-secondary: #e4e4e4; // 次要文字
+    --dark-border: #444; // 边框颜色
+    --primary-color: #409eff; // 保持 Element UI 主色
+}
+
+/* ===== 全局深色覆盖 ===== */
+body {
+    background-color: var(--dark-bg) !important;
+    color: var(--dark-text) !important;
+}
+
+/* 组件容器 */
+.el-container,
+.el-main,
+.el-header,
+.el-aside,
+.el-footer {
+    background-color: var(--dark-bg) !important;
+    color: var(--dark-text) !important;
+}
+
+/* ===== 常用组件覆盖 ===== */
+/* 菜单 */
+.el-menu {
+    background-color: var(--dark-bg) !important;
+    border-right: none !important;
+}
+
+.el-menu-item,
+.el-submenu__title {
+    color: var(--dark-text) !important;
+}
+
+.el-menu-item:hover,
+.el-submenu__title:hover,
+.el-menu-item.is-active,
+.el-submenu.is-active .el-submenu__title {
+    background-color: var(--dark-bg-lighter) !important;
+}
+
+.el-menu--collapse .el-submenu .el-menu {
+    background-color: #2d2d2d !important;
+}
+
+/* 卡片/对话框 */
+.el-card,
+.el-dialog,
+.el-drawer {
+    background-color: var(--dark-bg-lighter) !important;
+    color: var(--dark-text) !important;
+}
+
+.el-card__header {
+    border-bottom: 1px solid var(--dark-border) !important;
+    background-color: #2d2d2d !important;
+}
+
+/* 表格 */
+.el-table {
+    background-color: var(--dark-bg-lighter) !important;
+    color: var(--dark-text) !important;
+}
+
+.el-table th {
+    background-color: #2d2d2d !important;
+    color: var(--dark-text) !important;
+}
+
+/* 表体每一行 */
+.el-table .el-table__body-wrapper tbody tr {
+    background-color: #1a1a1a !important;
+    color: #e6e6e6 !important;
+}
+
+.el-table--enable-row-hover .el-table__row:hover>td {
+    background-color: #353535 !important;
+}
+
+.el-table--enable-row-hover .el-table__row:hover {
+    background-color: #353535 !important;
+}
+
+/* 所有表格单元格（包括操作列） */
+.el-table td,
+.el-table__body-wrapper .el-table__body td {
+    background-color: #1a1a1a !important;
+    color: #e6e6e6 !important;
+}
+
+/* 悬停行中的操作列也要深色 */
+.el-table--enable-row-hover .el-table__body-wrapper tbody tr:hover>td {
+    background-color: #2d2d2d !important;
+}
+
+/* 按钮 */
+.el-button {
+    border: 1px solid var(--dark-border) !important;
+    background-color: var(--dark-bg-lighter) !important;
+    color: var(--dark-text) !important;
+}
+
+.el-button--primary:focus,
+.el-button--primary:hover {
+    background: #66b1ff !important;
+    border-color: #66b1ff !important;
+}
+
+/* 输入框 */
+.el-input__inner,
+.el-textarea__inner {
+    background-color: #2d2d2d !important;
+    border: 1px solid var(--dark-border) !important;
+    color: var(--dark-text) !important;
+}
+
+.el-input__inner::placeholder,
+.el-textarea__inner::placeholder {
+    color: var(--dark-text-secondary) !important;
+}
+
+/* 分页器 */
+.el-pagination.is-background .btn-next,
+.el-pagination.is-background .btn-prev,
+.el-pagination.is-background .el-pager li {
+    background-color: #2d2d2d !important;
+    color: var(--dark-text) !important;
+    border: 1px solid var(--dark-border) !important;
+}
+
+.el-pagination.is-background .el-pager li:not(.disabled).active {
+    background-color: var(--primary-color) !important;
+    border-color: var(--primary-color) !important;
+}
+
+/* 分页器 */
+.el-pagination {
+
+    /* 通用按钮样式 */
+    .btn-prev,
+    .btn-next,
+    .el-pager li {
+        background-color: #2d2d2d !important;
+        /* 按钮背景色 */
+        border: 1px solid #444 !important;
+        /* 边框颜色 */
+        color: var(--dark-text) !important;
+        /* 文字颜色 */
+    }
+
+    /* 当前选中的页码和悬停状态 */
+    .el-pager li.active,
+    .el-pager li:hover {
+        background-color: #409EFF !important;
+        /* 使用 Element UI 主色 */
+        border-color: #409EFF !important;
+        color: #fff !important;
+    }
+
+    /* 禁用按钮样式 */
+    .btn-prev.disabled,
+    .btn-next.disabled {
+        background-color: #1a1a1a !important;
+        /* 更浅一些的禁用态背景色 */
+        color: #666 !important;
+        /* 更浅的文字颜色 */
+    }
+}
+
+/* 消息提示 */
+.el-message,
+.el-notification {
+    background-color: var(--dark-bg-lighter) !important;
+    color: var(--dark-text) !important;
+    box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.3) !important;
+}
+
+.el-message__content {
+    color: var(--dark-text) !important;
+}
+
+/* 滚动条优化 */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #2d2d2d;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #555;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #666;
+}
+
+/* 下拉菜单 */
+.el-select-dropdown {
+    background-color: #2d2d2d !important;
+    /* 设置下拉菜单背景颜色 */
+    border: 1px solid #444 !important;
+    /* 设置边框颜色 */
+
+    .el-select-dropdown__item {
+        color: #e6e6e6 !important;
+        /* 设置选项文字颜色 */
+
+        &:hover {
+            background-color: #353535 !important;
+            /* 设置鼠标悬停时的背景颜色 */
+        }
+    }
+
+    /* 分组标题 */
+    .el-select-dropdown__list .el-select-dropdown__item.group-title {
+        color: #b0b0b0 !important;
+        font-weight: bold;
+    }
+
+    /* 当前选中的项目 */
+    .el-select-dropdown__item.selected {
+        color: #ffffff !important;
+        font-weight: bold;
+    }
+
+    /* 禁用项 */
+    .el-select-dropdown__item.disabled {
+        color: #666 !important;
+    }
+
+    /* 深色下拉菜单 - 聚焦/悬停项背景 */
+    .el-select-dropdown__item.hover,
+    .el-select-dropdown__item:hover {
+        background-color: #353535 !important;
+        /* 悬停/聚焦背景 */
+        color: #ffffff !important;
+        /* 文字保持白色 */
+    }
+
+    /* 确保选中项在非 hover 状态下也显示正确 */
+    .el-select-dropdown__item.selected:not(.hover) {
+        background-color: transparent !important;
+        color: #409EFF !important;
+        /* 主色表示已选中 */
+    }
+
+    /* 如果同时是选中 + 悬停（比如再次 hover 已选项） */
+    .el-select-dropdown__item.selected.hover,
+    .el-select-dropdown__item.selected:hover {
+        background-color: #353535 !important;
+        color: #ffffff !important;
+    }
+}
+
+/* 输入框部分 */
+.el-input__inner {
+    background-color: #2d2d2d !important;
+    /* 设置输入框背景颜色 */
+    border: 1px solid #444 !important;
+    /* 设置边框颜色 */
+    color: #e6e6e6 !important;
+    /* 设置文字颜色 */
+}
+
+/* 深色主题下的 el-tag */
+.el-tag {
+    /* 基础标签样式 */
+    background-color: #333 !important;
+    /* 深灰色背景 */
+    color: #e6e6e6 !important;
+    /* 浅色文字 */
+    border: 1px solid #444 !important;
+    /* 边框颜色 */
+
+    /* 不同类型的标签 */
+    &.el-tag--info {
+        background-color: #2f2f2f !important;
+        /* 更深的灰色 */
+        border-color: #444 !important;
+        color: #ccc !important;
+        /* 更浅的文字颜色 */
+    }
+
+    &.el-tag--success {
+        background-color: #1d8f38 !important;
+        /* 成功绿色 */
+        border-color: #1d8f38 !important;
+        color: #fff !important;
+    }
+
+    &.el-tag--warning {
+        background-color: #ffc107 !important;
+        /* 警告黄色 */
+        border-color: #ffc107 !important;
+        color: #000 !important;
+        /* 黑色文字 */
+    }
+
+    &.el-tag--danger {
+        background-color: #dc3545 !important;
+        /* 危险红色 */
+        border-color: #dc3545 !important;
+        color: #fff !important;
+    }
+
+    &.el-tag--primary {
+        background-color: #004c9c !important;
+        /* 主色蓝色 */
+        border-color: #004c9c !important;
+        color: #fff !important;
+    }
+
+    /* 可关闭标签的关闭按钮 */
+    .el-tag__close {
+        color: #999 !important;
+
+        &:hover {
+            color: #fff !important;
+            /* 当鼠标悬停时变为白色 */
+        }
+    }
+
+    /* 鼠标悬停状态 */
+    &:hover {
+        background-color: #444 !important;
+        /* 悬停时更深的颜色 */
+        color: #fff !important;
+        color: #383d42
+    }
+}

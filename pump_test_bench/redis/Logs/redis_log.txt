@@ -1,0 +1,38 @@
+[71084] 09 Apr 15:00:18.866 * Redis 3.0.504 (00000000/0) 64 bit, standalone mode, port 6379, pid 71084 ready to start.
+[71084] 09 Apr 15:00:18.867 # Server started, Redis version 3.0.504
+[71084] 09 Apr 15:00:18.867 * The server is now ready to accept connections on port 6379
+[71084] 09 Apr 15:15:19.044 * 1 changes in 900 seconds. Saving...
+[71084] 09 Apr 15:15:19.063 * Background saving started by pid 36600
+[71084] 09 Apr 15:15:21.125 # fork operation complete
+[71084] 09 Apr 15:15:21.127 * Background saving terminated with success
+[71084] 09 Apr 15:30:22.098 * 1 changes in 900 seconds. Saving...
+[71084] 09 Apr 15:30:22.140 * Background saving started by pid 74356
+[71084] 09 Apr 15:30:24.321 # fork operation complete
+[71084] 09 Apr 15:30:24.322 * Background saving terminated with success
+[71084] 09 Apr 15:45:25.082 * 1 changes in 900 seconds. Saving...
+[71084] 09 Apr 15:45:25.173 * Background saving started by pid 85928
+[71084] 09 Apr 15:45:27.346 # fork operation complete
+[71084] 09 Apr 15:45:27.355 * Background saving terminated with success
+[31568] 10 Apr 22:40:01.489 * Redis 3.0.504 (00000000/0) 64 bit, standalone mode, port 6379, pid 31568 ready to start.
+[31568] 10 Apr 22:40:01.489 # Server started, Redis version 3.0.504
+[31568] 10 Apr 22:40:01.497 * DB loaded from disk: 0.004 seconds
+[31568] 10 Apr 22:40:01.497 * The server is now ready to accept connections on port 6379
+[24952] 10 Apr 22:47:17.639 * Redis 3.0.504 (00000000/0) 64 bit, standalone mode, port 6379, pid 24952 ready to start.
+[24952] 10 Apr 22:47:17.648 # Server started, Redis version 3.0.504
+[24952] 10 Apr 22:47:17.648 * DB loaded from disk: 0.004 seconds
+[24952] 10 Apr 22:47:17.648 * The server is now ready to accept connections on port 6379
+[24952] 10 Apr 22:51:58.671 # 
+
+=== REDIS BUG REPORT START: Cut & paste starting from here ===
+[35916] 10 Apr 22:52:19.994 * Redis 3.0.504 (00000000/0) 64 bit, standalone mode, port 6379, pid 35916 ready to start.
+[35916] 10 Apr 22:52:19.994 # Server started, Redis version 3.0.504
+[35916] 10 Apr 22:52:19.994 * DB loaded from disk: 0.003 seconds
+[35916] 10 Apr 22:52:19.994 * The server is now ready to accept connections on port 6379
+[5992] 18 Apr 14:06:24.399 * Redis 3.0.504 (00000000/0) 64 bit, standalone mode, port 6379, pid 5992 ready to start.
+[5992] 18 Apr 14:06:24.399 # Server started, Redis version 3.0.504
+[5992] 18 Apr 14:06:24.399 * DB loaded from disk: 0.004 seconds
+[5992] 18 Apr 14:06:24.399 * The server is now ready to accept connections on port 6379
+[6540] 23 Apr 09:46:52.818 * Redis 3.0.504 (00000000/0) 64 bit, standalone mode, port 6379, pid 6540 ready to start.
+[6540] 23 Apr 09:46:52.833 # Server started, Redis version 3.0.504
+[6540] 23 Apr 09:46:52.833 * DB loaded from disk: 0.005 seconds
+[6540] 23 Apr 09:46:52.833 * The server is now ready to accept connections on port 6379

@@ -1,0 +1,54 @@
+INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
+INFO:sqlalchemy.engine.Engine:PRAGMA main.table_info("fault_diagnosis_tasks_2")
+INFO:sqlalchemy.engine.Engine:[raw sql] ()
+INFO:sqlalchemy.engine.Engine:COMMIT
+INFO:werkzeug:[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5001
+ * Running on http://192.168.1.107:5001
+INFO:werkzeug:[33mPress CTRL+C to quit[0m
+INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[generated in 0.00124s] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[generated in 0.00117s] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 21:05:10] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT count(*) AS count_1 
+FROM (SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2) AS anon_1
+INFO:sqlalchemy.engine.Engine:[cached since 2.97s ago] ()
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 2.97s ago] (100, 0)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 21:05:13] "GET /tasks?nameOrCode=&status=&page=1&pageSize=100 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2 
+WHERE fault_diagnosis_tasks_2.task_id = ?
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[generated in 0.00268s] ('测试任务', 1, 0)
+INFO:sqlalchemy.engine.Engine:INSERT INTO fault_diagnosis_tasks_2 (task_id, type, files, status, path, report_data) VALUES (?, ?, ?, ?, ?, ?)
+INFO:sqlalchemy.engine.Engine:[generated in 0.00115s] ('测试任务', '1', '标准泵3.14（调喷嘴）.xlsx', 'Stop', 'E:\\503\\test_bench\\test_bench_model\\pump_test_bench\\app\\test_data', None)
+INFO:sqlalchemy.engine.Engine:COMMIT
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 21:05:30] "GET /createJob?task_id=测试任务&file_name=标准泵3.14（调喷嘴）.xlsx&path=E:\\503\\test_bench\\test_bench_model\\pump_test_bench\\app\\test_data&type=1&fault=1 HTTP/1.0" 200 -
+INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2 
+WHERE fault_diagnosis_tasks_2.task_id = ?
+ LIMIT ? OFFSET ?
+INFO:sqlalchemy.engine.Engine:[cached since 0.05949s ago] ('测试任务', 1, 0)
+C:\Users\buaar\AppData\Roaming\Python\Python313\site-packages\docx\styles\styles.py:130: UserWarning: style lookup by style_id is deprecated. Use style name as key instead.
+  return self._get_style_id_from_style(self[style_name], style_type)
+INFO:sqlalchemy.engine.Engine:UPDATE fault_diagnosis_tasks_2 SET files=?, status=?, report_data=? WHERE fault_diagnosis_tasks_2.id = ?
+INFO:sqlalchemy.engine.Engine:[generated in 0.00098s] ('标准泵3.14（调喷嘴）.xlsx,E:\\503\\test_bench\\test_bench_model\\pump_test_bench\\app\\test_data\\标准泵3.14（调喷嘴）.xlsx', 'Completed', <memory at 0x000001F65FF9D6C0>, 48)
+INFO:sqlalchemy.engine.Engine:COMMIT
+INFO:sqlalchemy.engine.Engine:BEGIN (implicit)
+INFO:sqlalchemy.engine.Engine:SELECT fault_diagnosis_tasks_2.id AS fault_diagnosis_tasks_2_id, fault_diagnosis_tasks_2.task_id AS fault_diagnosis_tasks_2_task_id, fault_diagnosis_tasks_2.type AS fault_diagnosis_tasks_2_type, fault_diagnosis_tasks_2.files AS fault_diagnosis_tasks_2_files, fault_diagnosis_tasks_2.status AS fault_diagnosis_tasks_2_status, fault_diagnosis_tasks_2.path AS fault_diagnosis_tasks_2_path, fault_diagnosis_tasks_2.report_data AS fault_diagnosis_tasks_2_report_data 
+FROM fault_diagnosis_tasks_2 
+WHERE fault_diagnosis_tasks_2.id = ?
+INFO:sqlalchemy.engine.Engine:[generated in 0.00110s] (48,)
+INFO:werkzeug:127.0.0.1 - - [27/May/2025 21:05:30] "GET /store_report?task_id=测试任务&file_name=标准泵3.14（调喷嘴）.xlsx&path=E:\\503\\test_bench\\test_bench_model\\pump_test_bench\\app\\test_data&type=1&fault=1 HTTP/1.0" 200 -
