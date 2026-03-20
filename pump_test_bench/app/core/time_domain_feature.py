@@ -5,8 +5,6 @@
 # @Theme   : extract features in time domain from ndarray
 # @Software: Pycharm
 import numpy as np
-from scipy import stats
-import matplotlib.pyplot as plt
 import logging
 logging.basicConfig(level=logging.DEBUG)
 

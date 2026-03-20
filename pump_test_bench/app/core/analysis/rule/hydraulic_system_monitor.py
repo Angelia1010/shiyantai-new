@@ -1,18 +1,12 @@
 # -*- coding: utf-8 -*-
 from scipy import signal
-import pywt
-import yaml
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
-import pywt
 import os
 import sys
-from tqdm import tqdm
 
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
 sys.path.append(parent_dir)
-from abc import ABC, abstractmethod
 from core.diagonis_data_process import FaultDataProcessor
 from core.analysis.rule.rule_feature import RuleFeature
 from core.analysis.rule.control_valve_wear_detector import ControlValveWearDetector

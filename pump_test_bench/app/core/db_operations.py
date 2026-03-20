@@ -1,18 +1,14 @@
 # -*- coding: utf-8 -*-
 import os
-from io import BytesIO
+import io
+import sys
+import base64
 from sqlalchemy import create_engine, Column, Integer, String, LargeBinary
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
-from docx import Document
-import io
-import sys
-import base64
-from docx.shared import Inches
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 sys.path.append(parent_dir)
-print(parent_dir)
 # 创建基础类
 Base = declarative_base()
 
@@ -38,32 +34,133 @@ class FaultDiagnosisTask(Base):
     task_id = Column(String(80), unique=True, nullable=False)
     type = Column(String(1), nullable=False)
     files = Column(String(10000), nullable=True)
-    status = Column(String(80), nullable=False, default='Pending')  
+    status = Column(String(80), nullable=False, default='Pending')
     path = Column(String(1000), nullable=False)
-    report_data = Column(LargeBinary, nullable=True)  # 存储 Word 文件的二进制数据
+    report_data = Column(LargeBinary, nullable=True)   # Word 文件二进制
+    report_json = Column(String(50000), nullable=True) # 结构化诊断结果 JSON
 
-    def __init__(self, task_id, type, files, path, status='Pending',report_data=None):
+    def __init__(self, task_id, type, files, path, status='Pending', report_data=None, report_json=None):
         self.task_id = task_id
         self.type = type
         self.files = files
         self.status = status
         self.path = path
-        self.report_data = report_data  # 添加这一行
+        self.report_data = report_data
+        self.report_json = report_json
+
+# 仿真数据模型表
+class SimulationDataModel(Base):
+    __tablename__ = 'simulation_data_models'
+    id = Column(Integer, primary_key=True)
+    name = Column(String(200), nullable=False)
+    description = Column(String(2000), nullable=True)
+    file_path = Column(String(1000), nullable=True)
+    status = Column(String(80), nullable=False, default='Pending')
+    result_data = Column(LargeBinary, nullable=True)
+    created_at = Column(String(50), nullable=False)
+
+    def __init__(self, name, description='', file_path='', status='Pending', result_data=None):
+        self.name = name
+        self.description = description
+        self.file_path = file_path
+        self.status = status
+        self.result_data = result_data
+        self.created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'file_path': self.file_path,
+            'status': self.status,
+            'created_at': self.created_at
+        }
+
+
+def get_data_models(page=1, page_size=10, name=None, status=None):
+    query = session.query(SimulationDataModel)
+    if name:
+        query = query.filter(SimulationDataModel.name.like(f'%{name}%'))
+    if status:
+        query = query.filter(SimulationDataModel.status == status)
+    total_count = query.count()
+    total_pages = (total_count + page_size - 1) // page_size
+    items = query.offset((page - 1) * page_size).limit(page_size).all()
+    return {
+        'items': [m.to_dict() for m in items],
+        'total_count': total_count,
+        'total_pages': total_pages,
+        'current_page': page,
+        'page_size': page_size
+    }
+
+
+def get_data_model(model_id):
+    model = session.query(SimulationDataModel).filter_by(id=model_id).first()
+    if not model:
+        return None
+    return model.to_dict()
+
+
+def create_data_model(name, description='', file_path=''):
+    model = SimulationDataModel(name=name, description=description, file_path=file_path)
+    session.add(model)
+    session.commit()
+    return model.to_dict()
+
+
+def update_data_model(model_id, name=None, description=None, file_path=None):
+    model = session.query(SimulationDataModel).filter_by(id=model_id).first()
+    if not model:
+        return None
+    if name is not None:
+        model.name = name
+    if description is not None:
+        model.description = description
+    if file_path is not None:
+        model.file_path = file_path
+    session.commit()
+    return model.to_dict()
+
+
+def delete_data_model(model_id):
+    model = session.query(SimulationDataModel).filter_by(id=model_id).first()
+    if not model:
+        return False
+    session.delete(model)
+    session.commit()
+    return True
+
+
+def set_data_model_status(model_id, status, result_data=None):
+    model = session.query(SimulationDataModel).filter_by(id=model_id).first()
+    if not model:
+        return None
+    model.status = status
+    if result_data is not None:
+        model.result_data = result_data
+    session.commit()
+    return model.to_dict()
+
+
+def get_data_model_result(model_id):
+    model = session.query(SimulationDataModel).filter_by(id=model_id).first()
+    if not model or not model.result_data:
+        return None
+    return io.BytesIO(model.result_data)
+
 
 def getOngingJob():
     task = session.query(FaultDiagnosisTask).filter_by(status='Pending').first()
     if task is None:
         return None
-    taskData = {"task_id": task.task_id, "type": task.type, "files": task.files, "type": task.type,"path":task.path}
+    taskData = {"task_id": task.task_id, "type": task.type, "files": task.files, "path": task.path}
     return taskData
 
 def getJobStatus(taskId):
     task = session.query(FaultDiagnosisTask).filter_by(task_id=taskId).first()
     return task.status
-
-def hasOngoingJob():
-    task = session.query(FaultDiagnosisTask).filter_by(status='Pending').first()
-    return task is not None
 
 def createJob(task_id, type, path, file_name):
     oriTask = session.query(FaultDiagnosisTask).filter_by(task_id=task_id).first()
@@ -98,19 +195,19 @@ def deleteJob(task_id):
     else:
         raise Exception(f"Task {task_id} not found")
     
-def store_fault_diagnosis_report(task_id, type, file_name):
+def store_fault_diagnosis_report(task_id, type, file_name=None, x1=None, x2=None):
     try:
         dia = Diagnosis(file_name, "")
-        new_alarms = dia.diagnosis_process() 
+        new_alarms = dia.diagnosis_process(x1=x1, x2=x2)
         task = session.query(FaultDiagnosisTask).filter_by(task_id=task_id).first()
         reporter = FuelPumpDiagnosisReporter()
         product_info = {
             'name': '试验台故障诊断报告',
-            'date': '2023-05-15',
+            'date': datetime.now().strftime('%Y-%m-%d'),
             'serial': 'FP-2023-0521',
-            'diag_date': '2024-03-20',
-            'operator': '张三',
-            'system': '测试台-2号'
+            'diag_date': datetime.now().strftime('%Y-%m-%d'),
+            'operator': '操作员',
+            'system': '测试台'
         }
         indicators = new_alarms["indicators"]
         diagnosis = new_alarms["diagnosis"]
@@ -121,23 +218,34 @@ def store_fault_diagnosis_report(task_id, type, file_name):
             diagnosis=diagnosis,
             repair_advice=repair_advice
         )
+
+        # 结构化 JSON（供前端直接展示）
+        report_json = io.StringIO()
+        import json
+        json.dump({
+            'product_info': product_info,
+            'indicators': indicators,
+            'diagnosis': diagnosis,
+            'repair_advice': repair_advice,
+        }, report_json, ensure_ascii=False)
+        report_json_str = report_json.getvalue()
+
         if task:
-            # 存在任务，直接覆盖原有报告
             task.report_data = base64.b64decode(report_base64)
-            # 更新文件列表和状态
+            task.report_json = report_json_str
             task.files = f"{task.files},{file_name}" if task.files else file_name
             task.status = 'Completed'
         else:
-            # 不存在任务，创建新任务
             task = FaultDiagnosisTask(
                 task_id=task_id,
                 type=type,
                 files=file_name,
                 report_data=base64.b64decode(report_base64),
+                report_json=report_json_str,
                 status='Completed',
                 path=''
             )
-        
+
         session.add(task)
         session.commit()
         return task.id
@@ -146,16 +254,12 @@ def store_fault_diagnosis_report(task_id, type, file_name):
         session.rollback()
         raise Exception(f"存储故障诊断报告时出错: {str(e)}")
 
-def retrieve_fault_diagnosis_report(task_id):
-    try:
-        task = session.query(FaultDiagnosisTask).filter_by(task_id=task_id).first()
-        if not task or not task.report_data:
-            return None
-            
-        return task.report_data  # 直接返回二进制DOCX数据
-
-    except Exception as e:
-        raise Exception(f"Error retrieving fault diagnosis report: {str(e)}")
+def get_report_json(task_id):
+    task = session.query(FaultDiagnosisTask).filter_by(task_id=task_id).first()
+    if not task or not task.report_json:
+        return None
+    import json
+    return json.loads(task.report_json)
 
 def retrieve_fault_diagnosis_report(task_id):
     try:
@@ -172,16 +276,6 @@ def retrieve_fault_diagnosis_report(task_id):
 
     except Exception as e:
         raise Exception(f"Error retrieving fault diagnosis report: {str(e)}")
-
-# 获取所有任务的诊断状态
-def get_all_diagnosis_tasks():
-    try:
-        tasks = session.query(FaultDiagnosisTask).all()
-        tasks_data = [{"task_id": task.task_id,  "status": task.status, "type":task.type, "files":task.files} for task in tasks]
-        return tasks_data  # 返回所有任务的状态数据
-
-    except Exception as e:
-        raise Exception(f"Error retrieving all fault diagnosis tasks: {str(e)}")
 
 def query_tasks(
     page: int = 1,          # 第几页，默认第1页
@@ -219,35 +313,6 @@ def query_tasks(
         "page_size": page_size   # 每页条数
     }
 
-# 更新任务的诊断状态
-def update_task_status(task_id, status):
-    try:
-        # 查找任务并更新状态
-        task = session.query(FaultDiagnosisTask).filter_by(task_id=task_id).first()
-        if task:
-            task.status = status
-            session.commit()
-            return True  # 更新成功
-        return False  # 未找到该任务
-
-    except Exception as e:
-        session.rollback()
-        raise Exception(f"Error updating task status: {str(e)}")
-
-# 根据任务 ID 删除任务
-def delete_task(task_id):
-    try:
-        task = session.query(FaultDiagnosisTask).filter_by(task_id=task_id).first()
-        if task:
-            session.delete(task)
-            session.commit()
-            return True  # 删除成功
-        return False  # 未找到该任务
-
-    except Exception as e:
-        session.rollback()
-        raise Exception(f"Error deleting task: {str(e)}")
-
 # 创建数据库表
 def create_tables():
     try:
@@ -255,66 +320,3 @@ def create_tables():
     except Exception as e:
         raise Exception(f"Error creating database tables: {str(e)}")
 
-def test_store_and_retrieve_report():
-    try:
-        # 1. 创建测试任务
-        task_id = 'test_task_050'
-        data_dir = os.path.join(parent_dir,"app" ,"test_data")
-        print(f"数据目录检查: {'存在' if os.path.exists(data_dir) else '不存在'} - {data_dir}")
-        
-        # 确保测试数据目录存在
-        if not os.path.exists(data_dir):
-            raise Exception(f"测试数据目录不存在: {data_dir}")
-    
-        # 数据文件路径
-        #data_file = os.path.join(data_dir, "250417134030滑轨磨损 _1.tdms")
-        
-        data_file = os.path.join(data_dir, "标准泵3.18.xlsx")
-        if not os.path.exists(data_file):
-            raise Exception(f"测试数据文件不存在: {data_file}")
-            
-        # 确保path参数有效
-        path = data_dir  # 使用数据目录作为path
-    
-        # 2. 先创建任务
-        createJob(task_id=task_id, type='T', path=path, file_name=data_file)
-        
-        # 3. 存储诊断报告
-        print(f"正在存储测试报告，任务ID: {task_id}...")
-        stored_task_id = store_fault_diagnosis_report(
-            task_id=task_id,
-            type='T',
-            file_name=data_file
-        )
-        print(f"存储返回的任务ID: {stored_task_id}")
-        
-        # 4. 检索并验证报告
-        print("正在检索测试报告...")
-        report_data  = retrieve_fault_diagnosis_report(task_id)
-        print(report_data.read())
-        # 保存为Word文件
-        output_path = os.path.join(data_dir, "diagnosis_report.docx"+task_id)
-        with open(output_path, 'wb') as f:
-            if isinstance(report_data, bytes):
-                f.write(report_data)
-            else:  # 如果是BytesIO对象
-                f.write(report_data.getvalue())
-        
-        print(f"报告已保存到: {output_path}")
-
-    
-    except Exception as e:
-        print(f"测试失败: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return False
-# 创建数据库表并执行测试
-def run_test():
-    # 创建数据库表
-    create_tables()
-    
-    # 执行测试
-    test_store_and_retrieve_report()
-
-if __name__ == '__main__':
-    run_test()

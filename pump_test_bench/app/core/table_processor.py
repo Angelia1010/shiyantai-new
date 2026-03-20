@@ -8,15 +8,12 @@ import io
 import matplotlib.pyplot as plt
 from openpyxl import load_workbook
 import logging
-import re
 
 # 设置日志级别为 WARNING 或更高，这样就不会显示 DEBUG 级别的日志
 logging.basicConfig(level=logging.WARNING)
 # 禁用 PIL 的所有日志
 logging.getLogger('PIL').addHandler(logging.NullHandler())
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
-print("项目根目录（上一级目录）:", parent_dir)
-# 将该路径添加到 sys.path
 sys.path.append(parent_dir)
 from app.core.time_domain_feature import TimeFeature
 

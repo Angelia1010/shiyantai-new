@@ -36,15 +36,28 @@ module.exports = {
       warnings: false,
       errors: true
     },
-    // proxy: {
-    //   '/tasks': {
-    //     target: 'http://127.0.0.1:5001', // 第一个后端服务的地址
-    //     changeOrigin: true, // 是否改变请求头中的Origin
-    //     pathRewrite: {
-    //       '^/': '' // 将/api前缀去掉
-    //     }
-    //   },
-    // },
+    proxy: {
+      '/db': {
+        target: 'http://127.0.0.1:5001',
+        changeOrigin: true,
+        pathRewrite: { '^/db': '' }
+      },
+      '/file': {
+        target: 'http://127.0.0.1:5002',
+        changeOrigin: true,
+        pathRewrite: { '^/file': '' }
+      },
+      '/ai': {
+        target: 'http://127.0.0.1:8999',
+        changeOrigin: true,
+        pathRewrite: { '^/ai': '' }
+      },
+      '/amesim': {
+        target: 'http://127.0.0.1:5000',
+        changeOrigin: true,
+        pathRewrite: { '^/amesim': '' }
+      }
+    },
     before: require('./mock/mock-server.js')
   },
   configureWebpack: {

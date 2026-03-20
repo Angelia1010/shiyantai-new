@@ -1,6 +1,5 @@
 import requests
 import json
-from config import settings
 
 
 class LLMService:

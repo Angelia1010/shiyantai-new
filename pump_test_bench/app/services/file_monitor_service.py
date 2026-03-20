@@ -181,7 +181,33 @@ def get_new_files():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/previewExcel', methods=['GET'])
+def preview_excel():
+    """预览 Excel 文件前几行数据，用于创建页面的文件验证"""
+    try:
+        file_path = request.args.get('file_path')
+        if not file_path:
+            return jsonify({"error": "file_path parameter is required"}), 400
+        if not os.path.isfile(file_path):
+            return jsonify({"error": "File not found"}), 404
+        if not file_path.lower().endswith(('.xlsx', '.xls')):
+            return jsonify({"error": "Only .xlsx and .xls files are supported"}), 400
+
+        xl = pd.ExcelFile(file_path)
+        sheet_names = xl.sheet_names
+        preview = {}
+        for sheet in sheet_names:
+            df = pd.read_excel(file_path, sheet_name=sheet, nrows=5)
+            preview[sheet] = {
+                "columns": df.columns.tolist(),
+                "rows": df.fillna("").values.tolist()
+            }
+        return jsonify({"sheet_names": sheet_names, "preview": preview}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # 启动 Flask 服务
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5002, debug=True)
 

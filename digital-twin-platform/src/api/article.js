@@ -23,7 +23,7 @@ export function fetchArticle(id) {
 
 export function stopJob(task_id) {
   return request({
-    url: `/stopJob`,
+    url: `/db/stopJob`,
     method: 'get',
     params: { task_id }
   })
@@ -42,6 +42,13 @@ export function deleteJob(task_id) {
     url: `/db/deleteJob`,
     method: 'get',
     params: { task_id }
+  })
+}
+
+export function fetchReportPreview(taskId) {
+  return request({
+    url: `/db/report_preview/${taskId}`,
+    method: 'get'
   })
 }
 

@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 from docx import Document
-from docx.shared import Pt, RGBColor, Inches
+from docx.shared import Pt, Inches
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
-from docx.enum.table import WD_ALIGN_VERTICAL
 from docx.oxml.ns import qn
 from datetime import datetime
 import os

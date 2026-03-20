@@ -1,10 +1,7 @@
 import os
 import sys
-import io
-import base64
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from nptdms import TdmsFile,TdmsWriter,GroupObject, ChannelObject,RootObject
 import json
 import time

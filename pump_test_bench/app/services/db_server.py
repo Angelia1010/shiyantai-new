@@ -10,9 +10,7 @@ WSGIRequestHandler.tcp_nodelay = True
 
 # 将项目根目录添加到 sys.path
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
-print("项目根目录:", parent_dir)
 sys.path.append(parent_dir)
-print("sys.path:", sys.path)
 import app.core.db_operations as db_ops
 
 
@@ -26,17 +24,31 @@ app.config['JSON_SORT_KEYS'] = False  # 不排序 JSON 键
 # 存储诊断报告的 API
 @app.route('/store_report', methods=['GET'])
 def api_store_report():
+    """
+    支持两种模式：
+    1. 文件模式：传入 task_id + type + path + file_name
+    2. 直接传参模式：传入 task_id + type + x1 + x2
+    """
     try:
-        # 从查询参数中获取数据
         task_id = request.args.get('task_id')
         report_type = request.args.get('type')
-        path = request.args.get('path')
-        file_name_list = request.args.get('file_name').split(",")
-        
-        print(path)
-        for file_name in file_name_list:
-            file_real_name = os.path.join(path, file_name)
-            task_id = db_ops.store_fault_diagnosis_report(task_id, report_type,file_real_name)
+        if not all([task_id, report_type]):
+            raise ValueError("task_id and type are required.")
+
+        x1 = request.args.get('x1', type=float)
+        x2 = request.args.get('x2', type=float)
+
+        if x1 is not None and x2 is not None:
+            task_id = db_ops.store_fault_diagnosis_report(task_id, report_type, x1=x1, x2=x2)
+        else:
+            path = request.args.get('path')
+            file_name_str = request.args.get('file_name')
+            if not all([path, file_name_str]):
+                raise ValueError("需要提供 (path + file_name) 或 (x1 + x2)。")
+            for file_name in file_name_str.split(","):
+                file_real_name = os.path.join(path, file_name.strip())
+                task_id = db_ops.store_fault_diagnosis_report(task_id, report_type, file_name=file_real_name)
+
         return jsonify({"message": "Report stored successfully", "task_id": task_id}), 200
     except Exception as e:
         traceback.print_exc()
@@ -111,7 +123,18 @@ def getJobStatus():
         print("Error:", str(e))  # 打印错误信息
         return jsonify({"error": str(e)}), 400
 
-# 获取诊断报告的 API
+# 获取结构化诊断报告（供前端展示）
+@app.route('/report_preview/<task_id>', methods=['GET'])
+def api_report_preview(task_id):
+    try:
+        data = db_ops.get_report_json(task_id)
+        if data is None:
+            return jsonify({"error": "Report not found"}), 404
+        return jsonify(data), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+# 获取诊断报告的 API（下载 Word 文件）
 @app.route('/retrieve_report/<task_id>', methods=['GET'])
 def api_retrieve_report(task_id):
     try:
@@ -135,30 +158,6 @@ def api_get_tasks():
         # 调用分页查询函数
         tasks = db_ops.query_tasks(page=page, page_size=page_size, task_id=task_id, status=status)
         return jsonify(tasks), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
-
-# 更新任务状态的 API
-@app.route('/update_status/<task_id>', methods=['POST'])
-def api_update_status(task_id):
-    try:
-        data = request.get_json()
-        status = data['status']
-        success = db_ops.update_task_status(task_id, status)
-        if success:
-            return jsonify({"message": "Task status updated successfully"}), 200
-        return jsonify({"error": "Task not found"}), 404
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
-
-# 删除任务的 API
-@app.route('/delete_task/<task_id>', methods=['DELETE'])
-def api_delete_task(task_id):
-    try:
-        success = db_ops.delete_task(task_id)
-        if success:
-            return jsonify({"message": "Task deleted successfully"}), 200
-        return jsonify({"error": "Task not found"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
@@ -188,6 +187,153 @@ def api_create_job():
         }), 200
     except Exception as e:
         print("Error:", str(e))  # 打印错误信息
+        return jsonify({"error": str(e)}), 400
+
+
+# 故障诊断接口
+@app.route('/diagnose', methods=['GET'])
+def diagnose():
+    """
+    支持两种模式：
+    1. 文件模式：传入 task_id + path + file_name，从 Excel 文件读取 X1/X2
+    2. 直接传参模式：传入 task_id + x1 + x2，直接用公式计算
+    """
+    try:
+        task_id = request.args.get('task_id')
+        if not task_id:
+            raise ValueError("task_id is required.")
+
+        x1 = request.args.get('x1', type=float)
+        x2 = request.args.get('x2', type=float)
+
+        if x1 is not None and x2 is not None:
+            # 直接传参模式
+            task_id = db_ops.store_fault_diagnosis_report(
+                task_id, '0', file_name=None, x1=x1, x2=x2
+            )
+        else:
+            # 文件模式
+            path = request.args.get('path')
+            file_name = request.args.get('file_name')
+            if not all([path, file_name]):
+                raise ValueError("需要提供 (path + file_name) 或 (x1 + x2)。")
+            file_real_name = os.path.join(path, file_name)
+            task_id = db_ops.store_fault_diagnosis_report(task_id, '0', file_name=file_real_name)
+
+        return jsonify({"message": "Diagnosis completed", "task_id": task_id}), 200
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 400
+
+
+# ============ 仿真数据模型接口 ============
+
+@app.route('/dataModels', methods=['GET'])
+def api_get_data_models():
+    try:
+        page = request.args.get('page', default=1, type=int)
+        page_size = request.args.get('pageSize', default=10, type=int)
+        name = request.args.get('name', default=None, type=str)
+        status = request.args.get('status', default=None, type=str)
+        result = db_ops.get_data_models(page=page, page_size=page_size, name=name, status=status)
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route('/dataModel/<int:model_id>', methods=['GET'])
+def api_get_data_model(model_id):
+    try:
+        model = db_ops.get_data_model(model_id)
+        if not model:
+            return jsonify({"error": "DataModel not found"}), 404
+        return jsonify(model), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route('/createDataModel', methods=['POST'])
+def api_create_data_model():
+    try:
+        data = request.get_json()
+        if not data or not data.get('name'):
+            raise ValueError("name is required.")
+        model = db_ops.create_data_model(
+            name=data['name'],
+            description=data.get('description', ''),
+            file_path=data.get('file_path', '')
+        )
+        return jsonify(model), 200
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route('/updateDataModel/<int:model_id>', methods=['PUT'])
+def api_update_data_model(model_id):
+    try:
+        data = request.get_json()
+        model = db_ops.update_data_model(
+            model_id=model_id,
+            name=data.get('name'),
+            description=data.get('description'),
+            file_path=data.get('file_path')
+        )
+        if not model:
+            return jsonify({"error": "DataModel not found"}), 404
+        return jsonify(model), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route('/deleteDataModel/<int:model_id>', methods=['DELETE'])
+def api_delete_data_model(model_id):
+    try:
+        success = db_ops.delete_data_model(model_id)
+        if not success:
+            return jsonify({"error": "DataModel not found"}), 404
+        return jsonify({"message": "DataModel deleted successfully"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route('/analyzeDataModel/<int:model_id>', methods=['POST'])
+def api_analyze_data_model(model_id):
+    try:
+        model = db_ops.get_data_model(model_id)
+        if not model:
+            return jsonify({"error": "DataModel not found"}), 404
+        db_ops.set_data_model_status(model_id, 'Processing')
+        # 以模型文件路径执行诊断分析，将结果存入数据库
+        file_path = model.get('file_path', '')
+        if file_path and os.path.isfile(file_path):
+            try:
+                db_ops.store_fault_diagnosis_report(
+                    task_id=f"dm_{model_id}",
+                    type='0',
+                    file_name=file_path
+                )
+                db_ops.set_data_model_status(model_id, 'Completed')
+            except Exception as inner_e:
+                db_ops.set_data_model_status(model_id, 'Failed')
+                return jsonify({"error": str(inner_e)}), 400
+        else:
+            db_ops.set_data_model_status(model_id, 'Completed')
+        return jsonify({"message": "Analysis started", "model_id": model_id}), 200
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route('/downloadAnalysisResult/<int:model_id>', methods=['GET'])
+def api_download_analysis_result(model_id):
+    try:
+        result_stream = db_ops.get_data_model_result(model_id)
+        if result_stream:
+            return send_file(result_stream, as_attachment=True,
+                             download_name=f"datamodel_{model_id}_analysis.docx")
+        return jsonify({"error": "Analysis result not found"}), 404
+    except Exception as e:
         return jsonify({"error": str(e)}), 400
 
 
