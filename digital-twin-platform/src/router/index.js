@@ -148,6 +148,21 @@ export const constantRoutes = [
       }
     ]
   },
+  {
+    path: '/autoDiagnosis',
+    component: Layout,
+    redirect: '/autoDiagnosis/index',
+    name: 'AutoDiagnosis',
+    meta: { title: '自动诊断', icon: 'el-icon-s-promotion' },
+    children: [
+      {
+        path: 'index',
+        name: 'AutoDiagnosisIndex',
+        component: () => import('@/views/autoDiagnosis/index'),
+        meta: { title: '自动诊断流程', icon: 'el-icon-s-promotion' }
+      }
+    ]
+  },
 
   // 404 page must be placed at the end !!!
   { path: '*', redirect: '/404', hidden: true }

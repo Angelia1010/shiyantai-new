@@ -337,6 +337,81 @@ def api_download_analysis_result(model_id):
         return jsonify({"error": str(e)}), 400
 
 
+# ============ 自动诊断流程接口 ============
+
+auto_diagnosis_state = {
+    'running': False,
+    'step': 0,
+    'message': '等待启动',
+    'type': 'info',
+    'level': 'info',
+    'featureMap': {},
+    'result': None,
+    'completed': False,
+    'config': {}
+}
+
+@app.route('/auto_diagnosis/start', methods=['POST'])
+def api_start_auto_diagnosis():
+    try:
+        data = request.get_json()
+        if not data:
+            raise ValueError("请求体必须是JSON格式")
+
+        auto_diagnosis_state['running'] = True
+        auto_diagnosis_state['step'] = 1
+        auto_diagnosis_state['message'] = '数据监控中...'
+        auto_diagnosis_state['type'] = 'info'
+        auto_diagnosis_state['level'] = 'info'
+        auto_diagnosis_state['result'] = None
+        auto_diagnosis_state['completed'] = False
+        auto_diagnosis_state['config'] = data
+
+        import uuid
+        task_id = f"auto_{uuid.uuid4().hex[:8]}"
+
+        return jsonify({
+            "success": True,
+            "message": "自动诊断已启动",
+            "taskId": task_id
+        }), 200
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route('/auto_diagnosis/stop', methods=['POST'])
+def api_stop_auto_diagnosis():
+    try:
+        auto_diagnosis_state['running'] = False
+        auto_diagnosis_state['message'] = '已停止'
+        auto_diagnosis_state['type'] = 'warning'
+        auto_diagnosis_state['level'] = 'warn'
+
+        return jsonify({
+            "success": True,
+            "message": "自动诊断已停止"
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route('/auto_diagnosis/status', methods=['GET'])
+def api_get_diagnosis_status():
+    try:
+        return jsonify({
+            "step": auto_diagnosis_state['step'],
+            "message": auto_diagnosis_state['message'],
+            "type": auto_diagnosis_state['type'],
+            "level": auto_diagnosis_state['level'],
+            "featureMap": auto_diagnosis_state['featureMap'],
+            "result": auto_diagnosis_state['result'],
+            "completed": auto_diagnosis_state['completed']
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
 # 运行 Flask 应用
 if __name__ == '__main__':
     # 创建数据库表
