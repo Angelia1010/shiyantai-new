@@ -53,7 +53,7 @@ module.exports = {
         pathRewrite: { '^/ai': '' }
       },
       '/amesim': {
-        target: 'http://127.0.0.1:5000',
+        target: 'http://127.0.0.1:5003',
         changeOrigin: true,
         pathRewrite: { '^/amesim': '' }
       }
