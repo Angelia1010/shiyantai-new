@@ -1,424 +1,643 @@
 <template>
   <div class="auto-diagnosis-container">
-    <el-row :gutter="20">
-      <el-col :span="24">
-        <div class="page-title">自动诊断流程控制</div>
-      </el-col>
-    </el-row>
+    <div class="page-header">
+      <h2 class="page-title">自动诊断流程</h2>
+      <el-tag :type="isRunning ? 'success' : 'info'" size="medium">
+        {{ isRunning ? '运行中' : '待机' }}
+      </el-tag>
+    </div>
 
-    <el-row :gutter="20">
-      <el-col :span="6">
-        <el-card class="config-card">
-          <div slot="header" class="card-header">
-            <span>配置参数</span>
-          </div>
-          <el-form label-width="100px">
-            <el-form-item label="试验数据路径">
-              <el-input v-model="config.dataPath" placeholder="如: C:/test_data" />
-            </el-form-item>
-            <el-form-item label="AMESim模型">
-              <el-input v-model="config.ameModel" placeholder="如: pump_model.ame" />
-            </el-form-item>
-            <el-form-item label="诊断模式">
-              <el-select v-model="config.diagnosisMode" placeholder="请选择">
-                <el-option label="实时监控" value="realtime" />
-                <el-option label="文件处理" value="file" />
-                <el-option label="混合模式" value="hybrid" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="自动诊断">
-              <el-switch v-model="config.autoDiagnosis" />
-            </el-form-item>
-            <el-form-item>
-              <el-button type="primary" @click="startDiagnosis" :loading="isRunning">
-                启动诊断
-              </el-button>
-              <el-button @click="stopDiagnosis" :disabled="!isRunning">
-                停止
-              </el-button>
-            </el-form-item>
-          </el-form>
-        </el-card>
-      </el-col>
+    <el-card class="steps-card" shadow="hover">
+      <el-steps :active="currentStep" align-center finish-status="success">
+        <el-step title="配置参数" description="设置数据路径和诊断模式" />
+        <el-step title="文件选择" description="选择待诊断文件" />
+        <el-step title="诊断执行" description="运行诊断流程" />
+        <el-step title="结果展示" description="查看诊断结果" />
+      </el-steps>
+    </el-card>
 
-      <el-col :span="12">
-        <el-card class="status-card">
-          <div slot="header" class="card-header">
-            <span>流程状态</span>
-          </div>
-          <div class="process-steps">
-            <el-steps direction="vertical" :active="currentStep" finish-status="success">
-              <el-step title="数据监控" description="监控试验数据文件" />
-              <el-step title="数据预处理" description="读取并解析数据" />
-              <el-step title="系统仿真" description="运行AMESim仿真" />
-              <el-step title="故障诊断" description="分析数据并进行诊断" />
-              <el-step title="报告生成" description="生成诊断报告" />
-              <el-step title="结果展示" description="前端可视化展示" />
-            </el-steps>
-          </div>
-          <div class="current-status">
-            <el-alert :title="statusMessage" :type="statusType" :closable="false" show-icon />
-          </div>
-          <div class="log-area">
-            <div class="log-title">执行日志</div>
-            <div class="log-content" ref="logContent">
-              <div v-for="(log, index) in logs" :key="index" :class="['log-item', log.level]">
-                <span class="log-time">{{ log.time }}</span>
-                <span class="log-msg">{{ log.message }}</span>
-              </div>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
+    <div class="step-content" v-if="currentStep === 0">
+      <config-step
+        :config="config"
+        :variable-configs="variableConfigs"
+        @next="handleConfigNext"
+        @add-variable="addVariable"
+        @remove-variable="removeVariable"
+      />
+    </div>
 
-      <el-col :span="6">
-        <el-card class="result-card">
-          <div slot="header" class="card-header">
-            <span>诊断结果</span>
-          </div>
-          <div v-if="diagnosisResult" class="diagnosis-result">
-            <el-descriptions :column="1" border>
-              <el-descriptions-item label="状态">
-                <el-tag :type="getResultTagType(diagnosisResult.status)">
-                  {{ diagnosisResult.status }}
-                </el-tag>
-              </el-descriptions-item>
-              <el-descriptions-item label="诊断时间">
-                {{ diagnosisResult.timestamp }}
-              </el-descriptions-item>
-              <el-descriptions-item label="任务ID">
-                {{ diagnosisResult.taskId }}
-              </el-descriptions-item>
-            </el-descriptions>
-            <div v-if="diagnosisResult.diagnosis" class="diagnosis-details">
-              <h4>诊断详情</h4>
-              <div v-for="(item, key) in diagnosisResult.diagnosis" :key="key" class="diagnosis-item">
-                <div class="diagnosis-label">{{ key }}</div>
-                <div class="diagnosis-value">{{ formatDiagnosisValue(item) }}</div>
-              </div>
-            </div>
-            <div v-if="diagnosisResult.repairAdvice" class="repair-advice">
-              <h4>维修建议</h4>
-              <p>{{ diagnosisResult.repairAdvice }}</p>
-            </div>
-          </div>
-          <div v-else class="no-result">
-            <p>暂无诊断结果</p>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+    <div class="step-content" v-if="currentStep === 1">
+      <file-select-step
+        :config="config"
+        :selected-files="selectedFiles"
+        @update:selected-files="selectedFiles = $event"
+        @prev="currentStep = 0"
+        @next="handleFileSelectNext"
+        @skip="handleSkipFileSelect"
+      />
+    </div>
 
-    <el-row :gutter="20" class="data-display-row">
-      <el-col :span="24">
-        <el-card class="data-display-card">
-          <div slot="header" class="card-header">
-            <span>实时数据监控</span>
-            <div class="header-actions">
-              <el-button-group>
-                <el-button size="small" :type="dataMode === 'temperature' ? 'primary' : ''" @click="dataMode = 'temperature'">
-                  温度
-                </el-button>
-                <el-button size="small" :type="dataMode === 'pressure' ? 'primary' : ''" @click="dataMode = 'pressure'">
-                  压力
-                </el-button>
-              </el-button-group>
-            </div>
-          </div>
-          <div class="data-display-content">
-            <div class="data-charts">
-              <div v-for="(chart, index) in chartData" :key="index" class="chart-item">
-                <div class="chart-title">{{ chart.title }}</div>
-                <div :ref="'chart' + index" class="chart-container"></div>
-              </div>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+    <div class="step-content" v-if="currentStep === 2">
+      <diagnosis-exec-step
+        :config="config"
+        :selected-files="selectedFiles"
+        :is-running="isRunning"
+        :logs="logs"
+        :current-process-step="currentProcessStep"
+        :status-message="statusMessage"
+        :feature-map="featureMap"
+        @start="startDiagnosis"
+        @stop="stopDiagnosis"
+        @prev="currentStep = 1"
+        @next="handleDiagnosisComplete"
+      />
+    </div>
 
-    <el-row :gutter="20">
-      <el-col :span="24">
-        <el-card class="tasks-card">
-          <div slot="header" class="card-header">
-            <span>历史任务</span>
-          </div>
-          <el-table :data="tasks" border style="width: 100%">
-            <el-table-column prop="task_id" label="任务ID" width="180" />
-            <el-table-column prop="type" label="类型" width="80" />
-            <el-table-column prop="status" label="状态" width="100">
-              <template slot-scope="scope">
-                <el-tag :type="getStatusTagType(scope.row.status)">
-                  {{ scope.row.status }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="files" label="文件" min-width="200" />
-            <el-table-column prop="path" label="路径" min-width="150" />
-            <el-table-column label="操作" width="200">
-              <template slot-scope="scope">
-                <el-button size="mini" @click="viewReport(scope.row)">查看报告</el-button>
-                <el-button size="mini" type="danger" @click="deleteTask(scope.row)">删除</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-          <el-pagination
-            :current-page="taskPage"
-            :page-size="taskPageSize"
-            :total="taskTotal"
-            layout="total, prev, pager, next"
-            @current-change="handleTaskPageChange"
-          />
-        </el-card>
-      </el-col>
-    </el-row>
+    <div class="step-content" v-if="currentStep === 3">
+      <result-display-step
+        :diagnosis-result="diagnosisResult"
+        :experiment-data="experimentData"
+        :simulation-data="simulationData"
+        :data-features="dataFeatures"
+        :config="config"
+        @prev="currentStep = 2"
+        @restart="handleRestart"
+        @view-report="viewReport"
+        @download-report="downloadReport"
+      />
+    </div>
   </div>
 </template>
 
 <script>
-import * as echarts from 'echarts'
+import ConfigStep from './components/ConfigStep.vue'
+import FileSelectStep from './components/FileSelectStep.vue'
+import DiagnosisExecStep from './components/DiagnosisExecStep.vue'
+import ResultDisplayStep from './components/ResultDisplayStep.vue'
+
 import {
-  startAutoDiagnosis,
-  stopAutoDiagnosis,
-  getDiagnosisStatus,
-  getDiagnosisReport,
-  getTasks
-} from '@/api/autoDiagnosis'
+  fileListAPI,
+  newFileListAPI,
+  readExcelApi,
+  createTask,
+  storeReport,
+  diagnose,
+  getJobStatus,
+  setWatchPath
+} from '@/api/home'
+import {
+  openModel,
+  runSimulation,
+  closeModel,
+  getSimulationResults,
+  initAmesimApi
+} from '@/api/amesimAPI'
+import { fetchReportPreview, downloadFile } from '@/api/article'
 import { Message } from 'element-ui'
 
 export default {
   name: 'AutoDiagnosis',
+  components: {
+    ConfigStep,
+    FileSelectStep,
+    DiagnosisExecStep,
+    ResultDisplayStep
+  },
   data() {
     return {
-      config: {
-        dataPath: 'C:/test_data',
-        ameModel: 'pump_model.ame',
-        diagnosisMode: 'realtime',
-        autoDiagnosis: true
-      },
-      isRunning: false,
       currentStep: 0,
-      statusMessage: '等待启动',
-      statusType: 'info',
+      currentProcessStep: 0,
+      isRunning: false,
+      config: {
+        dataPath: '',
+        ameModel: '',
+        diagnosisMode: 'realtime',
+        autoDiagnosis: true,
+        enableSimulation: false
+      },
+      variableConfigs: [{ name: '', path: '' }],
+      selectedFiles: [],
       logs: [],
-      diagnosisResult: null,
-      tasks: [],
-      taskPage: 1,
-      taskPageSize: 10,
-      taskTotal: 0,
-      dataMode: 'temperature',
-      chartData: [
-        { title: '转速', key: '燃油泵实际转速', data: [] },
-        { title: '供油压力', key: '供油压力1-1', data: [] },
-        { title: '回油压力', key: '回油压力1-1', data: [] },
-        { title: '供油温度', key: '供油温度1-1', data: [] }
-      ],
-      charts: [],
       featureMap: {},
-      timer: null,
-      pollTimer: null
+      diagnosisResult: null,
+      experimentData: [],
+      simulationData: [],
+      dataFeatures: {
+        rowCount: 0,
+        columnCount: 0,
+        columns: []
+      },
+      statusMessage: '等待启动',
+      monitorTimer: null,
+      dataTimer: null,
+      page: 0,
+      pageSize: 500,
+      featuresQueue: [],
+      queueThreshold: 60,
+      groupSize: 50,
+      processedFiles: [],
+      currentTaskId: null,
+      modelOpened: false
     }
   },
-  created() {
-    this.loadTasks()
-  },
   beforeDestroy() {
-    this.stopPolling()
-    this.disposeCharts()
+    this.stopAllTimers()
+    if (this.modelOpened) {
+      closeModel().catch(() => {})
+    }
   },
   methods: {
     addLog(message, level = 'info') {
       const now = new Date()
       const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`
       this.logs.push({ time, message, level })
-      this.$nextTick(() => {
-        if (this.$refs.logContent) {
-          this.$refs.logContent.scrollTop = this.$refs.logContent.scrollHeight
-        }
-      })
+      if (this.logs.length > 200) {
+        this.logs.shift()
+      }
     },
-    async startDiagnosis() {
+
+    addVariable() {
+      this.variableConfigs.push({ name: '', path: '' })
+    },
+
+    removeVariable(index) {
+      if (this.variableConfigs.length > 1) {
+        this.variableConfigs.splice(index, 1)
+      }
+    },
+
+    async handleConfigNext() {
       if (!this.config.dataPath) {
         Message.warning('请输入试验数据路径')
         return
       }
+      
+      // 设置后端文件监控路径
+      try {
+        this.addLog(`正在设置监控路径: ${this.config.dataPath}`, 'info')
+        await setWatchPath(this.config.dataPath)
+        this.addLog('监控路径设置成功', 'success')
+      } catch (error) {
+        this.addLog('设置监控路径失败: ' + error.message, 'warn')
+        // 继续流程，不阻断用户操作
+      }
+      
+      if (this.config.diagnosisMode === 'file') {
+        this.currentStep = 1
+      } else {
+        this.selectedFiles = []
+        this.currentStep = 2
+      }
+    },
+
+    async handleFileSelectNext() {
+      if (this.selectedFiles.length === 0) {
+        Message.warning('请选择至少一个文件')
+        return
+      }
+      this.currentStep = 2
+    },
+
+    handleSkipFileSelect() {
+      this.currentStep = 2
+    },
+
+    async startDiagnosis() {
       this.isRunning = true
-      this.currentStep = 0
-      this.statusMessage = '正在启动诊断流程...'
-      this.statusType = 'info'
+      this.currentProcessStep = 1
+      this.statusMessage = '正在初始化...'
       this.addLog('开始自动诊断流程', 'info')
 
       try {
-        const response = await startAutoDiagnosis({
-          dataPath: this.config.dataPath,
-          ameModel: this.config.ameModel,
-          mode: this.config.diagnosisMode,
-          autoDiagnosis: this.config.autoDiagnosis
-        })
-        this.addLog('诊断任务已启动: ' + (response.taskId || ''), 'success')
-        this.currentStep = 1
-        this.statusMessage = '数据监控中...'
-        this.startPolling()
+        if (this.config.enableSimulation && this.config.ameModel) {
+          await this.initSimulation()
+        }
+
+        if (this.config.diagnosisMode === 'realtime') {
+          await this.startRealtimeMode()
+        } else {
+          await this.startFileMode()
+        }
       } catch (error) {
-        this.addLog('启动失败: ' + (error.message || error), 'error')
-        this.isRunning = false
+        this.addLog('诊断启动失败: ' + error.message, 'error')
         this.statusMessage = '启动失败'
-        this.statusType = 'error'
-        Message.error('启动诊断失败')
-      }
-    },
-    async stopDiagnosis() {
-      try {
-        await stopAutoDiagnosis()
         this.isRunning = false
-        this.stopPolling()
-        this.addLog('诊断流程已停止', 'warn')
-        this.statusMessage = '已停止'
-        this.statusType = 'warning'
-        this.currentStep = 0
-        Message.info('诊断已停止')
-      } catch (error) {
-        Message.error('停止失败: ' + (error.message || error))
+        Message.error('诊断启动失败')
       }
     },
-    startPolling() {
-      this.pollTimer = setInterval(async () => {
+
+    async initSimulation() {
+      this.addLog('正在初始化AMESim仿真环境...', 'info')
+      try {
+        await initAmesimApi()
+        await openModel(this.config.ameModel)
+        this.modelOpened = true
+        this.addLog('AMESim模型加载成功', 'success')
+      } catch (error) {
+        this.addLog('AMESim初始化失败: ' + error.message, 'warn')
+        this.config.enableSimulation = false
+      }
+    },
+
+    async startRealtimeMode() {
+      this.addLog('启动实时监控模式', 'info')
+      this.statusMessage = '监控中 - 等待新文件...'
+      this.currentProcessStep = 1
+
+      this.monitorTimer = setInterval(async () => {
         if (!this.isRunning) return
         try {
-          const status = await getDiagnosisStatus()
-          this.updateStatus(status)
+          const response = await newFileListAPI(this.config.dataPath)
+          const newFiles = response.new_files || []
+          
+          for (const filename of newFiles) {
+            if (!this.processedFiles.includes(filename)) {
+              this.processedFiles.push(filename)
+              this.addLog(`检测到新文件: ${filename}`, 'info')
+              await this.processFile(filename)
+            }
+          }
         } catch (error) {
-          console.error('获取状态失败', error)
+          this.addLog('监控出错: ' + error.message, 'error')
         }
-      }, 2000)
+      }, 5000)
     },
-    stopPolling() {
-      if (this.pollTimer) {
-        clearInterval(this.pollTimer)
-        this.pollTimer = null
+
+    async startFileMode() {
+      this.addLog(`启动文件处理模式，共 ${this.selectedFiles.length} 个文件`, 'info')
+      
+      for (const filename of this.selectedFiles) {
+        if (!this.isRunning) break
+        await this.processFile(filename)
       }
-    },
-    updateStatus(status) {
-      if (status.step) {
-        this.currentStep = status.step
-      }
-      if (status.message) {
-        this.statusMessage = status.message
-        this.addLog(status.message, status.level || 'info')
-      }
-      if (status.type) {
-        this.statusType = status.type
-      }
-      if (status.featureMap) {
-        this.featureMap = status.featureMap
-        this.updateCharts()
-      }
-      if (status.result) {
-        this.diagnosisResult = status.result
-        this.addLog('诊断完成', 'success')
-      }
-      if (status.completed) {
-        this.isRunning = false
-        this.stopPolling()
+
+      if (this.isRunning) {
+        this.currentProcessStep = 5
+        this.statusMessage = '诊断完成'
+        this.addLog('所有文件处理完成', 'success')
       }
     },
-    async loadTasks() {
+
+    async processFile(filename) {
+      if (!this.isRunning) return
+      
+      this.currentProcessStep = 2
+      this.statusMessage = `正在处理: ${filename}`
+      this.addLog(`开始处理文件: ${filename}`, 'info')
+
       try {
-        const response = await getTasks(this.taskPage, this.taskPageSize)
-        this.tasks = response.tasks || []
-        this.taskTotal = response.total_count || 0
+        this.currentTaskId = `${Date.now()}${Math.floor(Math.random() * 100000).toString().padStart(5, '0')}`
+        
+        if (this.config.autoDiagnosis && this.isRunning) {
+          await createTask({
+            task_id: this.currentTaskId,
+            file_name: filename,
+            path: this.config.dataPath,
+            type: '1',
+            fault: '1'
+          })
+        }
+
+        if (!this.isRunning) return
+
+        this.page = 0
+        this.featuresQueue = []
+        this.experimentData = []
+
+        this.addLog(`开始加载文件数据: ${filename}`, 'info')
+        await this.loadFileData(filename)
+        this.addLog(`文件数据加载完成`, 'success')
+
+        if (!this.isRunning) return
+
+        if (this.config.enableSimulation && this.modelOpened) {
+          this.currentProcessStep = 3
+          this.statusMessage = '正在运行仿真...'
+          await this.runSimulationAndGetData()
+        } else {
+          this.addLog('跳过仿真步骤（未启用仿真）', 'info')
+        }
+
+        if (!this.isRunning) return
+
+        this.currentProcessStep = 4
+        this.statusMessage = '正在诊断分析...'
+        this.addLog('开始诊断分析...', 'info')
+        
+        if (this.config.autoDiagnosis) {
+          await this.runDiagnosis(filename)
+        }
+
+        if (!this.isRunning) return
+
+        this.currentProcessStep = 5
+        this.addLog(`文件处理完成: ${filename}`, 'success')
+
+        if (this.config.diagnosisMode === 'file' && this.isRunning) {
+          this.currentStep = 3
+          this.isRunning = false
+        }
       } catch (error) {
-        console.error('加载任务失败', error)
+        this.addLog(`处理文件失败 ${filename}: ${error.message}`, 'error')
       }
     },
-    handleTaskPageChange(page) {
-      this.taskPage = page
-      this.loadTasks()
+
+    async loadFileData(filename) {
+      let hasMoreData = true
+      
+      this.addLog(`loadFileData started for: ${filename}`, 'info')
+      
+      while (hasMoreData && this.isRunning) {
+        if (this.featuresQueue.length >= this.queueThreshold) {
+          await this.sleep(1000)
+          continue
+        }
+
+        this.addLog(`Reading page ${this.page}...`, 'info')
+        
+        const response = await readExcelApi({
+          page: this.page,
+          page_size: this.pageSize,
+          file_names: [filename],
+          sheet_names: ['1'],
+          path: this.config.dataPath
+        })
+
+        this.addLog(`API response received`, 'info')
+        console.log('loadFileData - API response:', response)
+
+        const firstKey = Object.keys(response)[0]
+        const res = response[firstKey]
+        
+        if (!res || !res.data) {
+          this.addLog('No data in response, stopping', 'warn')
+          hasMoreData = false
+          break
+        }
+        
+        const dataRoot = res.data['1']
+        
+        console.log('loadFileData - dataRoot:', dataRoot)
+        console.log('loadFileData - available columns:', dataRoot ? Object.keys(dataRoot) : 'null')
+
+        if (!dataRoot) {
+          this.addLog('No sheet data found, stopping', 'warn')
+          hasMoreData = false
+          break
+        }
+
+        const fields = this.getDataFields()
+        const allFieldData = {}
+        const availableColumns = Object.keys(dataRoot)
+        
+        this.addLog(`Looking for ${fields.length} fields...`, 'info')
+        this.addLog(`Available columns: ${availableColumns.join(', ')}`, 'info')
+        
+        for (const field of fields) {
+          const arr = dataRoot[field]
+          if (arr && Array.isArray(arr)) {
+            allFieldData[field] = arr
+          }
+        }
+        
+        // 如果没有匹配到任何字段，尝试使用所有可用的数值列
+        if (Object.keys(allFieldData).length === 0 && availableColumns.length > 0) {
+          this.addLog('No predefined fields matched, using all available columns', 'warn')
+          for (const col of availableColumns) {
+            const arr = dataRoot[col]
+            if (arr && Array.isArray(arr) && arr.length > 0) {
+              allFieldData[col] = arr
+            }
+          }
+        }
+
+        console.log('loadFileData - matched fields:', Object.keys(allFieldData))
+        this.addLog(`Matched ${Object.keys(allFieldData).length} fields`, 'info')
+
+        const maxLen = Math.max(...Object.values(allFieldData).map(arr => arr.length || 0), 0)
+        
+        this.addLog(`maxLen: ${maxLen}`, 'info')
+        
+        if (maxLen === 0) {
+          this.addLog('No data found in matched fields, stopping', 'warn')
+          hasMoreData = false
+          break
+        }
+        
+        for (let i = 0; i < maxLen; i += this.groupSize) {
+          const featureMap = {}
+          for (const field of fields) {
+            const arr = allFieldData[field] || []
+            const group = arr.slice(i, i + this.groupSize)
+              .map(v => v === 'nan' || v === null || v === undefined ? NaN : Number(v))
+              .filter(v => typeof v === 'number' && !isNaN(v))
+            
+            if (group.length > 0) {
+              featureMap[field] = {
+                max: Math.max(...group),
+                min: Math.min(...group),
+                avg: group.reduce((a, b) => a + b, 0) / group.length
+              }
+            }
+          }
+          if (Object.keys(featureMap).length > 0) {
+            this.featuresQueue.push(featureMap)
+            this.experimentData.push(featureMap)
+          }
+        }
+
+        this.page++
+        // 当返回的数据量小于pageSize时，说明已经读取完所有数据
+        hasMoreData = maxLen >= this.pageSize
+        
+        this.addLog(`已读取第 ${this.page} 页数据，共 ${this.experimentData.length} 条记录，本页${maxLen}条`, 'info')
+      }
+
+      // 从experimentData中提取实际的字段名
+      const actualColumns = this.experimentData.length > 0 
+        ? Object.keys(this.experimentData[0]).map(name => ({ name, type: 'number' }))
+        : []
+      
+      this.dataFeatures = {
+        rowCount: this.experimentData.length,
+        columnCount: actualColumns.length,
+        columns: actualColumns
+      }
+      
+      this.addLog(`文件数据加载完成，共 ${this.experimentData.length} 条特征数据，${actualColumns.length} 个字段`, 'success')
+      console.log('loadFileData - dataFeatures:', this.dataFeatures)
     },
-    async viewReport(task) {
+
+    async runSimulationAndGetData() {
       try {
-        const report = await getDiagnosisReport(task.task_id)
-        this.diagnosisResult = report
+        await runSimulation()
+        this.addLog('仿真运行完成', 'success')
+
+        const variables = {}
+        for (const config of this.variableConfigs) {
+          if (config.name.trim() && config.path.trim()) {
+            variables[config.name.trim()] = config.path.trim()
+          }
+        }
+
+        if (Object.keys(variables).length > 0) {
+          const result = await getSimulationResults(variables)
+          if (result && Array.isArray(result.data)) {
+            this.simulationData = result.data
+            this.addLog(`获取仿真数据: ${result.data.length} 条`, 'success')
+          }
+        }
+      } catch (error) {
+        this.addLog('仿真运行失败: ' + error.message, 'warn')
+      }
+    },
+
+    async runDiagnosis(filename) {
+      if (!this.isRunning) {
+        this.addLog('诊断已停止，跳过诊断', 'warn')
+        return
+      }
+      
+      this.addLog(`开始诊断: ${filename}`, 'info')
+      this.addLog(`任务ID: ${this.currentTaskId}`, 'info')
+      
+      try {
+        this.addLog('正在调用诊断API...', 'info')
+        await diagnose(this.currentTaskId, this.config.dataPath, filename)
+        this.addLog('诊断API调用成功，等待结果...', 'info')
+        
+        let attempts = 0
+        const maxAttempts = 60
+        
+        while (attempts < maxAttempts && this.isRunning) {
+          this.addLog(`检查诊断状态 (尝试 ${attempts + 1}/${maxAttempts})`, 'info')
+          const status = await getJobStatus(this.currentTaskId)
+          this.addLog(`当前状态: ${status.status}`, 'info')
+          
+          if (status.status === 'Completed') {
+            this.addLog('诊断完成，获取报告...', 'info')
+            const report = await fetchReportPreview(this.currentTaskId)
+            this.diagnosisResult = {
+              taskId: this.currentTaskId,
+              status: report.diagnosis && report.diagnosis.fault_name ? '异常' : '正常',
+              timestamp: new Date().toLocaleString(),
+              diagnosis: report.diagnosis,
+              repairAdvice: report.repair_advice,
+              indicators: report.indicators,
+              productInfo: report.product_info
+            }
+            
+            if (this.diagnosisResult.status === '异常') {
+              this.showAbnormalAlert(filename)
+            }
+            
+            this.addLog(`诊断完成: ${filename}`, 'success')
+            break
+          }
+          attempts++
+          await this.sleep(2000)
+        }
+        
+        if (attempts >= maxAttempts) {
+          this.addLog('诊断超时，请检查后端服务', 'warn')
+        }
+      } catch (error) {
+        this.addLog('诊断失败: ' + error.message, 'error')
+      }
+    },
+
+    showAbnormalAlert(filename) {
+      this.$notify({
+        title: '异常警告',
+        message: `文件 ${filename} 检测到异常，请查看诊断结果`,
+        type: 'warning',
+        duration: 0
+      })
+    },
+
+    stopDiagnosis() {
+      this.isRunning = false
+      this.stopAllTimers()
+      this.currentProcessStep = 0
+      this.statusMessage = '已停止'
+      this.addLog('诊断流程已停止', 'warn')
+      Message.info('诊断已停止')
+      
+      if (this.diagnosisResult) {
+        this.currentStep = 3
+      }
+    },
+
+    stopAllTimers() {
+      if (this.monitorTimer) {
+        clearInterval(this.monitorTimer)
+        this.monitorTimer = null
+      }
+      if (this.dataTimer) {
+        clearInterval(this.dataTimer)
+        this.dataTimer = null
+      }
+    },
+
+    handleDiagnosisComplete() {
+      this.currentStep = 3
+    },
+
+    handleRestart() {
+      this.currentStep = 0
+      this.currentProcessStep = 0
+      this.isRunning = false
+      this.logs = []
+      this.featureMap = {}
+      this.diagnosisResult = null
+      this.experimentData = []
+      this.simulationData = []
+      this.processedFiles = []
+      this.statusMessage = '等待启动'
+    },
+
+    async viewReport(taskId) {
+      try {
+        const report = await fetchReportPreview(taskId)
+        this.diagnosisResult = {
+          taskId: taskId,
+          status: report.diagnosis && report.diagnosis.fault_name ? '异常' : '正常',
+          timestamp: new Date().toLocaleString(),
+          diagnosis: report.diagnosis,
+          repairAdvice: report.repair_advice,
+          indicators: report.indicators,
+          productInfo: report.product_info
+        }
         Message.success('报告已加载')
       } catch (error) {
         Message.error('加载报告失败')
       }
     },
-    async deleteTask(task) {
-      this.$confirm('确认删除此任务?', '提示', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }).then(() => {
-        this.loadTasks()
-        Message.success('删除成功')
-      })
-    },
-    getStatusTagType(status) {
-      const map = {
-        'Completed': 'success',
-        'Pending': 'primary',
-        'Stop': 'warning',
-        'Failed': 'danger'
+
+    downloadReport(taskId) {
+      if (taskId) {
+        downloadFile(taskId)
       }
-      return map[status] || 'info'
     },
-    getResultTagType(status) {
-      const map = {
-        '正常': 'success',
-        '异常': 'danger',
-        '警告': 'warning'
-      }
-      return map[status] || 'info'
+
+    getDataFields() {
+      return [
+        '燃油泵实际转速', '电传实际转速', '电传扭矩',
+        'P1进口压力', 'P17滑油压力', 'P18回油工况模拟供油压力',
+        'P2低压出口压力', 'P3高压出口压力',
+        '供油压力1-1', '供油压力1-2',
+        '回油压力1-2', '回油压力1-1', '回油压力2-2', '回油压力2-1',
+        '回油流量1-2', '回油流量2-2', '回油流量2-1', '回油流量1-1',
+        '供油流量1-1', '供油流量1-2',
+        'T20加热出口温度', 'T3进口温度', 'T4高压出口温度', 'T5出口温度',
+        '供油温度1-1', '供油温度1-2',
+        '回油温度2-2', '回油温度2-1', '回油温度1-2', '回油温度1-1',
+        '振动传感器1-1', '振动传感器2-1', '振动传感器3-1'
+      ]
     },
-    formatDiagnosisValue(value) {
-      if (typeof value === 'object') {
-        return JSON.stringify(value)
-      }
-      return value
-    },
-    initCharts() {
-      this.$nextTick(() => {
-        this.chartData.forEach((chart, index) => {
-          const ref = this.$refs['chart' + index]
-          if (ref && ref[0]) {
-            const chartInstance = echarts.init(ref[0])
-            chartInstance.setOption({
-              title: { text: chart.title, left: 'center', textStyle: { fontSize: 12 } },
-              tooltip: { trigger: 'axis' },
-              xAxis: { type: 'category', data: [] },
-              yAxis: { type: 'value' },
-              series: [{ data: [], type: 'line', smooth: true }]
-            })
-            this.charts.push(chartInstance)
-          }
-        })
-      })
-    },
-    updateCharts() {
-      this.chartData.forEach((chart, index) => {
-        const chartInstance = this.charts[index]
-        if (chartInstance && this.featureMap[chart.key]) {
-          const value = this.featureMap[chart.key].avg
-          if (typeof value === 'number') {
-            const data = chart.data
-            data.push(value)
-            if (data.length > 20) data.shift()
-            chartInstance.setOption({
-              xAxis: { data: data.map((_, i) => i) },
-              series: [{ data: data }]
-            })
-          }
-        }
-      })
-    },
-    disposeCharts() {
-      this.charts.forEach(chart => {
-        if (chart && chart.dispose) {
-          chart.dispose()
-        }
-      })
-      this.charts = []
+
+    sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms))
     }
   }
 }
@@ -429,136 +648,30 @@ export default {
   padding: 20px;
   background-color: #f5f7fa;
   min-height: 100vh;
+  overflow-y: auto;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
 }
 
 .page-title {
   font-size: 24px;
   font-weight: bold;
   color: #303133;
-  margin-bottom: 20px;
-  text-align: center;
+  margin: 0;
 }
 
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.config-card, .status-card, .result-card, .data-display-card, .tasks-card {
+.steps-card {
   margin-bottom: 20px;
 }
 
-.process-steps {
-  padding: 20px;
-  background-color: #fff;
-  border-radius: 4px;
-  margin-bottom: 15px;
-}
-
-.current-status {
-  margin-bottom: 15px;
-}
-
-.log-area {
-  background-color: #1d2530;
-  border-radius: 4px;
-  padding: 10px;
-}
-
-.log-title {
-  color: #fff;
-  font-size: 14px;
-  margin-bottom: 10px;
-}
-
-.log-content {
-  max-height: 200px;
+.step-content {
+  min-height: calc(100vh - 250px);
   overflow-y: auto;
-  font-family: monospace;
-  font-size: 12px;
-}
-
-.log-item {
-  display: flex;
-  gap: 10px;
-  padding: 2px 0;
-}
-
-.log-time {
-  color: #909399;
-  flex-shrink: 0;
-}
-
-.log-msg {
-  color: #fff;
-}
-
-.log-item.info .log-msg { color: #909399; }
-.log-item.success .log-msg { color: #67c23a; }
-.log-item.warn .log-msg { color: #e6a23c; }
-.log-item.error .log-msg { color: #f56c6c; }
-
-.diagnosis-result {
-  padding: 10px;
-}
-
-.diagnosis-details, .repair-advice {
-  margin-top: 15px;
-  padding: 10px;
-  background-color: #f5f7fa;
-  border-radius: 4px;
-}
-
-.diagnosis-item {
-  display: flex;
-  justify-content: space-between;
-  padding: 5px 0;
-  border-bottom: 1px solid #ebeef5;
-}
-
-.diagnosis-label {
-  font-weight: bold;
-  color: #606266;
-}
-
-.diagnosis-value {
-  color: #303133;
-}
-
-.no-result {
-  text-align: center;
-  color: #909399;
-  padding: 40px;
-}
-
-.data-display-content {
-  min-height: 300px;
-}
-
-.data-charts {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 20px;
-}
-
-.chart-item {
-  background: #fff;
-  padding: 10px;
-  border-radius: 4px;
-}
-
-.chart-title {
-  text-align: center;
-  font-weight: bold;
-  margin-bottom: 10px;
-}
-
-.chart-container {
-  height: 200px;
-}
-
-.header-actions {
-  float: right;
+  padding-bottom: 20px;
 }
 </style>

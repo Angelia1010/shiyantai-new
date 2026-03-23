@@ -18,10 +18,16 @@ from app.core.tmds_data_process import handle_request_tmds_data
 # 初始化 Flask 应用
 app = Flask(__name__)
 
-# 设置监控的目录路径
-directory_path = os.path.join(parent_dir, "app", "test_data")
+# 设置默认监控的目录路径
+default_directory_path = os.path.join(parent_dir, "app", "test_data")
+# 当前监控的目录路径（可由前端动态设置）
+directory_path = default_directory_path
 # 存储监控到的新文件
 new_files = []
+# 全局 observer 实例
+observer = None
+# 线程锁，用于保护 observer 操作
+observer_lock = threading.Lock()
 
 # 获取本地目录下的所有文件
 @app.route('/files', methods=['GET'])
@@ -85,9 +91,11 @@ def read_tdms():
 # 根据文件名读取 Excel 文件数据（返回多个文件内容）
 @app.route('/read_excel', methods=['GET'])
 def read_excel():
-    """根据文件名读取 Excel 文件数据，返回所有数据（不分页）"""
+    """根据文件名读取 Excel 文件数据，支持分页读取"""
     try:
         # 获取请求参数
+        page = int(request.args.get('page', 0))  # 页码，默认为0
+        page_size = int(request.args.get('page_size', 500))  # 每页大小，默认为500
         file_names = request.args.getlist('file_names[]')  # 获取文件名列表（支持多个文件）
         if not file_names:
             # 兼容单个文件名的参数名
@@ -130,11 +138,13 @@ def read_excel():
             continue
         
         try:
-            # 调用处理函数读取Excel全部数据
-            all_data_response = handle_request_all_data(file_path, sheet_names)
+            # 调用处理函数读取Excel分页数据
+            page_data_response = handle_request_page_data(file_path, sheet_names, page, page_size)
             file_data[file_name] = {
-                "data": all_data_response,
-                "sheet_names": sheet_names
+                "data": page_data_response,
+                "sheet_names": sheet_names,
+                "page": page,
+                "page_size": page_size
             }
         except Exception as e:
             file_data[file_name] = {"error": str(e)}
@@ -144,39 +154,140 @@ def read_excel():
 
 # 实时监测目录下是否有新文件
 class WatcherHandler(FileSystemEventHandler):
+    def __init__(self, watch_path):
+        self.watch_path = watch_path
+        
     def on_created(self, event):
         if not event.is_directory:
-            new_files.append(event.src_path)
+            new_files.append(os.path.basename(event.src_path))
             print(f"新文件被添加: {event.src_path}")
 
-# 启动监控线程
-def start_watching():
-    event_handler = WatcherHandler()
-    observer = Observer()
-    observer.schedule(event_handler, directory_path, recursive=False)  # 监控当前目录
-    observer.start()
-    print(f"开始监控目录: {directory_path}")
-    try:
-        while True:
-            time.sleep(1)  # 保持线程活跃
-    except KeyboardInterrupt:
-        observer.stop()
-    observer.join()
+# 停止当前监控
+def stop_watching():
+    global observer
+    with observer_lock:
+        if observer is not None:
+            observer.stop()
+            observer.join()
+            observer = None
+            print("已停止当前监控")
+            return True
+        return False
 
-# 后台线程启动监控
-monitor_thread = threading.Thread(target=start_watching, daemon=True)
+# 启动监控线程
+def start_watching(watch_path=None):
+    global observer, directory_path
+    
+    # 如果提供了新路径，更新监控路径
+    if watch_path:
+        directory_path = watch_path
+    
+    # 确保目录存在
+    if not os.path.exists(directory_path):
+        try:
+            os.makedirs(directory_path, exist_ok=True)
+            print(f"创建监控目录: {directory_path}")
+        except Exception as e:
+            print(f"创建目录失败: {e}")
+            return False
+    
+    with observer_lock:
+        # 如果已有监控，先停止
+        if observer is not None:
+            observer.stop()
+            observer.join()
+        
+        event_handler = WatcherHandler(directory_path)
+        observer = Observer()
+        observer.schedule(event_handler, directory_path, recursive=False)
+        observer.start()
+        print(f"开始监控目录: {directory_path}")
+        return True
+
+# 后台线程启动默认监控
+def init_default_monitoring():
+    """初始化默认监控（在应用启动时调用）"""
+    if os.path.exists(default_directory_path):
+        start_watching(default_directory_path)
+
+# 启动默认监控线程
+monitor_thread = threading.Thread(target=init_default_monitoring, daemon=True)
 monitor_thread.start()
+
+# 设置监控路径（由前端调用）
+@app.route('/set_watch_path', methods=['POST'])
+def set_watch_path():
+    """设置文件监控路径"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Request body is required"}), 400
+        
+        path = data.get('path')
+        if not path:
+            return jsonify({"error": "path parameter is required"}), 400
+        
+        # 验证路径是否存在，不存在则尝试创建
+        if not os.path.exists(path):
+            try:
+                os.makedirs(path, exist_ok=True)
+            except Exception as e:
+                return jsonify({"error": f"Failed to create directory: {str(e)}"}), 400
+        
+        # 验证路径是否为目录
+        if not os.path.isdir(path):
+            return jsonify({"error": "Path must be a directory"}), 400
+        
+        # 清空之前监控到的新文件列表
+        new_files.clear()
+        
+        # 启动新的监控
+        success = start_watching(path)
+        if success:
+            return jsonify({
+                "message": "Watch path updated successfully",
+                "path": path
+            }), 200
+        else:
+            return jsonify({"error": "Failed to start watching"}), 500
+            
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# 获取当前监控路径
+@app.route('/get_watch_path', methods=['GET'])
+def get_watch_path():
+    """获取当前监控路径"""
+    try:
+        return jsonify({
+            "path": directory_path,
+            "is_default": directory_path == default_directory_path
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # 获取实时监测到的新文件
 @app.route('/new_files', methods=['GET'])
 def get_new_files():
     try:
+        path = request.args.get('path')
+        
+        # 如果提供了路径参数，检查是否与当前监控路径匹配
+        if path and path != directory_path:
+            # 路径不匹配，返回提示信息
+            return jsonify({
+                "message": "Path mismatch",
+                "current_watch_path": directory_path,
+                "requested_path": path,
+                "new_files": []
+            }), 200
+        
         if new_files:
             files = new_files.copy()  # 复制新文件列表
             new_files.clear()  # 清空已返回的文件列表
             return jsonify({"new_files": files}), 200
         else:
-            return jsonify({"message": "No new files detected"}), 200
+            return jsonify({"new_files": []}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

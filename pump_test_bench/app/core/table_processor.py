@@ -22,6 +22,7 @@ class TableProcessor:
         """初始化 TableProcessor 类"""
         self.file_path = file_path  # 文件路径
         self.fixed_chunk_size = fixed_chunk_size  # 每次读取的固定数据行数
+        self.column_names = {}  # 存储每个sheet的列名 {sheet_name: [col1, col2, ...]}
 
     def get_total_rows(self, sheet_name):
         """使用 openpyxl 获取行数，避免加载整个数据"""
@@ -38,24 +39,64 @@ class TableProcessor:
         """按固定大小读取指定 sheet 页数据，跳过标题行"""
         try:
             total_rows = self.get_total_rows(sheet_name)
-            # 修改 read_sheet
-            skip_header = 1  # 假设第1行是标题
-            actual_start = start_row + skip_header
-            if actual_start >= total_rows:
-                return pd.DataFrame()
-            # 读取数据时将所有列作为对象/字符串读取
-            sheet_data = pd.read_excel(
-                self.file_path,
-                sheet_name=sheet_name,
-                engine='openpyxl',
-                skiprows=range(0, actual_start),
-                nrows=chunk_size,
-                dtype=object  # 使用object类型保留原始格式
-            )
+            # 第1行是标题，数据从第2行开始（Excel行号从1开始，pandas使用0-based索引）
+            # start_row=0 表示从第2行开始读取（跳过第1行标题）
+            header_row = 0  # 标题行索引（0-based）
+            data_start_row = 1  # 数据开始行索引（0-based）
             
-            # 打印前几行数据以检查格式
-            #print(f"Sheet {sheet_name} 前5行数据:")
-            #print(sheet_data.head())
+            # 计算实际要跳过的行数
+            # page=0: 跳过第0行（标题），从第1行开始读取数据
+            # page=1: 跳过第0行（标题）+ 第1-500行（数据），从第501行开始
+            actual_start = data_start_row + start_row
+            if actual_start >= total_rows:
+                print(f"实际起始行 {actual_start} >= 总行数 {total_rows}，返回空数据")
+                return pd.DataFrame()
+            
+            print(f"读取sheet: {sheet_name}, start_row: {start_row}, chunk_size: {chunk_size}, "
+                  f"actual_start: {actual_start}, total_rows: {total_rows}")
+            
+            # 读取数据时将所有列作为对象/字符串读取
+            if start_row == 0:
+                # 第一页：读取标题行和数据
+                sheet_data = pd.read_excel(
+                    self.file_path,
+                    sheet_name=sheet_name,
+                    engine='openpyxl',
+                    header=header_row,  # 使用第0行作为标题
+                    nrows=chunk_size,
+                    dtype=object  # 使用object类型保留原始格式
+                )
+                # 保存列名供后续页使用
+                self.column_names[sheet_name] = list(sheet_data.columns)
+                print(f"第一页，保存列名: {self.column_names[sheet_name][:5]}...")
+            else:
+                # 后续页：跳过标题行和之前的数据行
+                skip_rows = range(0, actual_start)
+                sheet_data = pd.read_excel(
+                    self.file_path,
+                    sheet_name=sheet_name,
+                    engine='openpyxl',
+                    skiprows=skip_rows,
+                    nrows=chunk_size,
+                    dtype=object,  # 使用object类型保留原始格式
+                    header=None  # 不将第一行作为标题
+                )
+                # 使用第一页保存的列名
+                if sheet_name in self.column_names:
+                    # 确保列数匹配
+                    saved_cols = self.column_names[sheet_name]
+                    if len(sheet_data.columns) == len(saved_cols):
+                        sheet_data.columns = saved_cols
+                    else:
+                        print(f"警告：列数不匹配，保存的列数 {len(saved_cols)}，实际列数 {len(sheet_data.columns)}")
+                        # 使用默认列名
+                        sheet_data.columns = [f"Col_{i}" for i in range(len(sheet_data.columns))]
+                else:
+                    # 如果没有保存的列名，使用默认列名
+                    sheet_data.columns = [f"Col_{i}" for i in range(len(sheet_data.columns))]
+                print(f"后续页，使用列名: {list(sheet_data.columns)[:5]}...")
+            
+            print(f"读取到 {len(sheet_data)} 行数据")
             
             # 尝试将数值列转换为数字
             for col in sheet_data.columns:
@@ -72,6 +113,8 @@ class TableProcessor:
             return sheet_data
         except Exception as e:
             print(f"读取 {sheet_name} 时发生错误: {e}")
+            import traceback
+            traceback.print_exc()
             return pd.DataFrame()
 
     def get_page_data(self, sheet_name, page):

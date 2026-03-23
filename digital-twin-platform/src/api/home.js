@@ -38,6 +38,21 @@ export function newFileListAPI(path) {
   })
 }
 
+export function setWatchPath(path) {
+  return request({
+    url: `/file/set_watch_path`,
+    method: 'post',
+    data: { path }
+  })
+}
+
+export function getWatchPath() {
+  return request({
+    url: `/file/get_watch_path`,
+    method: 'get'
+  })
+}
+
 export function fileListAPI(path) {
   return request({
     url: `/file/files`,
