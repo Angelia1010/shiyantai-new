@@ -1,66 +1,146 @@
 <template>
-  <div class="dashboard-grid">
-    <div class="dashboard-title">标准试验台数字化校验系统</div>
-    <!-- 第一行：SidebarLeft | 模型区 | Sidebar + SidebarBottom -->
-    <div class="sidebar-left-cell">
-      <div class="dashboard-card sidebar-left">
-        <SidebarLeft :featureMap="featureMap" :dataType="dataType" @switchDataType="switchDataType" />
-      </div>
+  <div class="dashboard-container">
+    <div class="bg-grid"></div>
+    <div class="bg-glow"></div>
+    <div class="bg-particles">
+      <div v-for="i in 20" :key="i" class="particle" :style="getParticleStyle(i)"></div>
     </div>
-    <div class="model-area-cell">
-      <div class="model-area-grid">
-        <!-- 先显示3D模型 -->
-        <div class="model-3d-row">
-          <PumpModel ref="pumpModelRef" />
-        </div>
-        <!-- 再显示渐变条+PumpModel2D -->
-        <div class="model-2d-row">
-          <div class="pump2d-gradient-bar-wrap">
-            <div class="mode-switch-bar">
-              <button :class="['mode-btn', mode === 'temperature' ? 'active' : '']" @click="mode = 'temperature'">
-                温度
-              </button>
-              <button :class="['mode-btn', mode === 'pressure' ? 'active' : '']" @click="mode = 'pressure'">
-                压力
-              </button>
-            </div>
-            <div class="gradient-bar">
-              <div class="bar-label bar-label-top">
-                {{ mode === "pressure" ? "35MPa" : "90°C" }}
-              </div>
-              <div class="bar-gradient" :style="{
-                background:
-                  mode === 'pressure'
-                    ? pressureGradient
-                    : temperatureGradient,
-              }"></div>
-              <div class="bar-label bar-label-bottom">
-                {{ mode === "pressure" ? "2MPa" : "20°C" }}
-              </div>
-            </div>
+    
+    <div class="dashboard-content">
+      <div class="header-section">
+        <div class="title-wrapper">
+          <div class="title-decoration left">
+            <div class="deco-line"></div>
+            <div class="deco-dot"></div>
           </div>
-          <div class="pump2d-list">
-            <div v-for="port in ['供油1-1', '供油1-2', '回油1-1', '回油1-2']" :key="port">
-              <PumpModel2D :portName="port" :featureMap="featureMap" :viewDirection="'z'" :mode="mode" />
-            </div>
+          <h1 class="main-title">
+            <span class="title-text">标准试验台数字化校验系统</span>
+            <span class="title-glow"></span>
+          </h1>
+          <div class="title-decoration right">
+            <div class="deco-dot"></div>
+            <div class="deco-line"></div>
+          </div>
+        </div>
+        <div class="status-bar">
+          <div class="status-item">
+            <span class="status-dot pulse"></span>
+            <span>系统运行中</span>
+          </div>
+          <div class="status-divider"></div>
+          <div class="status-item">
+            <span class="status-label">数据类型:</span>
+            <span class="status-value">{{ dataType === 'experiment' ? '实验数据' : '仿真数据' }}</span>
           </div>
         </div>
       </div>
-    </div>
-    <div class="sidebar-cell">
-      <div class="dashboard-card">
-        <SidebarBottom :featureMap="sidebarBottomFeatureMap" />
+
+      <div class="main-content">
+        <div class="model-section">
+          <div class="section-header">
+            <div class="section-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+              </svg>
+            </div>
+            <span class="section-title">三维模型视图</span>
+            <div class="section-line"></div>
+          </div>
+          <div class="model-3d-container">
+            <div class="corner-decoration tl"></div>
+            <div class="corner-decoration tr"></div>
+            <div class="corner-decoration bl"></div>
+            <div class="corner-decoration br"></div>
+            <div class="model-inner">
+              <PumpModel ref="pumpModelRef" />
+            </div>
+            <div class="scan-line"></div>
+          </div>
+        </div>
+
+        <div class="bottom-section">
+          <div class="control-panel">
+            <div class="panel-header">
+              <span class="panel-title">显示模式</span>
+            </div>
+            <div class="mode-buttons">
+              <button 
+                :class="['mode-btn', mode === 'temperature' ? 'active' : '']" 
+                @click="mode = 'temperature'"
+              >
+                <span class="btn-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/>
+                  </svg>
+                </span>
+                <span class="btn-text">温度</span>
+              </button>
+              <button 
+                :class="['mode-btn', mode === 'pressure' ? 'active' : '']" 
+                @click="mode = 'pressure'"
+              >
+                <span class="btn-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <path d="M12 6v6l4 2"/>
+                  </svg>
+                </span>
+                <span class="btn-text">压力</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="gradient-panel">
+            <div class="gradient-bar-container">
+              <div class="gradient-label top">
+                <span class="label-value">{{ mode === "pressure" ? "35" : "90" }}</span>
+                <span class="label-unit">{{ mode === "pressure" ? "MPa" : "°C" }}</span>
+              </div>
+              <div class="gradient-track">
+                <div 
+                  class="gradient-fill" 
+                  :style="{ background: mode === 'pressure' ? pressureGradient : temperatureGradient }"
+                ></div>
+                <div class="gradient-markers">
+                  <div v-for="i in 5" :key="i" class="marker"></div>
+                </div>
+              </div>
+              <div class="gradient-label bottom">
+                <span class="label-value">{{ mode === "pressure" ? "2" : "20" }}</span>
+                <span class="label-unit">{{ mode === "pressure" ? "MPa" : "°C" }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="pump2d-section">
+            <div class="pump2d-grid">
+              <div 
+                v-for="port in ['供油1-1', '供油1-2', '回油1-1', '回油1-2']" 
+                :key="port" 
+                class="pump2d-card"
+              >
+                <div class="card-header">
+                  <span class="card-title">{{ port }}</span>
+                  <span class="card-status online"></span>
+                </div>
+                <PumpModel2D 
+                  :portName="port" 
+                  :featureMap="featureMap" 
+                  :viewDirection="'z'" 
+                  :mode="mode" 
+                />
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
-    <!-- 悬浮AI助手 -->
+
     <AIChater />
   </div>
 </template>
 
 <script>
-import SidebarLeft from "@/components/SidebarLeft";
-import SidebarBottom from "@/components/SidebarBottom";
-import Sidebar from "@/components/Sidebar";
 import {
   readExcelApi,
   fileListAPI,
@@ -79,9 +159,6 @@ import PumpModel2D from "./PumpModel2D.vue";
 
 export default {
   components: {
-    Sidebar,
-    SidebarBottom,
-    SidebarLeft,
     AIChater,
     PumpModel,
     PumpModel2D,
@@ -104,35 +181,33 @@ export default {
 
       page: 0,
       pageSize: 500,
-      timerId: null, // 定时器ID
+      timerId: null,
       fileNames: [],
       fileNameIndex: 0,
 
-      isRunning: true, // Flag to control the run loop
+      isRunning: true,
 
-      featureMap: {}, // 当前消费到的 featureMap（PumpModel/PumpModel2D 用）
-      sidebarBottomFeatureMap: {}, // SidebarBottom 用，延迟更新
-      queueThreshold: 60, // 队列阈值
-      spectrumQueue: [], // 斜盘角度和转速队列
-      featuresQueue: [], // 特征队列
-      featuresConsumerTimer: null, // 定时器ID
-      spectrum: {}, // 当前消费到的频谱数据
-      groupSize: 50, // 每组数据大小
+      featureMap: {},
+      sidebarBottomFeatureMap: {},
+      queueThreshold: 60,
+      spectrumQueue: [],
+      featuresQueue: [],
+      featuresConsumerTimer: null,
+      spectrum: {},
+      groupSize: 50,
       spectrumIndex: 0,
 
       mode: "temperature",
-      pumpState: { swashAngle: 0, rotateSpeed: 0 }, // 补充初始化，防止未定义报错
-      dataType: "experiment", // 'experiment' or 'simulation'
+      pumpState: { swashAngle: 0, rotateSpeed: 0 },
+      dataType: "experiment",
     };
   },
   computed: {
     temperatureGradient() {
-      // 蓝-青-绿-黄-橙-红
-      return "linear-gradient(to bottom, #ff0000 0%, #ff8000 20%, #ffff00 40%, #00ff00 60%, #00ffff 80%, #0066ff 100%)";
+      return "linear-gradient(to bottom, #ff0055 0%, #ff6b00 20%, #ffd000 40%, #00ff88 60%, #00d4ff 80%, #0066ff 100%)";
     },
     pressureGradient() {
-      // 蓝-青-绿-黄-橙-红
-      return "linear-gradient(to bottom, #ff0000 0%, #ff8000 20%, #ffff00 40%, #00ff00 60%, #00ffff 80%, #0066ff 100%)";
+      return "linear-gradient(to bottom, #ff0055 0%, #ff6b00 20%, #ffd000 40%, #00ff88 60%, #00d4ff 80%, #0066ff 100%)";
     },
   },
   created() {
@@ -141,9 +216,8 @@ export default {
       this.showLoading = false;
     };
 
-    // Extract URL parameters
-    const hash = window.location.hash.substring(1); // Remove the '#' character
-    const urlParams = new URLSearchParams(hash.split("?")[1]); // Extract the query string after '?'
+    const hash = window.location.hash.substring(1);
+    const urlParams = new URLSearchParams(hash.split("?")[1]);
     this.type = urlParams.get("type") || null;
     this.path = urlParams.get("path") || null;
     this.fault = urlParams.get("fault") || null;
@@ -159,7 +233,6 @@ export default {
   },
   mounted() {
     this.run();
-    // 新增：每秒消费 featuresQueue 和 swashAngleQueue
     this.featuresConsumerTimer = setInterval(() => {
       if (this.featuresQueue && this.featuresQueue.length > 0) {
         const feature = this.featuresQueue.shift();
@@ -171,27 +244,36 @@ export default {
   },
   destroyed() {
     console.log("destroyed");
-    this.isRunning = false; // Stop the run loop when the component is destroyed
+    this.isRunning = false;
     window.removeEventListener("message", this.iframeEventListener);
-    // 清理定时器
     if (this.featuresConsumerTimer) {
       clearInterval(this.featuresConsumerTimer);
       this.featuresConsumerTimer = null;
     }
   },
   methods: {
+    getParticleStyle(index) {
+      const size = Math.random() * 4 + 2;
+      return {
+        width: `${size}px`,
+        height: `${size}px`,
+        left: `${Math.random() * 100}%`,
+        top: `${Math.random() * 100}%`,
+        animationDelay: `${Math.random() * 20}s`,
+        animationDuration: `${15 + Math.random() * 20}s`,
+      };
+    },
+
     async sleep(ms) {
       return new Promise((resolve) => setTimeout(resolve, ms));
     },
 
     async run() {
-      // Check the flag to continue or stop the loop
       console.log("开始获取任务");
       if (!this.type || !this.path || !this.selectedItems) {
         console.log("参数不完整，停止任务");
         return;
       }
-      //log type, path, selectedItems
       console.log("type:", this.type);
       console.log("path:", this.path);
       console.log("selectedItems:", this.selectedItems);
@@ -207,7 +289,6 @@ export default {
             if (this.fileNames.length) {
               for (const filename of this.fileNames) {
                 if (this.fault === "1") {
-                  // 新增：生成唯一 task_id
                   const now = Date.now();
                   const rand = Math.floor(Math.random() * 100000)
                     .toString()
@@ -229,11 +310,10 @@ export default {
                   }
                 }
 
-                // 再开始处理数据
                 await this.updateData(filename, this.path);
               }
             }
-            await this.sleep(5000); // Sleep for 5 seconds
+            await this.sleep(5000);
           } catch (e) {
             console.log("error:", e);
             break;
@@ -252,8 +332,6 @@ export default {
     },
 
     async updateData(filename, path) {
-      // 新增：featuresQueue长度判断，若大于等于阈值则直接返回
-
       console.log("开始处理任务filename：", filename);
 
       this.page = 0;
@@ -266,7 +344,7 @@ export default {
           console.log(
             `featuresQueue 已有 ${this.featuresQueue.length} 条，跳过本次请求`
           );
-          await this.sleep(1000); // Sleep for 1 second
+          await this.sleep(1000);
           continue;
         }
 
@@ -289,25 +367,20 @@ export default {
       console.log("结束处理任务");
     },
     async loadDataNew(requestReq) {
-      // 临时模拟数据 - 当后端接口有问题时使用
-      const useMockData = false; // 设置为 false 以使用真实接口
+      const useMockData = false;
 
       if (useMockData) {
-        // 模拟延迟
         await this.sleep(200);
 
-        // 模拟分页数据，每页最多返回 500 条数据
-        const totalPages = 5; // 模拟总共5页数据
+        const totalPages = 5;
         if (requestReq.page >= totalPages) {
-          return false; // 没有更多数据
+          return false;
         }
 
         console.log(`[Mock] 返回第 ${requestReq.page} 页模拟数据`);
 
-        // 生成模拟数据
         const mockResponse = this.generateMockData(requestReq);
 
-        // 使用模拟数据继续后续处理逻辑
         const firstKey = Object.keys(mockResponse)[0];
         const res = mockResponse[firstKey];
         const dataRoot =
@@ -351,7 +424,6 @@ export default {
           "振动传感器3-1",
         ];
 
-        // 处理模拟数据
         const allFieldData = {};
         for (const field of fields) {
           const arr = dataRoot[field];
@@ -389,12 +461,9 @@ export default {
         return true;
       }
 
-      // 真实接口调用（当 useMockData 为 false 时）
       try {
         console.log("数据请求体：", requestReq);
         const response = await readExcelApi(requestReq);
-        console
-        // 适配新结构，选择实验或仿真数据
         const firstKey = Object.keys(response)[0];
         const res = response[firstKey];
         console.log("res:", res);
@@ -476,7 +545,6 @@ export default {
         return true;
       } catch (error) {
         console.error("接口调用失败，使用模拟数据:", error);
-        // 接口失败时自动切换到模拟数据
         return this.loadDataNew({ ...requestReq, useMockData: true });
       }
     },
@@ -487,40 +555,17 @@ export default {
       this.featureMap = {};
       this.sidebarBottomFeatureMap = {};
       this.page = 0;
-      // 重新拉取数据
       this.run();
     },
 
-    // iframeEventListener(event) {
-    //   if (event.data.type === "workbench") {
-    //     console.log(event.data.modelData.name);
-    //     let pumpData = ["Mesh_500001"];
-
-    //     let name = event.data.modelData.name;
-    //     // console.log("pump", name);
-    //     // 泵的跳转
-    //     if (pumpData.includes(name)) {
-    //       this.$router.push({ path: "/model" });
-    //     }
-    //     if (event.data.modelData.name === "输入1_504") {
-    //     }
-    //   }
-    // },
-    /**
-     * 生成模拟数据
-     */
     generateMockData(requestReq) {
       const filename = requestReq.file_name[0] || "mock_file.xlsx";
       const page = requestReq.page || 0;
-
-      // 生成每页500条数据
       const dataSize = requestReq.page_size || 500;
 
-      // 模拟字段数据生成器
       const generateFieldData = (baseValue, variance = 0.1, trend = 0) => {
         const data = [];
         for (let i = 0; i < dataSize; i++) {
-          // 添加随机波动和趋势
           const randomFactor = 1 + (Math.random() - 0.5) * variance;
           const trendFactor = 1 + (trend * i) / dataSize;
           const value = baseValue * randomFactor * trendFactor;
@@ -529,13 +574,11 @@ export default {
         return data;
       };
 
-      // 生成时间序列数据，模拟真实传感器数据
       const timeOffset = page * dataSize;
 
       const mockData = {
         [filename]: {
           1: {
-            // 实验数据
             燃油泵实际转速: generateFieldData(
               1500 + Math.sin(timeOffset / 100) * 200,
               0.05
@@ -670,7 +713,6 @@ export default {
             ),
           },
           "13-1": {
-            // 仿真数据（稍微不同的数值范围）
             燃油泵实际转速: generateFieldData(
               1520 + Math.sin(timeOffset / 105) * 190,
               0.04
@@ -815,239 +857,534 @@ export default {
 </script>
 
 <style scoped>
-.dashboard-title {
-  grid-column: 1 / -1;
-  text-align: center;
-  font-size: 26px;
-  font-weight: bold;
-  color: #1976d2 !important;
-  letter-spacing: 2px;
-  margin: 18px 0 10px 0;
-  /* text-shadow: 0 0 18px #00d8ff; */
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&display=swap');
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
-.dashboard-grid {
-  display: grid;
-  grid-template-rows: auto 1fr;
-  /* 第一行：标题 | 第二行：SidebarLeft | 模型区 | Sidebar + SidebarBottom */
-  grid-template-columns: 400px 1fr auto;
-  /* 三列：左侧边栏 | 模型区 | 右侧边栏 */
-  grid-template-areas:
-    ". title ."
-    "sidebar-left model-area sidebar";
+.dashboard-container {
   width: 100%;
   height: 100%;
-  background: #1d2530;
+  background: linear-gradient(135deg, #0a0e17 0%, #1a1f2e 50%, #0d1321 100%);
   position: relative;
-  /* gap: 10px; */
-  /* padding: 10px; */
+  overflow: hidden;
+  font-family: 'Orbitron', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
-.sidebar-left-cell {
-  grid-column: 1 / -1;
-  grid-area: sidebar-left;
-  overflow: visible;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  background: none;
-  box-shadow: none;
-  padding: 0;
+.bg-grid {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
+  background-size: 50px 50px;
+  pointer-events: none;
 }
 
-.sidebar-left {
+.bg-glow {
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle at 30% 30%, rgba(0, 150, 255, 0.08) 0%, transparent 50%),
+              radial-gradient(circle at 70% 70%, rgba(0, 255, 200, 0.05) 0%, transparent 50%);
+  pointer-events: none;
+  animation: glowPulse 15s ease-in-out infinite;
+}
+
+@keyframes glowPulse {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.1); }
+}
+
+.bg-particles {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.particle {
+  position: absolute;
+  background: rgba(0, 212, 255, 0.6);
+  border-radius: 50%;
+  animation: particleFloat 20s linear infinite;
+  box-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+}
+
+@keyframes particleFloat {
+  0% { transform: translateY(100vh) rotate(0deg); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(-100vh) rotate(720deg); opacity: 0; }
+}
+
+.dashboard-content {
+  position: relative;
+  z-index: 1;
+  width: 100%;
   height: 100%;
-}
-
-.model-area-cell {
-  grid-area: model-area;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  height: 100%;
-  background: none;
-  box-shadow: none;
-  padding: 0;
-}
-
-.sidebar-cell {
-  grid-area: sidebar;
-  overflow: visible;
   display: flex;
   flex-direction: column;
+  padding: 20px 30px;
+}
+
+.header-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.title-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 15px;
+}
+
+.title-decoration {
+  display: flex;
+  align-items: center;
   gap: 10px;
-  align-items: flex-start;
-  justify-content: flex-start;
-  background: none;
-  box-shadow: none;
-  /* padding: 10px; */
-  min-width: 0 !important;
-  /* 修正：允许收缩，防止溢出 */
-  max-width: 100% !important;
 }
 
-.model-area-grid {
-  display: grid;
-  grid-template-rows: 1fr auto;
-  /* 3D区填满剩余空间，2D区自适应高度 */
+.title-decoration.left .deco-line {
+  width: 80px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #00d4ff);
+}
+
+.title-decoration.right .deco-line {
+  width: 80px;
+  height: 2px;
+  background: linear-gradient(90deg, #00d4ff, transparent);
+}
+
+.deco-dot {
+  width: 8px;
+  height: 8px;
+  background: #00d4ff;
+  border-radius: 50%;
+  box-shadow: 0 0 10px #00d4ff, 0 0 20px #00d4ff;
+  animation: dotPulse 2s ease-in-out infinite;
+}
+
+@keyframes dotPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.7; }
+}
+
+.main-title {
+  position: relative;
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  color: #fff;
+  text-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
+}
+
+.title-text {
+  background: linear-gradient(90deg, #00d4ff, #00ff88, #00d4ff);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: titleShine 3s linear infinite;
+}
+
+@keyframes titleShine {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.title-glow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   width: 100%;
   height: 100%;
+  background: radial-gradient(ellipse, rgba(0, 212, 255, 0.2) 0%, transparent 70%);
+  filter: blur(20px);
+  pointer-events: none;
+}
+
+.status-bar {
+  display: flex;
   align-items: center;
-  justify-items: center;
-  /* border: 2px solid #696eff !important; */
+  gap: 20px;
+  padding: 8px 25px;
+  background: rgba(0, 212, 255, 0.05);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  border-radius: 20px;
+  backdrop-filter: blur(10px);
 }
 
-.model-2d-row {
+.status-item {
   display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  justify-content: flex-start;
-  gap: 24px;
-  margin-bottom: 16px;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.8);
 }
 
-.pump2d-list {
+.status-dot {
+  width: 8px;
+  height: 8px;
+  background: #00ff88;
+  border-radius: 50%;
+  box-shadow: 0 0 10px #00ff88;
+}
+
+.status-dot.pulse {
+  animation: statusPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes statusPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.2); }
+}
+
+.status-divider {
+  width: 1px;
+  height: 15px;
+  background: rgba(0, 212, 255, 0.3);
+}
+
+.status-label {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.status-value {
+  color: #00d4ff;
+  font-weight: 500;
+}
+
+.main-content {
+  flex: 1;
   display: flex;
-  flex-direction: row;
-  gap: 16px;
+  flex-direction: column;
+  gap: 20px;
+  min-height: 0;
 }
 
-.model-3d-row {
+.model-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 15px;
+}
+
+.section-icon {
+  width: 28px;
+  height: 28px;
+  color: #00d4ff;
+}
+
+.section-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.section-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: #fff;
+  letter-spacing: 2px;
+}
+
+.section-line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(0, 212, 255, 0.5), transparent);
+}
+
+.model-3d-container {
+  flex: 1;
+  position: relative;
+  background: linear-gradient(135deg, rgba(0, 30, 60, 0.6) 0%, rgba(0, 20, 40, 0.8) 100%);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  border-radius: 12px;
+  overflow: hidden;
+  min-height: 300px;
+}
+
+.corner-decoration {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  pointer-events: none;
+}
+
+.corner-decoration.tl {
+  top: 0;
+  left: 0;
+  border-top: 2px solid #00d4ff;
+  border-left: 2px solid #00d4ff;
+  border-top-left-radius: 12px;
+}
+
+.corner-decoration.tr {
+  top: 0;
+  right: 0;
+  border-top: 2px solid #00d4ff;
+  border-right: 2px solid #00d4ff;
+  border-top-right-radius: 12px;
+}
+
+.corner-decoration.bl {
+  bottom: 0;
+  left: 0;
+  border-bottom: 2px solid #00d4ff;
+  border-left: 2px solid #00d4ff;
+  border-bottom-left-radius: 12px;
+}
+
+.corner-decoration.br {
+  bottom: 0;
+  right: 0;
+  border-bottom: 2px solid #00d4ff;
+  border-right: 2px solid #00d4ff;
+  border-bottom-right-radius: 12px;
+}
+
+.model-inner {
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  height: 100%;
-  /* 填满grid剩余空间 */
-  min-height: 0;
-  /* 防止塌陷 */
 }
 
-/* 保留原有的渐变条和按钮样式 */
-.pump2d-gradient-bar-wrap {
+.scan-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.8), transparent);
+  animation: scanLine 4s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes scanLine {
+  0% { top: 0; opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+
+.bottom-section {
+  display: flex;
+  gap: 20px;
+  align-items: stretch;
+}
+
+.control-panel {
+  background: rgba(0, 30, 60, 0.5);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  border-radius: 12px;
+  padding: 15px 20px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  margin-right: 0;
-  width: 24px;
+  gap: 12px;
+  min-width: 160px;
 }
 
-.mode-switch-bar {
+.panel-header {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.mode-buttons {
   display: flex;
-  flex-direction: row;
-  gap: 0;
-  margin-bottom: 10px;
-  flex-wrap: nowrap;
-  white-space: nowrap;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .mode-btn {
-  background: transparent;
-  border: 1px solid #1976d2;
-  border-radius: 0;
-  padding: 4px 10px;
-  font-size: 13px;
-  color: #1976d2 !important;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 15px;
+  background: rgba(0, 212, 255, 0.05);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.7);
   cursor: pointer;
-  outline: none;
-  transition: background 0.2s, color 0.2s, border 0.2s;
-  margin: 0;
-  flex-shrink: 0;
-  min-width: 40px;
-  max-width: 80px;
+  transition: all 0.3s ease;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.mode-btn:hover {
+  background: rgba(0, 212, 255, 0.1);
+  border-color: rgba(0, 212, 255, 0.4);
+  color: #fff;
 }
 
 .mode-btn.active {
-  background: #1976d2;
-  color: #fff !important;
-  border: 1px solid #1976d2;
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.2), rgba(0, 255, 136, 0.1));
+  border-color: #00d4ff;
+  color: #00d4ff;
+  box-shadow: 0 0 15px rgba(0, 212, 255, 0.3), inset 0 0 15px rgba(0, 212, 255, 0.1);
 }
 
-.gradient-bar {
+.btn-icon {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.gradient-panel {
+  background: rgba(0, 30, 60, 0.5);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  border-radius: 12px;
+  padding: 15px 20px;
+  display: flex;
+  align-items: center;
+}
+
+.gradient-bar-container {
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 10px;
-  height: 100px;
-  position: relative;
-  justify-content: center;
+  gap: 8px;
 }
 
-.bar-gradient {
-  width: 100%;
-  height: 80px;
-  border-radius: 2px;
-  margin: 0 0 0 0;
-  border: 1px solid #1976d2;
-}
-
-.bar-label {
-  font-size: 12px;
-  color: #1976d2 !important;
-  font-weight: bold;
-  text-align: center;
-  width: 100%;
+.gradient-label {
   display: flex;
-  justify-content: center;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.label-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.label-unit {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.gradient-track {
+  position: relative;
+  width: 16px;
+  height: 120px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(0, 212, 255, 0.2);
+}
+
+.gradient-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 7px;
+}
+
+.gradient-markers {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 5px 0;
+  pointer-events: none;
+}
+
+.marker {
+  width: 100%;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.pump2d-section {
+  flex: 1;
+  background: rgba(0, 30, 60, 0.5);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  border-radius: 12px;
+  padding: 15px;
+}
+
+.pump2d-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 15px;
+  height: 100%;
+}
+
+.pump2d-card {
+  background: rgba(0, 20, 40, 0.6);
+  border: 1px solid rgba(0, 212, 255, 0.15);
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.3s ease;
+}
+
+.pump2d-card:hover {
+  border-color: rgba(0, 212, 255, 0.4);
+  box-shadow: 0 0 20px rgba(0, 212, 255, 0.1);
+}
+
+.card-header {
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(0, 212, 255, 0.1);
 }
 
-.bar-label-top {
-  margin-bottom: 2px;
+.card-title {
+  font-size: 12px;
+  color: #00d4ff;
+  font-weight: 500;
+  letter-spacing: 1px;
 }
 
-.bar-label-bottom {
-  margin-top: 2px;
-}
-
-.dashboard-grid,
-.sidebar-left-cell,
-.model-area-cell,
-.sidebar-cell {
-  /* 允许内容溢出时显示滚动条，防止塌陷 */
-  min-height: 0 !important;
-  min-width: 0 !important;
-  overflow: auto !important;
-  /* border: 2px solid #ff69b4 !important; */
-  padding: 10px;
-}
-
-/* 保证按钮、渐变条等局部样式不受影响 */
-.mode-btn,
-.gradient-bar,
-.bar-label,
-.bar-gradient {
-  border: none !important;
-  margin: 0 !important;
-  padding: 0 !important;
-}
-
-/* Card style for all dashboard cards (sidebars, bottom bar, 2D model) */
-.dashboard-card {
-  background: #1d2530;
-  border-radius: 14px;
-  box-shadow: 4.5px 4.5px 6px rgba(0, 0, 0, 0.3);
-  box-sizing: border-box;
-  border: 1.5px solid #e0e4ea;
-  margin: 0;
-  padding: 10px;
-  transition: box-shadow 0.2s, border-color 0.2s;
-}
-
-/* .dashboard-card:hover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.13);
-  border-color: #00cc44;
-} */
-.sidebar-cell {
-  min-width: 0 !important;
-}
-
-.dashboard-card>*,
-.sidebar-content,
-.chart-container,
-.chart {
-  max-width: 100%;
-  min-width: 0;
-  overflow-x: auto;
+.card-status {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #00ff88;
+  box-shadow: 0 0 8px #00ff88;
+  animation: statusPulse 2s ease-in-out infinite;
 }
 </style>
