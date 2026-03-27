@@ -70,7 +70,18 @@ class TableProcessor:
                 self.column_names[sheet_name] = list(sheet_data.columns)
                 print(f"第一页，保存列名: {self.column_names[sheet_name][:5]}...")
             else:
-                # 后续页：跳过标题行和之前的数据行
+                # 后续页：先读取标题行获取列名，再读取数据
+                # 读取标题行（第0行）
+                header_df = pd.read_excel(
+                    self.file_path,
+                    sheet_name=sheet_name,
+                    engine='openpyxl',
+                    header=header_row,
+                    nrows=0  # 只读取标题行，不读取数据
+                )
+                column_names = list(header_df.columns)
+                
+                # 跳过标题行和之前的数据行，读取数据
                 skip_rows = range(0, actual_start)
                 sheet_data = pd.read_excel(
                     self.file_path,
@@ -81,20 +92,18 @@ class TableProcessor:
                     dtype=object,  # 使用object类型保留原始格式
                     header=None  # 不将第一行作为标题
                 )
-                # 使用第一页保存的列名
-                if sheet_name in self.column_names:
-                    # 确保列数匹配
-                    saved_cols = self.column_names[sheet_name]
-                    if len(sheet_data.columns) == len(saved_cols):
-                        sheet_data.columns = saved_cols
-                    else:
-                        print(f"警告：列数不匹配，保存的列数 {len(saved_cols)}，实际列数 {len(sheet_data.columns)}")
-                        # 使用默认列名
-                        sheet_data.columns = [f"Col_{i}" for i in range(len(sheet_data.columns))]
+                
+                # 使用从标题行获取的列名
+                if len(sheet_data.columns) == len(column_names):
+                    sheet_data.columns = column_names
                 else:
-                    # 如果没有保存的列名，使用默认列名
+                    print(f"警告：列数不匹配，标题行列数 {len(column_names)}，实际列数 {len(sheet_data.columns)}")
+                    # 使用默认列名
                     sheet_data.columns = [f"Col_{i}" for i in range(len(sheet_data.columns))]
-                print(f"后续页，使用列名: {list(sheet_data.columns)[:5]}...")
+                
+                # 同时更新实例变量，保持兼容性
+                self.column_names[sheet_name] = column_names
+                print(f"后续页，从标题行获取列名: {list(sheet_data.columns)[:5]}...")
             
             print(f"读取到 {len(sheet_data)} 行数据")
             
