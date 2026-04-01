@@ -32,106 +32,292 @@
             <span class="status-label">数据类型:</span>
             <span class="status-value">{{ dataType === 'experiment' ? '实验数据' : '仿真数据' }}</span>
           </div>
+          <template v-if="isRealtimeFromDiagnosis">
+            <div class="status-divider"></div>
+            <div class="status-item">
+              <span class="status-label">诊断模式:</span>
+              <span class="status-value highlight">实时监控</span>
+            </div>
+          </template>
         </div>
       </div>
 
-      <div class="main-content">
-        <div class="model-section">
-          <div class="section-header">
-            <div class="section-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-              </svg>
-            </div>
-            <span class="section-title">三维模型视图</span>
-            <div class="section-line"></div>
+      <div class="alert-banner" v-if="isRealtimeFromDiagnosis && latestAbnormalResult">
+        <div class="alert-content">
+          <div class="alert-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/>
+              <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
           </div>
-          <div class="model-3d-container">
-            <div class="corner-decoration tl"></div>
-            <div class="corner-decoration tr"></div>
-            <div class="corner-decoration bl"></div>
-            <div class="corner-decoration br"></div>
-            <div class="model-inner">
-              <PumpModel ref="pumpModelRef" />
+          <div class="alert-text">
+            <span class="alert-title">检测到异常状态</span>
+            <span class="alert-info">文件: {{ latestAbnormalResult.filename }} | 时间: {{ latestAbnormalResult.timestamp }}</span>
+          </div>
+        </div>
+        <div class="alert-actions">
+          <button class="alert-btn view" @click="viewDiagnosisResult(latestAbnormalResult)">查看详情</button>
+          <button class="alert-btn close" @click="clearAbnormalWarning">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="main-content" :class="{ 'with-sidebar': isRealtimeFromDiagnosis }">
+        <div class="content-main">
+          <div class="model-section">
+            <div class="section-header">
+              <div class="section-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                </svg>
+              </div>
+              <span class="section-title">三维模型视图</span>
+              <div class="section-line"></div>
             </div>
-            <div class="scan-line"></div>
+            <div class="model-3d-container">
+              <div class="corner-decoration tl"></div>
+              <div class="corner-decoration tr"></div>
+              <div class="corner-decoration bl"></div>
+              <div class="corner-decoration br"></div>
+              <div class="model-inner">
+                <PumpModel ref="pumpModelRef" />
+              </div>
+              <div class="scan-line"></div>
+            </div>
+          </div>
+
+          <div class="bottom-section">
+            <div class="control-panel">
+              <div class="panel-header">
+                <span class="panel-title">显示模式</span>
+              </div>
+              <div class="mode-buttons">
+                <button 
+                  :class="['mode-btn', mode === 'temperature' ? 'active' : '']" 
+                  @click="mode = 'temperature'"
+                >
+                  <span class="btn-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/>
+                    </svg>
+                  </span>
+                  <span class="btn-text">温度</span>
+                </button>
+                <button 
+                  :class="['mode-btn', mode === 'pressure' ? 'active' : '']" 
+                  @click="mode = 'pressure'"
+                >
+                  <span class="btn-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="10"/>
+                      <path d="M12 6v6l4 2"/>
+                    </svg>
+                  </span>
+                  <span class="btn-text">压力</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="gradient-panel">
+              <div class="gradient-bar-container">
+                <div class="gradient-label top">
+                  <span class="label-value">{{ mode === "pressure" ? "35" : "90" }}</span>
+                  <span class="label-unit">{{ mode === "pressure" ? "MPa" : "°C" }}</span>
+                </div>
+                <div class="gradient-track">
+                  <div 
+                    class="gradient-fill" 
+                    :style="{ background: mode === 'pressure' ? pressureGradient : temperatureGradient }"
+                  ></div>
+                  <div class="gradient-markers">
+                    <div v-for="i in 5" :key="i" class="marker"></div>
+                  </div>
+                </div>
+                <div class="gradient-label bottom">
+                  <span class="label-value">{{ mode === "pressure" ? "2" : "20" }}</span>
+                  <span class="label-unit">{{ mode === "pressure" ? "MPa" : "°C" }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="pump2d-section">
+              <div class="pump2d-grid">
+                <div 
+                  v-for="port in ['供油1-1', '供油1-2', '回油1-1', '回油1-2']" 
+                  :key="port" 
+                  class="pump2d-card"
+                >
+                  <div class="card-header">
+                    <span class="card-title">{{ port }}</span>
+                    <span class="card-status online"></span>
+                  </div>
+                  <PumpModel2D 
+                    :portName="port" 
+                    :featureMap="featureMap" 
+                    :viewDirection="'z'" 
+                    :mode="mode" 
+                  />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div class="bottom-section">
-          <div class="control-panel">
-            <div class="panel-header">
-              <span class="panel-title">显示模式</span>
+        <div class="diagnosis-sidebar" v-if="isRealtimeFromDiagnosis">
+          <div class="sidebar-header">
+            <div class="sidebar-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                <path d="M9 14l2 2 4-4"/>
+              </svg>
+              <span>诊断记录</span>
             </div>
-            <div class="mode-buttons">
-              <button 
-                :class="['mode-btn', mode === 'temperature' ? 'active' : '']" 
-                @click="mode = 'temperature'"
-              >
-                <span class="btn-icon">
+            <div class="sidebar-stats">
+              <span class="stat-item">
+                <span class="stat-label">总计</span>
+                <span class="stat-value">{{ diagnosisResults.length }}</span>
+              </span>
+              <span class="stat-item abnormal">
+                <span class="stat-label">异常</span>
+                <span class="stat-value">{{ diagnosisResults.filter(r => r.status === '异常').length }}</span>
+              </span>
+            </div>
+          </div>
+          
+          <div class="diagnosis-list">
+            <div 
+              v-for="(result, index) in diagnosisResults" 
+              :key="result.taskId" 
+              class="diagnosis-item"
+              :class="{ abnormal: result.status === '异常' }"
+            >
+              <div class="item-header">
+                <div class="item-status" :class="result.status === '正常' ? 'normal' : 'abnormal'">
+                  <span class="status-icon">
+                    <svg v-if="result.status === '正常'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                      <polyline points="22 4 12 14.01 9 11.01"/>
+                    </svg>
+                    <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="10"/>
+                      <line x1="12" y1="8" x2="12" y2="12"/>
+                      <line x1="12" y1="16" x2="12.01" y2="16"/>
+                    </svg>
+                  </span>
+                  <span class="status-text">{{ result.status }}</span>
+                </div>
+                <span class="item-time">{{ result.timestamp }}</span>
+              </div>
+              <div class="item-content">
+                <div class="item-filename">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/>
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
                   </svg>
-                </span>
-                <span class="btn-text">温度</span>
-              </button>
-              <button 
-                :class="['mode-btn', mode === 'pressure' ? 'active' : '']" 
-                @click="mode = 'pressure'"
-              >
-                <span class="btn-icon">
+                  <span>{{ result.filename }}</span>
+                </div>
+                <div class="item-fault" v-if="result.diagnosis && result.diagnosis.fault_name">
+                  <span class="fault-label">故障类型:</span>
+                  <span class="fault-value">{{ result.diagnosis.fault_name }}</span>
+                </div>
+              </div>
+              <div class="item-actions">
+                <button class="action-btn view" @click="viewDiagnosisResult(result)">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="10"/>
-                    <path d="M12 6v6l4 2"/>
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3"/>
                   </svg>
-                </span>
-                <span class="btn-text">压力</span>
-              </button>
+                  <span>查看</span>
+                </button>
+                <button class="action-btn download" @click="downloadDiagnosisReport(result.taskId)">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                  <span>下载</span>
+                </button>
+              </div>
+            </div>
+            
+            <div class="empty-state" v-if="diagnosisResults.length === 0">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+              </svg>
+              <span>暂无诊断记录</span>
+              <span class="empty-hint">等待新文件诊断...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="diagnosis-detail-modal" v-if="showDiagnosisDetail && selectedDiagnosisResult">
+      <div class="modal-overlay" @click="showDiagnosisDetail = false"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <span class="modal-title">诊断结果详情</span>
+          <button class="modal-close" @click="showDiagnosisDetail = false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="detail-section">
+            <div class="detail-row">
+              <span class="detail-label">文件名称:</span>
+              <span class="detail-value">{{ selectedDiagnosisResult.filename }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">诊断时间:</span>
+              <span class="detail-value">{{ selectedDiagnosisResult.timestamp }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">诊断结果:</span>
+              <span class="detail-value" :class="selectedDiagnosisResult.status === '正常' ? 'normal' : 'abnormal'">
+                {{ selectedDiagnosisResult.status }}
+              </span>
+            </div>
+            <div class="detail-row" v-if="selectedDiagnosisResult.diagnosis && selectedDiagnosisResult.diagnosis.fault_name">
+              <span class="detail-label">故障类型:</span>
+              <span class="detail-value abnormal">{{ selectedDiagnosisResult.diagnosis.fault_name }}</span>
+            </div>
+          </div>
+          
+          <div class="detail-section" v-if="selectedDiagnosisResult.indicators">
+            <div class="section-title">关键指标</div>
+            <div class="indicators-grid">
+              <div class="indicator-item" v-for="(value, key) in selectedDiagnosisResult.indicators" :key="key">
+                <span class="indicator-name">{{ key }}</span>
+                <span class="indicator-value">{{ typeof value === 'number' ? value.toFixed(4) : value }}</span>
+              </div>
             </div>
           </div>
 
-          <div class="gradient-panel">
-            <div class="gradient-bar-container">
-              <div class="gradient-label top">
-                <span class="label-value">{{ mode === "pressure" ? "35" : "90" }}</span>
-                <span class="label-unit">{{ mode === "pressure" ? "MPa" : "°C" }}</span>
-              </div>
-              <div class="gradient-track">
-                <div 
-                  class="gradient-fill" 
-                  :style="{ background: mode === 'pressure' ? pressureGradient : temperatureGradient }"
-                ></div>
-                <div class="gradient-markers">
-                  <div v-for="i in 5" :key="i" class="marker"></div>
-                </div>
-              </div>
-              <div class="gradient-label bottom">
-                <span class="label-value">{{ mode === "pressure" ? "2" : "20" }}</span>
-                <span class="label-unit">{{ mode === "pressure" ? "MPa" : "°C" }}</span>
-              </div>
+          <div class="detail-section" v-if="selectedDiagnosisResult.repairAdvice">
+            <div class="section-title">维修建议</div>
+            <div class="repair-advice">
+              {{ selectedDiagnosisResult.repairAdvice }}
             </div>
           </div>
-
-          <div class="pump2d-section">
-            <div class="pump2d-grid">
-              <div 
-                v-for="port in ['供油1-1', '供油1-2', '回油1-1', '回油1-2']" 
-                :key="port" 
-                class="pump2d-card"
-              >
-                <div class="card-header">
-                  <span class="card-title">{{ port }}</span>
-                  <span class="card-status online"></span>
-                </div>
-                <PumpModel2D 
-                  :portName="port" 
-                  :featureMap="featureMap" 
-                  :viewDirection="'z'" 
-                  :mode="mode" 
-                />
-              </div>
-            </div>
-          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="footer-btn download" @click="downloadDiagnosisReport(selectedDiagnosisResult.taskId)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            <span>下载报告</span>
+          </button>
+          <button class="footer-btn close" @click="showDiagnosisDetail = false">关闭</button>
         </div>
       </div>
     </div>
@@ -152,7 +338,7 @@ import {
   createTask,
 } from "@/api/home";
 import AIChater from "@/components/AI/AIChater.vue";
-import { stopJob } from "@/api/article";
+import { stopJob, downloadFile, fetchReportPreview } from "@/api/article";
 import { Message } from "element-ui";
 import PumpModel from "./PumpModel.vue";
 import PumpModel2D from "./PumpModel2D.vue";
@@ -207,6 +393,10 @@ export default {
       isRealtimeFromDiagnosis: false,
       diagnosisStatus: null,
       broadcastChannel: null,
+      diagnosisResults: [],
+      latestAbnormalResult: null,
+      selectedDiagnosisResult: null,
+      showDiagnosisDetail: false,
     };
   },
   computed: {
@@ -288,6 +478,10 @@ export default {
             this.diagnosisStatus = payload;
             console.log("Dashboard received status:", payload);
             break;
+          case "DIAGNOSIS_RESULT":
+            this.addDiagnosisResult(payload);
+            console.log("Dashboard received diagnosis result:", payload);
+            break;
           case "DIAGNOSIS_DATA":
             console.log("Dashboard received diagnosis data:", payload);
             break;
@@ -296,6 +490,34 @@ export default {
         }
       };
       console.log("Dashboard BroadcastChannel listener initialized");
+    },
+
+    addDiagnosisResult(result) {
+      this.diagnosisResults.unshift(result);
+      if (result.status === '异常') {
+        this.latestAbnormalResult = result;
+      }
+    },
+
+    viewDiagnosisResult(result) {
+      this.selectedDiagnosisResult = result;
+      this.showDiagnosisDetail = true;
+    },
+
+    downloadDiagnosisReport(taskId) {
+      if (taskId) {
+        downloadFile(taskId);
+        Message.success('报告下载已开始');
+      }
+    },
+
+    formatTimestamp(timestamp) {
+      if (!timestamp) return '-';
+      return timestamp;
+    },
+
+    clearAbnormalWarning() {
+      this.latestAbnormalResult = null;
     },
 
     getParticleStyle(index) {
@@ -1432,5 +1654,599 @@ export default {
   background: #00ff88;
   box-shadow: 0 0 8px #00ff88;
   animation: statusPulse 2s ease-in-out infinite;
+}
+
+.status-value.highlight {
+  color: #00ff88;
+  text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+}
+
+.alert-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background: linear-gradient(90deg, rgba(255, 0, 85, 0.15), rgba(255, 107, 0, 0.1));
+  border: 1px solid rgba(255, 0, 85, 0.4);
+  border-radius: 10px;
+  margin-bottom: 15px;
+  animation: alertPulse 2s ease-in-out infinite;
+}
+
+@keyframes alertPulse {
+  0%, 100% { box-shadow: 0 0 10px rgba(255, 0, 85, 0.2); }
+  50% { box-shadow: 0 0 20px rgba(255, 0, 85, 0.4); }
+}
+
+.alert-content {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.alert-icon {
+  width: 24px;
+  height: 24px;
+  color: #ff0055;
+  animation: alertIconPulse 1s ease-in-out infinite;
+}
+
+@keyframes alertIconPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+.alert-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.alert-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.alert-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #ff0055;
+  letter-spacing: 1px;
+}
+
+.alert-info {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.alert-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.alert-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 15px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-family: inherit;
+}
+
+.alert-btn.view {
+  background: rgba(255, 0, 85, 0.2);
+  border: 1px solid rgba(255, 0, 85, 0.5);
+  color: #ff0055;
+}
+
+.alert-btn.view:hover {
+  background: rgba(255, 0, 85, 0.3);
+  border-color: #ff0055;
+}
+
+.alert-btn.close {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.6);
+  padding: 8px;
+}
+
+.alert-btn.close:hover {
+  border-color: rgba(255, 255, 255, 0.4);
+  color: #fff;
+}
+
+.alert-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.main-content.with-sidebar {
+  flex-direction: row;
+  gap: 20px;
+}
+
+.content-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+.diagnosis-sidebar {
+  width: 320px;
+  background: linear-gradient(180deg, rgba(0, 30, 60, 0.6) 0%, rgba(0, 20, 40, 0.8) 100%);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-header {
+  padding: 15px 20px;
+  border-bottom: 1px solid rgba(0, 212, 255, 0.15);
+  background: rgba(0, 212, 255, 0.05);
+}
+
+.sidebar-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #00d4ff;
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+}
+
+.sidebar-title svg {
+  width: 20px;
+  height: 20px;
+}
+
+.sidebar-stats {
+  display: flex;
+  gap: 20px;
+}
+
+.stat-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stat-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.stat-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: #00d4ff;
+}
+
+.stat-item.abnormal .stat-value {
+  color: #ff0055;
+}
+
+.diagnosis-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+}
+
+.diagnosis-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.diagnosis-list::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 2px;
+}
+
+.diagnosis-list::-webkit-scrollbar-thumb {
+  background: rgba(0, 212, 255, 0.3);
+  border-radius: 2px;
+}
+
+.diagnosis-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 212, 255, 0.5);
+}
+
+.diagnosis-item {
+  background: rgba(0, 20, 40, 0.6);
+  border: 1px solid rgba(0, 212, 255, 0.15);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+  transition: all 0.3s ease;
+}
+
+.diagnosis-item:hover {
+  border-color: rgba(0, 212, 255, 0.3);
+  background: rgba(0, 30, 60, 0.6);
+}
+
+.diagnosis-item.abnormal {
+  border-color: rgba(255, 0, 85, 0.3);
+  background: rgba(255, 0, 85, 0.05);
+}
+
+.diagnosis-item.abnormal:hover {
+  border-color: rgba(255, 0, 85, 0.5);
+  background: rgba(255, 0, 85, 0.1);
+}
+
+.item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.item-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.item-status.normal {
+  background: rgba(0, 255, 136, 0.1);
+  color: #00ff88;
+}
+
+.item-status.abnormal {
+  background: rgba(255, 0, 85, 0.15);
+  color: #ff0055;
+}
+
+.status-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.status-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.item-time {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.item-content {
+  margin-bottom: 10px;
+}
+
+.item-filename {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.8);
+  margin-bottom: 6px;
+}
+
+.item-filename svg {
+  width: 14px;
+  height: 14px;
+  color: #00d4ff;
+}
+
+.item-fault {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.fault-label {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.fault-value {
+  color: #ff0055;
+  margin-left: 4px;
+}
+
+.item-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.action-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-family: inherit;
+}
+
+.action-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.action-btn.view {
+  background: rgba(0, 212, 255, 0.1);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  color: #00d4ff;
+}
+
+.action-btn.view:hover {
+  background: rgba(0, 212, 255, 0.2);
+  border-color: #00d4ff;
+}
+
+.action-btn.download {
+  background: rgba(0, 255, 136, 0.1);
+  border: 1px solid rgba(0, 255, 136, 0.3);
+  color: #00ff88;
+}
+
+.action-btn.download:hover {
+  background: rgba(0, 255, 136, 0.2);
+  border-color: #00ff88;
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.empty-state svg {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 15px;
+  opacity: 0.5;
+}
+
+.empty-state span {
+  font-size: 13px;
+}
+
+.empty-hint {
+  font-size: 11px !important;
+  color: rgba(255, 255, 255, 0.2);
+  margin-top: 5px;
+}
+
+.diagnosis-detail-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(5px);
+}
+
+.modal-content {
+  position: relative;
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  background: linear-gradient(135deg, rgba(10, 20, 40, 0.98) 0%, rgba(5, 15, 30, 0.98) 100%);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  border-radius: 16px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 0 50px rgba(0, 212, 255, 0.2);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 25px;
+  border-bottom: 1px solid rgba(0, 212, 255, 0.15);
+  background: rgba(0, 212, 255, 0.05);
+}
+
+.modal-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #00d4ff;
+  letter-spacing: 2px;
+}
+
+.modal-close {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.modal-close:hover {
+  background: rgba(255, 0, 85, 0.1);
+  border-color: rgba(255, 0, 85, 0.3);
+  color: #ff0055;
+}
+
+.modal-close svg {
+  width: 18px;
+  height: 18px;
+}
+
+.modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 25px;
+}
+
+.detail-section {
+  margin-bottom: 25px;
+}
+
+.detail-section:last-child {
+  margin-bottom: 0;
+}
+
+.detail-section .section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #00d4ff;
+  letter-spacing: 1px;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(0, 212, 255, 0.15);
+}
+
+.detail-row {
+  display: flex;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.detail-row:last-child {
+  border-bottom: none;
+}
+
+.detail-label {
+  width: 100px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.detail-value {
+  flex: 1;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.detail-value.normal {
+  color: #00ff88;
+}
+
+.detail-value.abnormal {
+  color: #ff0055;
+}
+
+.indicators-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.indicator-item {
+  background: rgba(0, 20, 40, 0.5);
+  border: 1px solid rgba(0, 212, 255, 0.1);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.indicator-name {
+  display: block;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 6px;
+}
+
+.indicator-value {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #00d4ff;
+}
+
+.repair-advice {
+  background: rgba(0, 20, 40, 0.5);
+  border: 1px solid rgba(0, 212, 255, 0.1);
+  border-radius: 8px;
+  padding: 15px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 20px 25px;
+  border-top: 1px solid rgba(0, 212, 255, 0.15);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.footer-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-family: inherit;
+}
+
+.footer-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.footer-btn.download {
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.2), rgba(0, 255, 136, 0.1));
+  border: 1px solid #00d4ff;
+  color: #00d4ff;
+}
+
+.footer-btn.download:hover {
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.3), rgba(0, 255, 136, 0.2));
+  box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+}
+
+.footer-btn.close {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.footer-btn.close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #fff;
 }
 </style>

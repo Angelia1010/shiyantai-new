@@ -98,6 +98,7 @@ import {
   initBroadcastChannel,
   sendFeatureMapToDashboard,
   sendStatusToDashboard,
+  sendDiagnosisResultToDashboard,
   closeBroadcastChannel
 } from '@/utils/broadcastChannel'
 
@@ -560,6 +561,18 @@ export default {
               repairAdvice: report.repair_advice,
               indicators: report.indicators,
               productInfo: report.product_info
+            }
+            
+            if (this.config.diagnosisMode === 'realtime') {
+              sendDiagnosisResultToDashboard({
+                taskId: this.currentTaskId,
+                filename: filename,
+                status: this.diagnosisResult.status,
+                timestamp: this.diagnosisResult.timestamp,
+                diagnosis: this.diagnosisResult.diagnosis,
+                repairAdvice: this.diagnosisResult.repairAdvice,
+                indicators: this.diagnosisResult.indicators
+              })
             }
             
             if (this.diagnosisResult.status === '异常') {

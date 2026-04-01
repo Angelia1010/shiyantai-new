@@ -43,6 +43,15 @@ export function sendFeatureMapToDashboard(featureMap) {
   })
 }
 
+export function sendDiagnosisResultToDashboard(result) {
+  const ch = getBroadcastChannel()
+  ch.postMessage({
+    type: 'DIAGNOSIS_RESULT',
+    payload: result,
+    timestamp: Date.now()
+  })
+}
+
 export function closeBroadcastChannel() {
   if (channel) {
     channel.close()
@@ -56,5 +65,6 @@ export default {
   sendDataToDashboard,
   sendStatusToDashboard,
   sendFeatureMapToDashboard,
+  sendDiagnosisResultToDashboard,
   closeBroadcastChannel
 }
