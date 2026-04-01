@@ -94,6 +94,12 @@ import {
 } from '@/api/amesimAPI'
 import { fetchReportPreview, downloadFile } from '@/api/article'
 import { Message } from 'element-ui'
+import {
+  initBroadcastChannel,
+  sendFeatureMapToDashboard,
+  sendStatusToDashboard,
+  closeBroadcastChannel
+} from '@/utils/broadcastChannel'
 
 export default {
   name: 'AutoDiagnosis',
@@ -137,7 +143,9 @@ export default {
       groupSize: 50,
       processedFiles: [],
       currentTaskId: null,
-      modelOpened: false
+      modelOpened: false,
+      dashboardWindow: null,
+      dashboardOpened: false
     }
   },
   beforeDestroy() {
@@ -145,6 +153,7 @@ export default {
     if (this.modelOpened) {
       closeModel().catch(() => {})
     }
+    closeBroadcastChannel()
   },
   methods: {
     addLog(message, level = 'info') {
@@ -244,6 +253,21 @@ export default {
       this.statusMessage = '监控中 - 等待新文件...'
       this.currentProcessStep = 1
 
+      initBroadcastChannel()
+      this.addLog('BroadcastChannel 已初始化', 'info')
+
+      if (!this.dashboardOpened) {
+        const dashboardUrl = `${window.location.origin}/#/?mode=realtime&source=autoDiagnosis`
+        this.dashboardWindow = window.open(dashboardUrl, '_blank')
+        this.dashboardOpened = true
+        this.addLog('已打开 Dashboard 展示页面', 'info')
+      }
+
+      sendStatusToDashboard({
+        status: 'monitoring',
+        message: '监控中 - 等待新文件...'
+      })
+
       this.monitorTimer = setInterval(async () => {
         if (!this.isRunning) return
         try {
@@ -284,6 +308,14 @@ export default {
       this.currentProcessStep = 2
       this.statusMessage = `正在处理: ${filename}`
       this.addLog(`开始处理文件: ${filename}`, 'info')
+
+      if (this.config.diagnosisMode === 'realtime') {
+        sendStatusToDashboard({
+          status: 'processing',
+          message: `正在处理: ${filename}`,
+          filename: filename
+        })
+      }
 
       try {
         this.currentTaskId = `${Date.now()}${Math.floor(Math.random() * 100000).toString().padStart(5, '0')}`
@@ -443,6 +475,9 @@ export default {
           if (Object.keys(featureMap).length > 0) {
             this.featuresQueue.push(featureMap)
             this.experimentData.push(featureMap)
+            if (this.config.diagnosisMode === 'realtime') {
+              sendFeatureMapToDashboard(featureMap)
+            }
           }
         }
 
@@ -562,6 +597,11 @@ export default {
       this.statusMessage = '已停止'
       this.addLog('诊断流程已停止', 'warn')
       Message.info('诊断已停止')
+      
+      sendStatusToDashboard({
+        status: 'stopped',
+        message: '诊断已停止'
+      })
       
       if (this.diagnosisResult) {
         this.currentStep = 3

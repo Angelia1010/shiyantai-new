@@ -156,6 +156,10 @@ import { stopJob } from "@/api/article";
 import { Message } from "element-ui";
 import PumpModel from "./PumpModel.vue";
 import PumpModel2D from "./PumpModel2D.vue";
+import {
+  getBroadcastChannel,
+  closeBroadcastChannel
+} from "@/utils/broadcastChannel";
 
 export default {
   components: {
@@ -200,6 +204,9 @@ export default {
       mode: "temperature",
       pumpState: { swashAngle: 0, rotateSpeed: 0 },
       dataType: "experiment",
+      isRealtimeFromDiagnosis: false,
+      diagnosisStatus: null,
+      broadcastChannel: null,
     };
   },
   computed: {
@@ -225,14 +232,24 @@ export default {
       ? urlParams.get("selectedItems").split(",")
       : [];
 
+    const mode = urlParams.get("mode");
+    const source = urlParams.get("source");
+    if (mode === "realtime" && source === "autoDiagnosis") {
+      this.isRealtimeFromDiagnosis = true;
+      this.initBroadcastChannelListener();
+    }
+
     console.log("urlParams:", urlParams);
     console.log("type:", this.type);
     console.log("path:", this.path);
     console.log("fault:", this.fault);
     console.log("selectedItems:", this.selectedItems);
+    console.log("isRealtimeFromDiagnosis:", this.isRealtimeFromDiagnosis);
   },
   mounted() {
-    this.run();
+    if (!this.isRealtimeFromDiagnosis) {
+      this.run();
+    }
     this.featuresConsumerTimer = setInterval(() => {
       if (this.featuresQueue && this.featuresQueue.length > 0) {
         const feature = this.featuresQueue.shift();
@@ -250,8 +267,37 @@ export default {
       clearInterval(this.featuresConsumerTimer);
       this.featuresConsumerTimer = null;
     }
+    if (this.broadcastChannel) {
+      this.broadcastChannel.close();
+      this.broadcastChannel = null;
+    }
   },
   methods: {
+    initBroadcastChannelListener() {
+      this.broadcastChannel = getBroadcastChannel();
+      this.broadcastChannel.onmessage = (event) => {
+        const { type, payload } = event.data;
+        console.log("Dashboard received broadcast message:", type, payload);
+
+        switch (type) {
+          case "FEATURE_MAP":
+            this.featuresQueue.push(payload);
+            console.log("Dashboard received featureMap:", payload);
+            break;
+          case "DIAGNOSIS_STATUS":
+            this.diagnosisStatus = payload;
+            console.log("Dashboard received status:", payload);
+            break;
+          case "DIAGNOSIS_DATA":
+            console.log("Dashboard received diagnosis data:", payload);
+            break;
+          default:
+            console.log("Unknown message type:", type);
+        }
+      };
+      console.log("Dashboard BroadcastChannel listener initialized");
+    },
+
     getParticleStyle(index) {
       const size = Math.random() * 4 + 2;
       return {
