@@ -3,8 +3,8 @@
     <el-card class="box-card" :body-style="{ padding: '20px' }">
       <!-- 查询区域 -->
       <el-form :inline="true" :model="formData" class="demo-form-inline">
-        <el-form-item label="任务名称">
-          <el-input v-model="formData.nameOrCode" placeholder="请输入名称" />
+        <el-form-item label="任务ID">
+          <el-input v-model="formData.nameOrCode" placeholder="请输入任务ID" />
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="formData.status" placeholder="请选择状态">
@@ -15,6 +15,16 @@
               :value="item.value"
             />
           </el-select>
+        </el-form-item>
+        <el-form-item label="任务时间">
+          <el-date-picker
+            v-model="formData.dateRange"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            value-format="timestamp"
+          />
         </el-form-item>
       </el-form>
       <!-- 查询按钮 -->
@@ -27,6 +37,18 @@
     <el-card class="box-card" :body-style="{ padding: '20px' }">
       <!-- 下载和添加任务按钮 -->
       <div class="btn-row">
+        <el-button 
+          v-if="multipleSelection.length > 0"
+          type="danger" 
+          size="small" 
+          @click="batchDelete"
+        >批量删除 ({{ multipleSelection.length }})</el-button>
+        <el-button 
+          v-if="multipleSelection.length > 0"
+          type="success" 
+          size="small" 
+          @click="batchDownload"
+        >批量下载 ({{ multipleSelection.length }})</el-button>
         <el-button type="primary" size="small" @click="addTask"
           >添加任务</el-button
         >
@@ -35,45 +57,81 @@
       <div class="table-container">
         <el-table
           ref="multipleTable"
-          :data="tableData"
+          :data="groupedTableData"
           tooltip-effect="dark"
           style="width: 100%"
           height="calc(100vh - 400px)"
           @selection-change="handleSelectionChange"
           border
+          row-key="groupKey"
         >
-          <el-table-column type="selection" width="55" />
-          <el-table-column prop="task_id" label="名称" width="120" />
-          <el-table-column
-            label="任务方式"
-            width="60px"
-            :header-cell-style="{ 'max-width': '60px' }"
-            :cell-style="{ 'max-width': '60px' }"
-          >
-            <template slot-scope="scope">{{
-              scope.row.type === "0" ? "默认" : "可选"
-            }}</template>
+          <el-table-column type="expand">
+            <template slot-scope="props">
+              <el-table
+                :data="props.row.originalTasks"
+                border
+                style="margin: 10px 0"
+              >
+                <el-table-column prop="task_id" label="任务ID" width="180" />
+                <el-table-column label="创建时间" width="180">
+                  <template slot-scope="scope">{{ formatTimestamp(scope.row.create_time || getTaskCreateTime(scope.row.task_id)) }}</template>
+                </el-table-column>
+                <el-table-column
+                  label="任务方式"
+                  width="80px"
+                >
+                  <template slot-scope="scope">{{
+                    scope.row.type === "0" ? "默认" : "可选"
+                  }}</template>
+                </el-table-column>
+                <el-table-column label="文件名">
+                  <template slot-scope="scope">
+                    <div v-for="(file, index) in getUniqueFileNames(scope.row.files)" :key="index">
+                      {{ file }}
+                    </div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="状态" width="100">
+                  <template slot-scope="scope">
+                    <el-tag v-if="scope.row.status === 'Completed'" type="success" size="small">已完成</el-tag>
+                    <el-tag v-else type="warning" size="small">诊断中</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="220">
+                  <template slot-scope="{ row }">
+                    <el-button size="mini" @click="deleteJob(row)">删除</el-button>
+                    <template v-if="row.status === 'Completed'">
+                      <el-button size="mini" @click="download(row)">下载</el-button>
+                      <el-button size="mini" type="primary" @click="viewReport(row)">查看</el-button>
+                    </template>
+                    <el-button v-else size="mini" disabled>诊断中</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </template>
+          </el-table-column>
+          <el-table-column type="selection" width="55" :reserve-selection="true" />
+          <el-table-column label="创建时间" width="180">
+            <template slot-scope="scope">
+              <div style="font-weight: 500">{{ formatTimestampToHour(scope.row.createTime) }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="任务数量" width="120">
+            <template slot-scope="scope">
+              <el-tag v-if="scope.row.taskCount > 1" type="info" size="medium">
+                {{ scope.row.taskCount }} 个任务
+              </el-tag>
+              <el-tag v-else type="success" size="medium">单个任务</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="完成状态" width="120">
+            <template slot-scope="scope">
+              <el-tag v-if="scope.row.status === 'Completed'" type="success" size="small">已完成</el-tag>
+              <el-tag v-else type="warning" size="small">进行中</el-tag>
+            </template>
           </el-table-column>
           <el-table-column label="工作目录">
             <template slot-scope="scope">{{ scope.row.path }}</template>
-          </el-table-column>
-          <el-table-column label="文件名">
-            <template slot-scope="scope">
-              <div v-for="file in scope.row.files.split(',')" :key="file">
-                {{ file }}
-              </div>
-            </template>
-          </el-table-column>
-
-          <el-table-column label="操作">
-            <template slot-scope="{ row }">
-              <el-button size="mini" @click="deleteJob(row)">删除</el-button>
-              <template v-if="row.status === 'Completed'">
-                <el-button size="mini" @click="download(row)">下载</el-button>
-                <el-button size="mini" type="primary" @click="viewReport(row)">查看</el-button>
-              </template>
-              <el-button v-else size="mini" disabled>诊断中</el-button>
-            </template>
           </el-table-column>
         </el-table>
       </div>
@@ -155,6 +213,7 @@ export default {
       formData: {
         nameOrCode: "",
         status: "",
+        dateRange: null,
       },
       // 状态下拉框狂数据
       optionList: [
@@ -192,6 +251,65 @@ export default {
       },
     };
   },
+  computed: {
+    groupedTableData() {
+      const groups = {};
+      
+      this.tableData.forEach(task => {
+        let createTime = task.create_time;
+        
+        if (!createTime) {
+          const taskId = task.task_id || '';
+          const timestampPart = taskId.substring(0, 13);
+          if (/^\d{13}$/.test(timestampPart)) {
+            createTime = parseInt(timestampPart);
+          } else {
+            createTime = Date.now();
+          }
+        }
+        
+        const groupKey = this.getGroupKey(createTime);
+        
+        if (!groupKey) {
+          const uniqueKey = `single_${task.task_id}`;
+          groups[uniqueKey] = {
+            groupKey: uniqueKey,
+            task_id: task.task_id,
+            type: task.type,
+            path: task.path,
+            files: task.files,
+            status: task.status,
+            createTime: createTime,
+            taskCount: 1,
+            originalTasks: [task]
+          };
+          return;
+        }
+        
+        if (!groups[groupKey]) {
+          groups[groupKey] = {
+            groupKey: groupKey,
+            task_id: task.task_id,
+            type: task.type,
+            path: task.path,
+            files: task.files,
+            status: task.status,
+            createTime: createTime,
+            taskCount: 1,
+            originalTasks: [task]
+          };
+        } else {
+          groups[groupKey].taskCount++;
+          groups[groupKey].originalTasks.push(task);
+          if (task.status === 'Completed') {
+            groups[groupKey].status = 'Completed';
+          }
+        }
+      });
+      
+      return Object.values(groups).sort((a, b) => b.createTime - a.createTime);
+    }
+  },
   created() {
     this.getList();
   },
@@ -215,6 +333,12 @@ export default {
         page: this.page.currentPage,
         pageSize: this.page.pageSize,
       };
+      
+      if (this.formData.dateRange && this.formData.dateRange.length === 2) {
+        req.startTime = this.formData.dateRange[0];
+        req.endTime = this.formData.dateRange[1];
+      }
+      
       fetchList(req).then((response) => {
         this.tableData = response.tasks;
         this.page.total = response.total_count;
@@ -265,13 +389,10 @@ export default {
     getTableList() {},
     // 取消
     cancel() {
-      // 清空查询区域数据
       this.formData = {
-        ...this.formDat,
         nameOrCode: "",
         status: "",
-        dateVal: "",
-        dateVal2: "",
+        dateRange: null,
       };
     },
     // 确定
@@ -317,6 +438,105 @@ export default {
       this.refreshInterval = setInterval(() => {
         this.getList();
       }, 5000);
+    },
+    getFileName(filePath) {
+      if (!filePath) return '';
+      const parts = filePath.split(/[/\\]/);
+      return parts[parts.length - 1] || filePath;
+    },
+    getUniqueFileNames(files) {
+      if (!files) return [];
+      const fileArray = files.split(',');
+      const uniqueNames = [...new Set(fileArray.map(file => this.getFileName(file)))];
+      return uniqueNames;
+    },
+    getGroupKey(timestamp) {
+      if (!timestamp) return null;
+      const date = new Date(timestamp);
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hour = String(date.getHours()).padStart(2, '0');
+      return `${year}-${month}-${day} ${hour}:00`;
+    },
+    formatTimestampToHour(timestamp) {
+      if (!timestamp) return '-';
+      const date = new Date(timestamp);
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hour = String(date.getHours()).padStart(2, '0');
+      return `${year}-${month}-${day} ${hour}:00`;
+    },
+    getTaskCreateTime(taskId) {
+      if (!taskId) return Date.now();
+      const timestampPart = taskId.substring(0, 13);
+      if (/^\d{13}$/.test(timestampPart)) {
+        return parseInt(timestampPart);
+      }
+      return Date.now();
+    },
+    formatTimestamp(timestamp) {
+      if (!timestamp) return '-';
+      const date = new Date(timestamp);
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      const seconds = String(date.getSeconds()).padStart(2, '0');
+      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    },
+    batchDelete() {
+      if (this.multipleSelection.length === 0) {
+        this.$message.warning('请先选择要删除的任务');
+        return;
+      }
+      
+      const allTasks = this.multipleSelection.flatMap(group => group.originalTasks);
+      
+      this.$confirm(`确定要删除选中的 ${allTasks.length} 个任务吗？`, '批量删除', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }).then(() => {
+        const deletePromises = allTasks.map(task => 
+          deleteJob(task.task_id)
+        );
+        
+        Promise.all(deletePromises)
+          .then(() => {
+            this.$message.success('批量删除成功！');
+            this.$refs.multipleTable.clearSelection();
+            this.getList();
+          })
+          .catch((error) => {
+            this.$message.error('部分任务删除失败');
+            this.getList();
+          });
+      }).catch(() => {});
+    },
+    batchDownload() {
+      if (this.multipleSelection.length === 0) {
+        this.$message.warning('请先选择要下载的任务');
+        return;
+      }
+      
+      const allTasks = this.multipleSelection.flatMap(group => group.originalTasks);
+      const completedTasks = allTasks.filter(
+        task => task.status === 'Completed'
+      );
+      
+      if (completedTasks.length === 0) {
+        this.$message.warning('选中的任务中没有已完成的任务可下载');
+        return;
+      }
+      
+      completedTasks.forEach(task => {
+        downloadFile(task.task_id);
+      });
+      
+      this.$message.success(`开始下载 ${completedTasks.length} 个任务`);
     },
   },
 };
@@ -382,5 +602,12 @@ export default {
   max-height: 70vh;
   overflow-y: auto;
   padding-right: 8px;
+}
+::v-deep .el-table__expanded-cell {
+  padding: 10px 20px;
+  background-color: #f5f7fa;
+}
+::v-deep .el-table__expanded-cell:hover {
+  background-color: #f5f7fa !important;
 }
 </style>
