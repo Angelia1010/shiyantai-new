@@ -38,17 +38,17 @@
       <!-- 下载和添加任务按钮 -->
       <div class="btn-row">
         <el-button 
-          v-if="multipleSelection.length > 0"
+          v-if="selectedTasks.length > 0"
           type="danger" 
           size="small" 
           @click="batchDelete"
-        >批量删除 ({{ multipleSelection.length }})</el-button>
+        >批量删除 ({{ selectedTasks.length }})</el-button>
         <el-button 
-          v-if="multipleSelection.length > 0"
+          v-if="selectedTasks.length > 0"
           type="success" 
           size="small" 
           @click="batchDownload"
-        >批量下载 ({{ multipleSelection.length }})</el-button>
+        >批量下载 ({{ selectedTasks.length }})</el-button>
         <el-button type="primary" size="small" @click="addTask"
           >添加任务</el-button
         >
@@ -61,17 +61,21 @@
           tooltip-effect="dark"
           style="width: 100%"
           height="calc(100vh - 400px)"
-          @selection-change="handleSelectionChange"
+          @expand-change="handleExpandChange"
           border
           row-key="groupKey"
         >
           <el-table-column type="expand">
             <template slot-scope="props">
               <el-table
+                :ref="'subTable_' + props.row.groupKey"
                 :data="props.row.originalTasks"
                 border
                 style="margin: 10px 0"
+                row-key="task_id"
+                @selection-change="(val) => handleSubSelectionChange(val, props.row)"
               >
+                <el-table-column type="selection" width="55" :reserve-selection="true" />
                 <el-table-column prop="task_id" label="任务ID" width="180" />
                 <el-table-column label="创建时间" width="180">
                   <template slot-scope="scope">{{ formatTimestamp(scope.row.create_time || getTaskCreateTime(scope.row.task_id)) }}</template>
@@ -110,7 +114,7 @@
               </el-table>
             </template>
           </el-table-column>
-          <el-table-column type="selection" width="55" :reserve-selection="true" />
+          
           <el-table-column label="创建时间" width="180">
             <template slot-scope="scope">
               <div style="font-weight: 500">{{ formatTimestampToHour(scope.row.createTime) }}</div>
@@ -241,6 +245,10 @@ export default {
       },
       // 记录多选的数据
       multipleSelection: [],
+      // 记录选中的单个任务
+      selectedTasks: [],
+      // 按组记录子表格选中状态（跨展开/收起持久化）
+      subSelections: {},
       // 表格数据
       tableData: [],
       // 诊断报告弹窗
@@ -343,11 +351,171 @@ export default {
         this.tableData = response.tasks;
         this.page.total = response.total_count;
         this.listLoading = false;
+        
+        const allTaskIds = new Set(response.tasks.map(task => task.task_id));
+        const remainingSelectedTasks = this.selectedTasks.filter(task => allTaskIds.has(task.task_id));
+        
+        const newSubSelections = {};
+        Object.keys(this.subSelections).forEach(groupKey => {
+          newSubSelections[groupKey] = (this.subSelections[groupKey] || []).filter(
+            taskId => allTaskIds.has(taskId)
+          );
+        });
+        
+        this.selectedTasks = remainingSelectedTasks;
+        this.subSelections = newSubSelections;
+        
+        this.$nextTick(() => {
+          this.restoreSelectionState();
+        });
       });
     },
     // 选择表格中的复选框触发的函数
     handleSelectionChange(val) {
       this.multipleSelection = val;
+    },
+    // 恢复选中状态
+    restoreSelectionState() {
+      this.syncAllCheckboxStates();
+    },
+    // 同步已展开的子表格选中状态
+    syncExpandedSubTables() {
+      this.syncAllCheckboxStates();
+    },
+    // 获取子表格引用
+    getSubTableRef(groupKey) {
+      const refName = 'subTable_' + groupKey;
+      const refValue = this.$refs[refName];
+      if (refValue) {
+        return Array.isArray(refValue) ? refValue[0] : refValue;
+      }
+      return null;
+    },
+    // 统一同步所有复选框状态（主表格 + 已展开的子表格）
+    syncAllCheckboxStates() {
+      const mainTable = this.$refs.multipleTable;
+      if (!mainTable) return;
+
+      this.groupedTableData.forEach(group => {
+        const groupKey = group.groupKey;
+        const subSelected = this.subSelections[groupKey] || [];
+        const selectedCount = subSelected.length;
+        const totalCount = group.originalTasks.length;
+
+        const isCurrentlySelected = mainTable.selection.some(row => row.groupKey === groupKey);
+        const shouldBeSelected = selectedCount === totalCount && totalCount > 0;
+        const isIndeterminate = selectedCount > 0 && selectedCount < totalCount;
+
+        if (shouldBeSelected && !isCurrentlySelected) {
+          mainTable.toggleRowSelection(group, true);
+        } else if (!shouldBeSelected && isCurrentlySelected) {
+          mainTable.toggleRowSelection(group, false);
+        }
+
+        this.$nextTick(() => {
+          this.setGroupIndeterminate(group, isIndeterminate);
+        });
+
+        const subTableRef = this.getSubTableRef(groupKey);
+        if (subTableRef) {
+          const selectedIds = new Set(subSelected);
+          group.originalTasks.forEach(task => {
+            const isTaskSelected = selectedIds.has(task.task_id);
+            const isCurrentlyTaskSelected = subTableRef.selection.some(
+              row => row.task_id === task.task_id
+            );
+            if (isTaskSelected !== isCurrentlyTaskSelected) {
+              subTableRef.toggleRowSelection(task, isTaskSelected);
+            }
+          });
+        }
+      });
+
+      this.multipleSelection = mainTable.selection;
+    },
+    // 子表格选择变化
+    handleSubSelectionChange(val, group) {
+      const groupKey = group.groupKey;
+      this.subSelections[groupKey] = val.map(t => t.task_id);
+      this.rebuildSelectedTasks();
+
+      const selectedCount = val.length;
+      const totalCount = group.originalTasks.length;
+      const mainTable = this.$refs.multipleTable;
+
+      if (selectedCount === totalCount && totalCount > 0) {
+        if (!mainTable.selection.find(row => row.groupKey === groupKey)) {
+          mainTable.toggleRowSelection(group, true);
+        }
+        this.setGroupIndeterminate(group, false);
+      } else if (selectedCount > 0) {
+        const isCurrentlyChecked = mainTable.selection.some(row => row.groupKey === groupKey);
+        if (isCurrentlyChecked) {
+          mainTable.toggleRowSelection(group, false);
+        }
+        this.$nextTick(() => {
+          this.setGroupIndeterminate(group, true);
+        });
+      } else {
+        mainTable.toggleRowSelection(group, false);
+        this.setGroupIndeterminate(group, false);
+      }
+
+      this.multipleSelection = mainTable.selection;
+    },
+    // 从 subSelections 重建 selectedTasks
+    rebuildSelectedTasks() {
+      const taskMap = {};
+      this.groupedTableData.forEach(group => {
+        const selectedIds = new Set(this.subSelections[group.groupKey] || []);
+        group.originalTasks.forEach(task => {
+          if (selectedIds.has(task.task_id)) {
+            taskMap[task.task_id] = task;
+          }
+        });
+      });
+      this.selectedTasks = Object.values(taskMap);
+    },
+    // 设置聚合行复选框的 indeterminate 状态
+    setGroupIndeterminate(group, indeterminate) {
+      this.$nextTick(() => {
+        const mainTable = this.$refs.multipleTable;
+        if (!mainTable) return;
+        const tableBody = mainTable.$el.querySelector('.el-table__body-wrapper');
+        if (!tableBody) return;
+        const rows = tableBody.querySelectorAll('.el-table__row');
+        for (const row of rows) {
+          const rowKey = row.getAttribute('data-row-key');
+          if (rowKey === String(group.groupKey) || rowKey === group.groupKey) {
+            const checkbox = row.querySelector('.el-checkbox');
+            if (checkbox) {
+              const checkboxInput = checkbox.querySelector('input[type="checkbox"]');
+              if (checkboxInput) {
+                checkboxInput.indeterminate = indeterminate;
+              }
+            }
+            break;
+          }
+        }
+      });
+    },
+    // 展开/收起变化处理
+    handleExpandChange(row, expandedRows) {
+      this.$nextTick(() => {
+        this.syncAllCheckboxStates();
+      });
+    },
+    // 恢复单个子表格的选中状态
+    restoreSubTableSelection(group) {
+      const groupKey = group.groupKey;
+      const selectedIds = new Set(this.subSelections[groupKey] || []);
+      const subTableRef = this.getSubTableRef(groupKey);
+
+      if (subTableRef) {
+        group.originalTasks.forEach(task => {
+          subTableRef.toggleRowSelection(task, selectedIds.has(task.task_id));
+        });
+      }
     },
     // 下载
     download(row) {
@@ -488,19 +656,17 @@ export default {
       return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
     },
     batchDelete() {
-      if (this.multipleSelection.length === 0) {
+      if (this.selectedTasks.length === 0) {
         this.$message.warning('请先选择要删除的任务');
         return;
       }
       
-      const allTasks = this.multipleSelection.flatMap(group => group.originalTasks);
-      
-      this.$confirm(`确定要删除选中的 ${allTasks.length} 个任务吗？`, '批量删除', {
+      this.$confirm(`确定要删除选中的 ${this.selectedTasks.length} 个任务吗？`, '批量删除', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
         type: 'warning'
       }).then(() => {
-        const deletePromises = allTasks.map(task => 
+        const deletePromises = this.selectedTasks.map(task => 
           deleteJob(task.task_id)
         );
         
@@ -508,6 +674,8 @@ export default {
           .then(() => {
             this.$message.success('批量删除成功！');
             this.$refs.multipleTable.clearSelection();
+            this.selectedTasks = [];
+            this.subSelections = {};
             this.getList();
           })
           .catch((error) => {
@@ -517,13 +685,12 @@ export default {
       }).catch(() => {});
     },
     batchDownload() {
-      if (this.multipleSelection.length === 0) {
+      if (this.selectedTasks.length === 0) {
         this.$message.warning('请先选择要下载的任务');
         return;
       }
       
-      const allTasks = this.multipleSelection.flatMap(group => group.originalTasks);
-      const completedTasks = allTasks.filter(
+      const completedTasks = this.selectedTasks.filter(
         task => task.status === 'Completed'
       );
       
@@ -532,11 +699,19 @@ export default {
         return;
       }
       
-      completedTasks.forEach(task => {
-        downloadFile(task.task_id);
-      });
+      this.$message.success(`开始下载 ${completedTasks.length} 个任务报告`);
       
-      this.$message.success(`开始下载 ${completedTasks.length} 个任务`);
+      completedTasks.forEach((task, index) => {
+        setTimeout(() => {
+          const iframe = document.createElement('iframe');
+          iframe.style.display = 'none';
+          iframe.src = `/db/retrieve_report/${task.task_id}`;
+          document.body.appendChild(iframe);
+          setTimeout(() => {
+            document.body.removeChild(iframe);
+          }, 60000);
+        }, index * 1000);
+      });
     },
   },
 };

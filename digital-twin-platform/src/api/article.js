@@ -9,7 +9,12 @@ export function fetchList(query) {
 }
 
 export function downloadFile(taskId) {
-  window.location.href = `/db/retrieve_report/${taskId}`;
+  const link = document.createElement('a');
+  link.href = `/db/retrieve_report/${taskId}`;
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
 export function fetchArticle(id) {
