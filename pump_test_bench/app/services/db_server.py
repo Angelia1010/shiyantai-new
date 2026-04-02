@@ -149,14 +149,24 @@ def api_retrieve_report(task_id):
 @app.route('/tasks', methods=['GET'])
 def api_get_tasks():
     try:
-        # 获取请求参数，并转换为整数类型
-        page = request.args.get('page', default=1, type=int)  # 默认第1页
-        page_size = request.args.get('pageSize', default=10, type=int)  # 默认每页10条
-        task_id = request.args.get('nameOrCode', default=None, type=str)  # 模糊查询的ID
-        status = request.args.get('status', default=None, type=str)  # 精确查询的状态
+        page = request.args.get('page', default=1, type=int)
+        page_size = request.args.get('pageSize', default=10, type=int)
+        task_id = request.args.get('nameOrCode', default=None, type=str)
+        status = request.args.get('status', default=None, type=str)
+        start_time = request.args.get('startTime', default=None, type=int)
+        end_time = request.args.get('endTime', default=None, type=int)
+        
+        if end_time is not None:
+            end_time = end_time + 86400000
 
-        # 调用分页查询函数
-        tasks = db_ops.query_tasks(page=page, page_size=page_size, task_id=task_id, status=status)
+        tasks = db_ops.query_tasks(
+            page=page, 
+            page_size=page_size, 
+            task_id=task_id, 
+            status=status,
+            start_time=start_time,
+            end_time=end_time
+        )
         return jsonify(tasks), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 400

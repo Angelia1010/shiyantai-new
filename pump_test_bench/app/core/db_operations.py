@@ -281,36 +281,39 @@ def query_tasks(
     page: int = 1,          # 第几页，默认第1页
     page_size: int = 10,    # 每页条数，默认10条
     task_id: str = None,    # 用于模糊查询的ID
-    status: str = None      # 用于精确查询的状态
+    status: str = None,     # 用于精确查询的状态
+    start_time: int = None, # 开始时间戳（毫秒）
+    end_time: int = None    # 结束时间戳（毫秒）
 ):
-    # 基础查询
+    from sqlalchemy import func, cast, Integer
     query = session.query(FaultDiagnosisTask)
 
-    # 条件查询
     if task_id:
-        # 模糊查询任务ID
-        query = query.filter(FaultDiagnosisTask.id.like(f"%{task_id}%"))
+        query = query.filter(FaultDiagnosisTask.task_id.like(f"%{task_id}%"))
     if status:
-        # 精确查询状态
         query = query.filter(FaultDiagnosisTask.status == status)
+    
+    if start_time is not None or end_time is not None:
+        timestamp_str = func.substr(FaultDiagnosisTask.task_id, 1, 13)
+        timestamp_int = cast(timestamp_str, Integer)
+        if start_time is not None:
+            query = query.filter(timestamp_int >= start_time)
+        if end_time is not None:
+            query = query.filter(timestamp_int <= end_time)
 
-    # 计算总条数
     total_count = query.count()
 
-    # 计算总页数
     total_pages = (total_count + page_size - 1) // page_size
 
-    # 分页查询
     tasks = query.offset((page - 1) * page_size).limit(page_size).all()
     tasks_data = [{"task_id": task.task_id,  "status": task.status, "type":task.type, "files":task.files, "path":task.path} for task in tasks]
 
-    # 返回结果
     return {
-        "tasks": tasks_data,          # 当前页的数据列表
-        "total_count": total_count,  # 总条数
-        "total_pages": total_pages,  # 总页数
-        "current_page": page,    # 当前页码
-        "page_size": page_size   # 每页条数
+        "tasks": tasks_data,
+        "total_count": total_count,
+        "total_pages": total_pages,
+        "current_page": page,
+        "page_size": page_size
     }
 
 # 创建数据库表
