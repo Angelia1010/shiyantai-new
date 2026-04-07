@@ -300,7 +300,7 @@ def set_comp_parameter():
                 'error': 'Missing parameter or value'
             }), 400
         
-        handler.set_comp_parameter(data['parameter'], data['value'])
+        handler.set_comp_parameter(str(data['parameter']), str(data['value']))
         return jsonify({
             'success': True,
             'message': 'Component parameter set successfully'
@@ -381,6 +381,82 @@ def close_api():
             'error': str(e)
         }), 500
 
+@app.route('/api/simulation/data-file', methods=['GET'])
+def read_data_file():
+    """读取仿真结果数据文件（.data文件）"""
+    try:
+        file_name = request.args.get('fileName')
+        if not file_name:
+            return jsonify({
+                'success': False,
+                'error': 'Missing fileName parameter'
+            }), 400
+        
+        file_path = os.path.join(MODEL_DIR, file_name)
+        
+        if not os.path.exists(file_path):
+            return jsonify({
+                'success': False,
+                'error': f'File not found: {file_name}'
+            }), 404
+        
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        return jsonify({
+            'success': True,
+            'data': content
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/simulation/input-data', methods=['POST'])
+def write_input_data():
+    """写入仿真输入数据文件（input.data）"""
+    try:
+        data = request.get_json()
+        if not data or 'data' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'Missing data parameter'
+            }), 400
+        
+        y_values = data['data']
+        if not isinstance(y_values, list):
+            return jsonify({
+                'success': False,
+                'error': 'Data must be an array'
+            }), 400
+        
+        input_file_path = os.path.join(MODEL_DIR, 'input.data')
+        
+        lines = []
+        lines.append('# Table format: 1D')
+        lines.append('# axis1_title = X')
+        lines.append('# axis2_title = Y')
+        
+        for i, y_val in enumerate(y_values):
+            x_val = (i + 1) * 0.1
+            x_formatted = f'{x_val:.16e}'
+            y_formatted = f'{float(y_val):.14e}'
+            lines.append(f'     {x_formatted}      {y_formatted}')
+        
+        with open(input_file_path, 'w', encoding='utf-8') as f:
+            f.write('\n'.join(lines) + '\n')
+        
+        return jsonify({
+            'success': True,
+            'message': f'Input data file updated with {len(y_values)} data points'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 # 错误处理
 @app.errorhandler(404)
 def not_found(error):
@@ -399,7 +475,7 @@ def internal_error(error):
 if __name__ == '__main__':
     print("Starting AMESim Flask Server...")
     print("Server will be available at http://0.0.0.0:5003")
-    app.run(host='0.0.0.0', port=5003, debug=False,threaded = False)
+    app.run(host='0.0.0.0', port=5003, debug=True,threaded = False)
     # 测试API功能
     
     # print("Init API done:",AMEInitAPI())

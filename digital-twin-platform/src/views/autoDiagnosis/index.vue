@@ -89,7 +89,9 @@ import {
   openModel,
   runSimulation,
   closeModel,
-  getSimulationResults,
+  setComponentParameter,
+  readSimulationDataFile,
+  writeInputData,
   initAmesimApi
 } from '@/api/amesimAPI'
 import { fetchReportPreview, downloadFile } from '@/api/article'
@@ -120,9 +122,21 @@ export default {
         ameModel: '',
         diagnosisMode: 'realtime',
         autoDiagnosis: true,
-        enableSimulation: false
+        enableSimulation: false,
+        electricalSpeed: null
       },
-      variableConfigs: [{ name: '', path: '' }],
+      variableConfigs: [
+        { name: '供油压力1-1', fileName: 'pressureGY11.data' },
+        { name: '供油压力1-2', fileName: 'pressureGY12.data' },
+        { name: '供油流量1-1', fileName: 'flowRateGY11.data' },
+        { name: '供油流量1-2', fileName: 'flowRateGY12.data' },
+        { name: '回油压力1-1', fileName: 'pressureHY11.data' },
+        { name: '回油压力1-2', fileName: 'pressureHY12.data' },
+        { name: '回油压力2-1', fileName: 'pressureHY21.data' },
+        { name: '回油压力2-2', fileName: 'pressureHY22.data' },
+        { name: '回油流量1-1', fileName: 'flowRateHY11.data' },
+        { name: '回油流量1-2', fileName: 'flowRateHY12.data' }
+      ],
       selectedFiles: [],
       logs: [],
       featureMap: {},
@@ -167,7 +181,7 @@ export default {
     },
 
     addVariable() {
-      this.variableConfigs.push({ name: '', path: '' })
+      this.variableConfigs.push({ name: '', fileName: '' })
     },
 
     removeVariable(index) {
@@ -506,26 +520,119 @@ export default {
 
     async runSimulationAndGetData() {
       try {
+        this.addLog('开始设置仿真参数...', 'info')
+        await this.setSimulationParameters()
+        this.addLog('仿真参数设置完成', 'success')
+
         await runSimulation()
         this.addLog('仿真运行完成', 'success')
 
-        const variables = {}
+        this.simulationData = []
         for (const config of this.variableConfigs) {
-          if (config.name.trim() && config.path.trim()) {
-            variables[config.name.trim()] = config.path.trim()
+          if (config.name.trim() && config.fileName.trim()) {
+            try {
+              const result = await readSimulationDataFile(config.fileName.trim())
+              if (result && result.data) {
+                const parsedData = this.parseSimulationDataFile(result.data, config.name.trim())
+                this.simulationData = this.simulationData.concat(parsedData)
+                this.addLog(`读取仿真文件 ${config.fileName}: ${parsedData.length} 条数据`, 'success')
+              }
+            } catch (err) {
+              this.addLog(`读取仿真文件 ${config.fileName} 失败: ${err.message}`, 'warn')
+            }
           }
         }
-
-        if (Object.keys(variables).length > 0) {
-          const result = await getSimulationResults(variables)
-          if (result && Array.isArray(result.data)) {
-            this.simulationData = result.data
-            this.addLog(`获取仿真数据: ${result.data.length} 条`, 'success')
-          }
-        }
+        this.addLog(`仿真数据获取完成，共 ${this.simulationData.length} 条记录`, 'success')
       } catch (error) {
         this.addLog('仿真运行失败: ' + error.message, 'warn')
       }
+    },
+
+    async setSimulationParameters() {
+      const fuelPumpSpeedData = this.getExperimentColumnData('燃油泵实际转速')
+      const electricalSpeedData = this.getExperimentColumnData('电传实际转速')
+      //this.addLog(fuelPumpSpeedData)
+      //this.addLog(electricalSpeedData)
+      if (fuelPumpSpeedData && fuelPumpSpeedData.length > 0) {
+        const first10 = fuelPumpSpeedData.filter(v => !isNaN(v))
+        if (first10.length > 0) {
+          const avgSpeed = first10.reduce((a, b) => a + b, 0) / first10.length
+          this.addLog(`计算燃油泵实际转速平均值: ${avgSpeed.toFixed(2)}`, 'info')
+          await setComponentParameter('speed@pmover01', avgSpeed)
+          this.addLog('已设置 speed@pmover01 参数', 'success')
+        }
+      }
+
+      if (this.config.electricalSpeed) {
+        const ordiamValues = this.getOrdiamValues(this.config.electricalSpeed)
+        if (ordiamValues) {
+          this.addLog(`电传转速 ${this.config.electricalSpeed} rpm，配置 ordiam 参数: ${ordiamValues.join('/')}`, 'info')
+          await setComponentParameter('ordiam@flowcontrol01', ordiamValues[0])
+          await setComponentParameter('ordiam@flowcontrol01_1', ordiamValues[1])
+          await setComponentParameter('ordiam@flowcontrol01_2', ordiamValues[2])
+          this.addLog('已设置三个流量控制阀 ordiam 参数', 'success')
+        }
+      }
+
+      if (electricalSpeedData && electricalSpeedData.length > 0) {
+        const filteredElectricalData = electricalSpeedData.filter(v => !isNaN(v))
+        const avgElectricalSpeed = filteredElectricalData.reduce((a, b) => a + b, 0) / filteredElectricalData.length
+        if (avgElectricalSpeed) {
+          this.addLog(`使用电传实际转速平均值${avgElectricalSpeed.toFixed(2)}更新 input.data`, 'info')
+          await writeInputData(Array(150).fill(avgElectricalSpeed))
+          this.addLog('已更新 input.data 文件', 'success')
+        }
+      }
+    },
+
+    getOrdiamValues(speed) {
+      const speedMap = {
+        1295: [2, 2, 2],
+        2999: [3, 5, 5],
+        4975: [7, 10, 10],
+        7958: [7, 7, 10],
+        9990: [6.5, 7, 7]
+      }
+      return speedMap[speed] || null
+    },
+
+    getExperimentColumnData(columnName) {
+      if (!this.experimentData || this.experimentData.length === 0) return null
+      const allValues = []
+      for (const record of this.experimentData) {
+        if (record[columnName] !== undefined) {
+          if (typeof record[columnName] === 'object' && record[columnName].avg !== undefined) {
+            allValues.push(record[columnName].avg)
+          } else if (typeof record[columnName] === 'number') {
+            allValues.push(record[columnName])
+          }
+        }
+      }
+      return allValues
+    },
+
+    parseSimulationDataFile(rawData, variableName) {
+      const lines = rawData.split('\n').filter(line => line.trim())
+      const dataLines = lines.filter(line => !line.startsWith('#'))
+      const result = []
+
+      for (const line of dataLines) {
+        const parts = line.trim().split(/\s+/)
+        if (parts.length >= 2) {
+          const x = parseFloat(parts[0])
+          const y = parseFloat(parts[1])
+          if (!isNaN(x) && !isNaN(y)) {
+            result.push({
+              [variableName]: { x, y },
+              _variableName: variableName,
+              _x: x,
+              _y: y
+            })
+          }
+        }
+      }
+
+      return result
     },
 
     async runDiagnosis(filename) {

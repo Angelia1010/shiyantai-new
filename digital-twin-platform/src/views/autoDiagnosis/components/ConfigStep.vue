@@ -69,7 +69,27 @@
               </el-input>
             </el-form-item>
 
-            <el-divider content-position="left">仿真变量配置</el-divider>
+            <el-divider content-position="left">电传转速设置</el-divider>
+            
+            <el-form-item label="电传转速">
+              <el-select 
+                v-model="localConfig.electricalSpeed" 
+                placeholder="请选择电传转速"
+                style="width: 100%;"
+              >
+                <el-option 
+                  v-for="item in electricalSpeedOptions" 
+                  :key="item.value" 
+                  :label="item.label" 
+                  :value="item.value"
+                />
+              </el-select>
+              <div class="form-tip">
+                选择电传转速后，将自动配置对应的三个流量控制参数
+              </div>
+            </el-form-item>
+
+            <el-divider content-position="left">仿真结果文件配置</el-divider>
             
             <el-form-item 
               v-for="(item, index) in variableConfigs" 
@@ -80,14 +100,14 @@
                 <el-col :span="10">
                   <el-input 
                     v-model="item.name" 
-                    placeholder="变量名"
+                    placeholder="变量名称"
                     size="small"
                   />
                 </el-col>
                 <el-col :span="10">
                   <el-input 
-                    v-model="item.path" 
-                    placeholder="变量路径"
+                    v-model="item.fileName" 
+                    placeholder="数据文件名（如 xxx.data）"
                     size="small"
                   />
                 </el-col>
@@ -139,6 +159,17 @@ export default {
     variableConfigs: {
       type: Array,
       required: true
+    }
+  },
+  data() {
+    return {
+      electricalSpeedOptions: [
+        { value: 1295, label: '1295 rpm' },
+        { value: 2999, label: '2999 rpm' },
+        { value: 4975, label: '4975 rpm' },
+        { value: 7958, label: '7958 rpm' },
+        { value: 9990, label: '9990 rpm' }
+      ]
     }
   },
   computed: {

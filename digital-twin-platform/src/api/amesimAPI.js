@@ -139,3 +139,27 @@ export function closeAmesimApi() {
         method: 'post'
     })
 }
+
+/**
+ * 读取仿真结果数据文件
+ * @param {string} fileName - 数据文件名（如 'flowRateGY11.data'）
+ */
+export function readSimulationDataFile(fileName) {
+    return request({
+        url: `${BASE_URL}/simulation/data-file`,
+        method: 'get',
+        params: { fileName }
+    })
+}
+
+/**
+ * 写入仿真输入数据文件（input.data）
+ * @param {Array} data - 要写入的数据数组（第二列Y值）
+ */
+export function writeInputData(data) {
+    return request({
+        url: `${BASE_URL}/simulation/input-data`,
+        method: 'post',
+        data: { data }
+    })
+}
