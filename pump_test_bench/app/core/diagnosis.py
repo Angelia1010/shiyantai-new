@@ -43,10 +43,13 @@ class Diagnosis:
 
     def _read_data_from_excel(self):
         """
-        读取 Excel 文件，遍历所有 sheet，找到含 X1 列的第一个 sheet。
+        读取 Excel 或 TXT 文件，遍历所有 sheet，找到含 X1 列的第一个 sheet。
         X2（介质密度）列不存在时使用默认值 DEFAULT_DENSITY。
         返回 (x1_series, x2_series, sheet_name, x1_col, x2_col)
         """
+        if self.file_name.lower().endswith('.txt'):
+            return self._read_data_from_txt()
+        
         xl = pd.ExcelFile(self.file_name, engine='openpyxl')
         for sheet in xl.sheet_names:
             df = xl.parse(sheet, dtype=object)
@@ -66,7 +69,6 @@ class Diagnosis:
                     sheet, x1_col, x2_col,
                 )
             else:
-                # 无介质密度列，用默认值填充
                 x1 = df[x1_col].dropna().reset_index(drop=True)
                 x2 = pd.Series([self.DEFAULT_DENSITY] * len(x1))
                 x2_col = f'{self.COL_DENSITY}（默认{self.DEFAULT_DENSITY}）'
@@ -75,6 +77,80 @@ class Diagnosis:
         raise ValueError(
             f"文件 '{os.path.basename(self.file_name)}' 中未找到含 '{self.COL_MASS_FLOW}' 的 sheet"
         )
+    
+    def _read_data_from_txt(self):
+        """
+        读取 TXT 文件（制表符分隔，第1行为列名，第2-3行为空，第4行开始为数据）。
+        返回 (x1_series, x2_series, sheet_name, x1_col, x2_col)
+        """
+        encoding = None
+        column_names = []
+        
+        for enc in ['utf-8', 'gbk']:
+            try:
+                with open(self.file_name, 'r', encoding=enc) as f:
+                    header_line = f.readline().strip()
+                    if header_line:
+                        column_names = header_line.split('\t')
+                        encoding = enc
+                        break
+            except (UnicodeDecodeError, UnicodeError):
+                continue
+        
+        if not column_names:
+            raise ValueError(f"无法读取文件 '{os.path.basename(self.file_name)}' 的表头")
+        
+        try:
+            df = pd.read_csv(
+                self.file_name,
+                sep='\t',
+                skiprows=[0, 1, 2],
+                header=None,
+                names=column_names,
+                index_col=False,
+                skip_blank_lines=True,
+                encoding=encoding or 'utf-8',
+                on_bad_lines='skip',
+                dtype=str
+            )
+        except Exception as e:
+            raise ValueError(f"读取txt文件失败: {e}")
+        
+        expected_cols = len(column_names)
+        actual_cols = len(df.columns)
+        
+        if actual_cols != expected_cols:
+            if actual_cols > expected_cols:
+                df = df.iloc[:, :expected_cols]
+            else:
+                while len(df.columns) < expected_cols:
+                    df[f'_extra_{len(df.columns)}'] = ''
+                df = df[column_names]
+        
+        for col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        print(f"[诊断] TXT文件列名: {[col for col in df.columns if '质量流量' in col or '密度' in col]}")
+        
+        x1_col = self._find_col(df, self.COL_MASS_FLOW)
+        if not x1_col:
+            raise ValueError(
+                f"文件 '{os.path.basename(self.file_name)}' 中未找到含 '{self.COL_MASS_FLOW}' 的列"
+            )
+        
+        x2_col = self._find_col(df, self.COL_DENSITY)
+        if x2_col:
+            valid = df[[x1_col, x2_col]].dropna()
+            return (
+                valid[x1_col].reset_index(drop=True),
+                valid[x2_col].reset_index(drop=True),
+                'data', x1_col, x2_col,
+            )
+        else:
+            x1 = df[x1_col].dropna().reset_index(drop=True)
+            x2 = pd.Series([self.DEFAULT_DENSITY] * len(x1))
+            x2_col = f'{self.COL_DENSITY}（默认{self.DEFAULT_DENSITY}）'
+            return x1, x2, 'data', x1_col, x2_col
 
     # ------------------------------------------------------------------ #
     #  诊断主流程                                                           #

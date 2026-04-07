@@ -255,6 +255,104 @@ def handle_request_all_data(file_path, sheet_names):
     }
     return result_res
 
+class TxtProcessor:
+    def __init__(self, file_path, fixed_chunk_size=500):
+        self.file_path = file_path
+        self.fixed_chunk_size = fixed_chunk_size
+        self.column_names = []
+        self._encoding = None
+        self._load_header()
+    
+    def _load_header(self):
+        for enc in ['utf-8', 'gbk']:
+            try:
+                with open(self.file_path, 'r', encoding=enc) as f:
+                    header_line = f.readline().strip()
+                    if header_line:
+                        self.column_names = header_line.split('\t')
+                        self._encoding = enc
+                        return
+            except (UnicodeDecodeError, UnicodeError):
+                continue
+        print(f"读取txt文件头失败: 无法解码")
+        self.column_names = []
+    
+    def _read_with_encoding(self, skiprows):
+        try:
+            return pd.read_csv(
+                self.file_path,
+                sep='\t',
+                skiprows=skiprows,
+                header=None,
+                names=self.column_names,
+                index_col=False,
+                nrows=self.fixed_chunk_size,
+                encoding=self._encoding or 'utf-8',
+                on_bad_lines='skip',
+                dtype=str
+            )
+        except Exception as e:
+            print(f"读取txt文件失败 (encoding={self._encoding}): {e}")
+            return pd.DataFrame()
+    
+    def get_page_data(self, page):
+        try:
+            start_row = page * self.fixed_chunk_size
+            
+            if start_row == 0:
+                skiprows = [0, 1, 2]
+            else:
+                skiprows = list(range(start_row + 3))
+            
+            df = self._read_with_encoding(skiprows)
+            
+            if df.empty:
+                return df
+            
+            expected_cols = len(self.column_names)
+            actual_cols = len(df.columns)
+            
+            if actual_cols != expected_cols:
+                if actual_cols > expected_cols:
+                    df = df.iloc[:, :expected_cols]
+                else:
+                    while len(df.columns) < expected_cols:
+                        df[f'_extra_{len(df.columns)}'] = ''
+                    df = df[self.column_names]
+            
+            for col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            return df
+        except Exception as e:
+            print(f"读取txt文件分页数据失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return pd.DataFrame()
+    
+    def stream_data(self, sheet_names, page):
+        result = {}
+        for sheet_name in sheet_names:
+            data_chunk = self.get_page_data(page)
+            if not data_chunk.empty:
+                result[sheet_name] = {
+                    'data_chunk': data_chunk,
+                }
+        return result
+
+def handle_request_txt_page_data(file_path, sheet_names, page, page_size=500):
+    """处理txt文件请求并返回指定页的数据，返回格式与Excel相同"""
+    processor = TxtProcessor(file_path, fixed_chunk_size=page_size)
+    result = processor.stream_data(sheet_names, page)
+    result_res = {
+        key: {
+            column: result[key]['data_chunk'][column].astype(str).tolist()
+            for column in result[key]['data_chunk'].columns
+        }
+        for key in result.keys()
+    }
+    return result_res
+
 def main():
     """测试接口功能"""
     parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))

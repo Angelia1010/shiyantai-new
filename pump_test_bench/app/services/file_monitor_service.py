@@ -12,7 +12,7 @@ import threading
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 print("项目根目录（上一级目录）:", parent_dir)
 sys.path.append(parent_dir)
-from app.core.table_processor import handle_request_all_data,handle_request_page_data
+from app.core.table_processor import handle_request_all_data,handle_request_page_data,handle_request_txt_page_data
 from app.core.tmds_data_process import handle_request_tmds_data
 
 # 初始化 Flask 应用
@@ -40,7 +40,7 @@ def get_files():
             return jsonify({"error": "path parameter is required"}), 400
         files = [f for f in os.listdir(path) 
          if os.path.isfile(os.path.join(path, f)) 
-         and f.lower().endswith((".tdms", ".xlsx", ".xls"))]
+         and f.lower().endswith((".tdms", ".xlsx", ".xls", ".txt"))]
         return jsonify({"files": files}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -133,13 +133,15 @@ def read_excel():
             continue
         
         # 验证文件扩展名
-        if not file_path.lower().endswith(('.xlsx', '.xls')):
-            file_data[file_name] = {"error": "Invalid file type. Only .xlsx and .xls files are supported"}
+        if not file_path.lower().endswith(('.xlsx', '.xls', '.txt')):
+            file_data[file_name] = {"error": "Invalid file type. Only .xlsx, .xls and .txt files are supported"}
             continue
         
         try:
-            # 调用处理函数读取Excel分页数据
-            page_data_response = handle_request_page_data(file_path, sheet_names, page, page_size)
+            if file_path.lower().endswith('.txt'):
+                page_data_response = handle_request_txt_page_data(file_path, sheet_names, page, page_size)
+            else:
+                page_data_response = handle_request_page_data(file_path, sheet_names, page, page_size)
             file_data[file_name] = {
                 "data": page_data_response,
                 "sheet_names": sheet_names,
