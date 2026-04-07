@@ -58,6 +58,7 @@
         :diagnosis-result="diagnosisResult"
         :experiment-data="experimentData"
         :simulation-data="simulationData"
+        :simulation-variables="simulationVariables"
         :data-features="dataFeatures"
         :config="config"
         @prev="currentStep = 2"
@@ -142,7 +143,8 @@ export default {
       featureMap: {},
       diagnosisResult: null,
       experimentData: [],
-      simulationData: [],
+      simulationData: {},
+      simulationVariables: [],
       dataFeatures: {
         rowCount: 0,
         columnCount: 0,
@@ -527,14 +529,17 @@ export default {
         await runSimulation()
         this.addLog('仿真运行完成', 'success')
 
-        this.simulationData = []
+        this.simulationData = {}
+        this.simulationVariables = []
+        
         for (const config of this.variableConfigs) {
           if (config.name.trim() && config.fileName.trim()) {
             try {
               const result = await readSimulationDataFile(config.fileName.trim())
               if (result && result.data) {
                 const parsedData = this.parseSimulationDataFile(result.data, config.name.trim())
-                this.simulationData = this.simulationData.concat(parsedData)
+                this.simulationData[config.name.trim()] = parsedData
+                this.simulationVariables.push(config.name.trim())
                 this.addLog(`读取仿真文件 ${config.fileName}: ${parsedData.length} 条数据`, 'success')
               }
             } catch (err) {
@@ -542,7 +547,9 @@ export default {
             }
           }
         }
-        this.addLog(`仿真数据获取完成，共 ${this.simulationData.length} 条记录`, 'success')
+        
+        const totalPoints = Object.values(this.simulationData).reduce((sum, arr) => sum + arr.length, 0)
+        this.addLog(`仿真数据获取完成，共 ${this.simulationVariables.length} 个变量，${totalPoints} 条记录`, 'success')
       } catch (error) {
         this.addLog('仿真运行失败: ' + error.message, 'warn')
       }
@@ -614,7 +621,7 @@ export default {
     parseSimulationDataFile(rawData, variableName) {
       const lines = rawData.split('\n').filter(line => line.trim())
       const dataLines = lines.filter(line => !line.startsWith('#'))
-      const result = []
+      const allPoints = []
 
       for (const line of dataLines) {
         const parts = line.trim().split(/\s+/)
@@ -622,14 +629,28 @@ export default {
           const x = parseFloat(parts[0])
           const y = parseFloat(parts[1])
           if (!isNaN(x) && !isNaN(y)) {
-            result.push({
-              [variableName]: { x, y },
-              _variableName: variableName,
-              _x: x,
-              _y: y
-            })
+            allPoints.push({ x, y })
           }
         }
+      }
+
+      const maxDataPoints = 300
+      const sampledPoints = this.sampleDataPoints(allPoints, maxDataPoints)
+
+      return sampledPoints.map(point => point.y)
+    },
+
+    sampleDataPoints(points, maxPoints) {
+      if (points.length <= maxPoints) {
+        return points
+      }
+
+      const result = []
+      const step = points.length / maxPoints
+      
+      for (let i = 0; i < maxPoints; i++) {
+        const index = Math.floor(i * step)
+        result.push(points[index])
       }
 
       return result
@@ -751,7 +772,8 @@ export default {
       this.featureMap = {}
       this.diagnosisResult = null
       this.experimentData = []
-      this.simulationData = []
+      this.simulationData = {}
+      this.simulationVariables = []
       this.processedFiles = []
       this.statusMessage = '等待启动'
     },

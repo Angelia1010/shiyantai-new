@@ -100,7 +100,7 @@
                   size="small" 
                   :type="chartMode === 'simulation' ? 'primary' : ''"
                   @click="chartMode = 'simulation'; updateChart()"
-                  :disabled="!config.enableSimulation || simulationData.length === 0"
+                  :disabled="!config.enableSimulation || Object.keys(simulationData).length === 0"
                 >
                   仿真数据
                 </el-button>
@@ -108,7 +108,7 @@
                   size="small" 
                   :type="chartMode === 'compare' ? 'primary' : ''"
                   @click="chartMode = 'compare'; updateChart()"
-                  :disabled="!config.enableSimulation || simulationData.length === 0"
+                  :disabled="!config.enableSimulation || Object.keys(simulationData).length === 0"
                 >
                   对比
                 </el-button>
@@ -159,6 +159,10 @@ export default {
       default: () => []
     },
     simulationData: {
+      type: Object,
+      default: () => ({})
+    },
+    simulationVariables: {
       type: Array,
       default: () => []
     },
@@ -288,7 +292,7 @@ export default {
         }
       }
 
-      if ((this.chartMode === 'simulation' || this.chartMode === 'compare') && this.simulationData.length > 0) {
+      if ((this.chartMode === 'simulation' || this.chartMode === 'compare') && Object.keys(this.simulationData).length > 0) {
         const simData = this.extractSimulationData(this.simulationData, this.selectedField)
         console.log('updateChart - simData length:', simData.length)
         if (simData.length > 0) {
@@ -337,14 +341,23 @@ export default {
       console.log('extractFieldData - result sample:', result.slice(0, 5))
       return result
     },
-    extractSimulationData(data, field) {
-      return data.map(item => {
-        const value = item[field]
+    extractSimulationData(simulationDataObj, field) {
+      console.log('extractSimulationData - field:', field)
+      console.log('extractSimulationData - available variables:', Object.keys(simulationDataObj))
+      
+      if (!simulationDataObj[field]) {
+        console.log('extractSimulationData - field not found in simulation data')
+        return []
+      }
+      
+      const data = simulationDataObj[field]
+      console.log('extractSimulationData - data length:', data.length)
+      console.log('extractSimulationData - data sample:', data.slice(0, 5))
+      
+      return data.map(value => {
         if (typeof value === 'number') return value
-        // 处理可能是字符串的数字
         const numValue = parseFloat(value)
-        if (!isNaN(numValue)) return numValue
-        return null
+        return isNaN(numValue) ? null : numValue
       }).filter(v => v !== null)
     },
     getStatusType(status) {
