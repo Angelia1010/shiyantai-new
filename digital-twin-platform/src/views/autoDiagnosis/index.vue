@@ -690,7 +690,8 @@ export default {
         task_id: this.currentTaskId,
         experiment_data: this.experimentData,
         simulation_data: this.simulationData,
-        file_name: filename
+        file_name: filename,
+        path: this.config.dataPath
       }
 
       const prelimResult = await preliminaryDiagnose(payload)

@@ -322,7 +322,7 @@ DEFAULT_DEVIATION_THRESHOLD = 0.15
 DEFAULT_EXCEEDED_LIMIT = 3
 
 def preliminary_diagnose(task_id, experiment_data, simulation_data,
-                         threshold=None, exceeded_limit=None, file_name=None):
+                         threshold=None, exceeded_limit=None, file_name=None, path=None):
     """
     初步诊断：对比仿真数据与试验数据，判断是否存在异常。
 
@@ -332,6 +332,7 @@ def preliminary_diagnose(task_id, experiment_data, simulation_data,
     :param threshold: 偏差阈值（相对偏差，默认0.15即15%）
     :param exceeded_limit: 超限变量数量阈值（默认3）
     :param file_name: 文件名（用于精确诊断时传入）
+    :param path: 文件路径（用于拼接完整文件路径）
     :return: dict 包含初步诊断结果
     """
     thr = threshold if threshold is not None else DEFAULT_DEVIATION_THRESHOLD
@@ -408,7 +409,8 @@ def preliminary_diagnose(task_id, experiment_data, simulation_data,
 
     if is_abnormal and file_name:
         try:
-            store_fault_diagnosis_report(task_id, '0', file_name=file_name)
+            full_file_path = os.path.join(path, file_name) if path else file_name
+            store_fault_diagnosis_report(task_id, '0', file_name=full_file_path)
             result['precise_diagnosis_triggered'] = True
         except Exception as e:
             result['precise_diagnosis_triggered'] = False

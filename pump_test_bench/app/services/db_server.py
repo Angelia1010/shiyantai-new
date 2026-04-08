@@ -259,6 +259,7 @@ def api_preliminary_diagnose():
         threshold = data.get('threshold')
         exceeded_limit = data.get('exceeded_limit')
         file_name = data.get('file_name')
+        path = data.get('path')
 
         result = db_ops.preliminary_diagnose(
             task_id=task_id,
@@ -266,7 +267,8 @@ def api_preliminary_diagnose():
             simulation_data=simulation_data,
             threshold=threshold,
             exceeded_limit=exceeded_limit,
-            file_name=file_name
+            file_name=file_name,
+            path=path
         )
 
         return jsonify(result), 200
