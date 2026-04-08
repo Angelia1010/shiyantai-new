@@ -3,6 +3,8 @@ import os
 import io
 import sys
 import base64
+import json
+import math
 from sqlalchemy import create_engine, Column, Integer, String, LargeBinary
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -315,6 +317,199 @@ def query_tasks(
         "current_page": page,
         "page_size": page_size
     }
+
+DEFAULT_DEVIATION_THRESHOLD = 0.15
+DEFAULT_EXCEEDED_LIMIT = 3
+
+def preliminary_diagnose(task_id, experiment_data, simulation_data,
+                         threshold=None, exceeded_limit=None, file_name=None):
+    """
+    初步诊断：对比仿真数据与试验数据，判断是否存在异常。
+
+    :param task_id: 任务ID
+    :param experiment_data: 试验数据，格式为 [{field: {avg, max, min}}, ...]
+    :param simulation_data: 仿真数据，格式为 {var_name: [values...]}
+    :param threshold: 偏差阈值（相对偏差，默认0.15即15%）
+    :param exceeded_limit: 超限变量数量阈值（默认3）
+    :param file_name: 文件名（用于精确诊断时传入）
+    :return: dict 包含初步诊断结果
+    """
+    thr = threshold if threshold is not None else DEFAULT_DEVIATION_THRESHOLD
+    limit = exceeded_limit if exceeded_limit is not None else DEFAULT_EXCEEDED_LIMIT
+
+    deviation_details = []
+    common_vars = set()
+
+    if simulation_data:
+        for var_name in simulation_data.keys():
+            common_vars.add(var_name)
+
+    exp_records = experiment_data if isinstance(experiment_data, list) else []
+    sim_data_map = simulation_data if isinstance(simulation_data, dict) else {}
+
+    for var_name in common_vars:
+        exp_values = []
+        for record in exp_records:
+            if var_name in record:
+                val = record[var_name]
+                if isinstance(val, dict) and 'avg' in val:
+                    v = val['avg']
+                elif isinstance(val, (int, float)):
+                    v = val
+                else:
+                    continue
+                try:
+                    exp_values.append(float(v))
+                except (TypeError, ValueError):
+                    continue
+
+        sim_values = sim_data_map.get(var_name, [])
+        if isinstance(sim_values, list):
+            sim_values = [float(v) for v in sim_values if isinstance(v, (int, float))]
+
+        if not exp_values or not sim_values:
+            continue
+
+        exp_avg = sum(exp_values) / len(exp_values)
+        sim_avg = sum(sim_values) / len(sim_values)
+
+        if abs(exp_avg) < 1e-9:
+            rel_deviation = abs(sim_avg - exp_avg)
+        else:
+            rel_deviation = abs(sim_avg - exp_avg) / abs(exp_avg)
+
+        exceeded = rel_deviation > thr
+        deviation_details.append({
+            'variable': var_name,
+            'experiment_avg': round(exp_avg, 6),
+            'simulation_avg': round(sim_avg, 6),
+            'deviation': round(rel_deviation, 6),
+            'threshold': thr,
+            'exceeded': exceeded
+        })
+
+    exceeded_count = sum(1 for d in deviation_details if d['exceeded'])
+    is_abnormal = exceeded_count > limit
+
+    result = {
+        'is_abnormal': is_abnormal,
+        'exceeded_count': exceeded_count,
+        'total_compared': len(deviation_details),
+        'exceeded_limit': limit,
+        'threshold': thr,
+        'deviation_details': deviation_details,
+        'preliminary_conclusion': (
+            f'初步诊断：共对比 {len(deviation_details)} 个变量，'
+            f'{exceeded_count} 个变量偏差超过阈值 ({thr*100:.1f}%)，'
+            f'超限阈值={limit}。'
+            f'{"系统存在异常，将执行精确诊断。" if is_abnormal else "系统状态正常。"}'
+        )
+    }
+
+    if is_abnormal and file_name:
+        try:
+            store_fault_diagnosis_report(task_id, '0', file_name=file_name)
+            result['precise_diagnosis_triggered'] = True
+        except Exception as e:
+            result['precise_diagnosis_triggered'] = False
+            result['precise_error'] = str(e)
+    elif not is_abnormal:
+        _store_preliminary_normal_result(task_id, result, file_name)
+        result['precise_diagnosis_triggered'] = False
+
+    return result
+
+
+def _store_preliminary_normal_result(task_id, prelim_result, file_name=None):
+    """
+    将初步诊断正常结果存入数据库，格式与精确诊断一致以便前端统一展示。
+    """
+    product_info = {
+        'name': '试验台故障诊断报告',
+        'date': datetime.now().strftime('%Y-%m-%d'),
+        'serial': 'FP-2023-0521',
+        'diag_date': datetime.now().strftime('%Y-%m-%d'),
+        'operator': '操作员',
+        'system': '测试台'
+    }
+
+    indicators = []
+    for d in prelim_result.get('deviation_details', []):
+        indicators.append({
+            'name': f"{d['variable']}（偏差）",
+            'reference': f'阈值 ±{d["threshold"]*100:.1f}%',
+            'value': f'{d["deviation"]*100:.2f}%{" ⚠️超限" if d["exceeded"] else ""}'
+        })
+    indicators.append({
+        'name': '超限变量数',
+        'reference': f'≤{prelim_result["exceeded_limit"]}',
+        'value': str(prelim_result['exceeded_count'])
+    })
+    indicators.append({
+        'name': '对比变量总数',
+        'reference': '—',
+        'value': str(prelim_result['total_compared'])
+    })
+
+    diagnosis = {
+        'fault_name': '' if not prelim_result['is_abnormal'] else '待精确诊断',
+        'location': f'超限变量数: {prelim_result["exceeded_count"]}/{prelim_result["total_compared"]}',
+        'analysis': prelim_result['preliminary_conclusion']
+    }
+
+    repair_advice = (
+        f'【初步诊断结果】\n'
+        f'{prelim_result["preliminary_conclusion"]}\n\n'
+        f'各变量偏差详情：\n'
+    )
+    for d in prelim_result.get('deviation_details', []):
+        flag = "⚠️" if d['exceeded'] else "✓"
+        repair_advice += (
+            f'  {flag} {d["variable"]}: '
+            f'试验均值={d["experiment_avg"]:.4f}, '
+            f'仿真均值={d["simulation_avg"]:.4f}, '
+            f'偏差={d["deviation"]*100:.2f}%\n'
+        )
+    repair_advice += '\n系统状态正常，无需进一步精确诊断。'
+
+    reporter = FuelPumpDiagnosisReporter()
+    report_base64 = reporter.generate_report(
+        product_info=product_info,
+        indicators=indicators,
+        diagnosis=diagnosis,
+        repair_advice=repair_advice
+    )
+
+    report_json_obj = {
+        'product_info': product_info,
+        'indicators': indicators,
+        'diagnosis': diagnosis,
+        'repair_advice': repair_advice,
+        'is_preliminary': True
+    }
+    report_json_str = json.dumps(report_json_obj, ensure_ascii=False)
+
+    task = session.query(FaultDiagnosisTask).filter_by(task_id=task_id).first()
+    if task:
+        task.report_data = base64.b64decode(report_base64)
+        task.report_json = report_json_str
+        if file_name:
+            task.files = f"{task.files},{file_name}" if task.files else file_name
+        task.status = 'Completed'
+    else:
+        task = FaultDiagnosisTask(
+            task_id=task_id,
+            type='0',
+            files=file_name or '',
+            report_data=base64.b64decode(report_base64),
+            report_json=report_json_str,
+            status='Completed',
+            path=''
+        )
+
+    session.add(task)
+    session.commit()
+
 
 # 创建数据库表
 def create_tables():

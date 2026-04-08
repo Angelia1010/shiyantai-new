@@ -83,6 +83,7 @@ import {
   createTask,
   storeReport,
   diagnose,
+  preliminaryDiagnose,
   getJobStatus,
   setWatchPath
 } from '@/api/home'
@@ -666,59 +667,156 @@ export default {
       this.addLog(`任务ID: ${this.currentTaskId}`, 'info')
       
       try {
-        this.addLog('正在调用诊断API...', 'info')
-        await diagnose(this.currentTaskId, this.config.dataPath, filename)
-        this.addLog('诊断API调用成功，等待结果...', 'info')
-        
-        let attempts = 0
-        const maxAttempts = 60
-        
-        while (attempts < maxAttempts && this.isRunning) {
-          this.addLog(`检查诊断状态 (尝试 ${attempts + 1}/${maxAttempts})`, 'info')
-          const status = await getJobStatus(this.currentTaskId)
-          this.addLog(`当前状态: ${status.status}`, 'info')
-          
-          if (status.status === 'Completed') {
-            this.addLog('诊断完成，获取报告...', 'info')
-            const report = await fetchReportPreview(this.currentTaskId)
-            this.diagnosisResult = {
-              taskId: this.currentTaskId,
-              status: report.diagnosis && report.diagnosis.fault_name ? '异常' : '正常',
-              timestamp: new Date().toLocaleString(),
-              diagnosis: report.diagnosis,
-              repairAdvice: report.repair_advice,
-              indicators: report.indicators,
-              productInfo: report.product_info
-            }
-            
-            if (this.config.diagnosisMode === 'realtime') {
-              sendDiagnosisResultToDashboard({
-                taskId: this.currentTaskId,
-                filename: filename,
-                status: this.diagnosisResult.status,
-                timestamp: this.diagnosisResult.timestamp,
-                diagnosis: this.diagnosisResult.diagnosis,
-                repairAdvice: this.diagnosisResult.repairAdvice,
-                indicators: this.diagnosisResult.indicators
-              })
-            }
-            
-            if (this.diagnosisResult.status === '异常') {
-              this.showAbnormalAlert(filename)
-            }
-            
-            this.addLog(`诊断完成: ${filename}`, 'success')
-            break
-          }
-          attempts++
-          await this.sleep(2000)
-        }
-        
-        if (attempts >= maxAttempts) {
-          this.addLog('诊断超时，请检查后端服务', 'warn')
+        const hasSimulationData = this.config.enableSimulation && 
+          this.modelOpened && 
+          Object.keys(this.simulationData).length > 0
+
+        if (hasSimulationData && this.experimentData.length > 0) {
+          this.addLog('检测到仿真数据，启动初步诊断（仿真 vs 试验对比）...', 'info')
+          await this.runPreliminaryDiagnosis(filename)
+        } else {
+          this.addLog('无仿真数据或试验数据不足，跳过初步诊断，直接执行精确诊断', 'info')
+          await this.runPreciseDiagnosis(filename)
         }
       } catch (error) {
         this.addLog('诊断失败: ' + error.message, 'error')
+      }
+    },
+
+    async runPreliminaryDiagnosis(filename) {
+      this.addLog('正在调用初步诊断API...', 'info')
+
+      const payload = {
+        task_id: this.currentTaskId,
+        experiment_data: this.experimentData,
+        simulation_data: this.simulationData,
+        file_name: filename
+      }
+
+      const prelimResult = await preliminaryDiagnose(payload)
+      this.addLog(`初步诊断完成: ${prelimResult.preliminary_conclusion}`, 'info')
+      this.addLog(
+        `对比变量: ${prelimResult.total_compared}个, ` +
+        `超限: ${prelimResult.exceeded_count}个, ` +
+        `阈值: ${prelimResult.exceeded_limit}个`,
+        prelimResult.is_abnormal ? 'warn' : 'success'
+      )
+
+      if (prelimResult.is_abnormal) {
+        if (prelimResult.precise_diagnosis_triggered) {
+          this.addLog(`初步判定异常，后端已完成精确诊断，获取报告...`, 'warn')
+          const report = await fetchReportPreview(this.currentTaskId)
+          this.diagnosisResult = {
+            taskId: this.currentTaskId,
+            status: report.diagnosis && report.diagnosis.fault_name ? '异常' : '正常',
+            timestamp: new Date().toLocaleString(),
+            diagnosis: report.diagnosis,
+            repairAdvice: report.repair_advice,
+            indicators: report.indicators,
+            productInfo: report.product_info
+          }
+
+          if (this.config.diagnosisMode === 'realtime') {
+            sendDiagnosisResultToDashboard({
+              taskId: this.currentTaskId,
+              filename: filename,
+              status: this.diagnosisResult.status,
+              timestamp: this.diagnosisResult.timestamp,
+              diagnosis: this.diagnosisResult.diagnosis,
+              repairAdvice: this.diagnosisResult.repairAdvice,
+              indicators: this.diagnosisResult.indicators
+            })
+          }
+
+          if (this.diagnosisResult.status === '异常') {
+            this.showAbnormalAlert(filename)
+          }
+
+          this.addLog(`诊断完成(初步异常→精确): ${filename}`, 'success')
+        } else {
+          this.addLog(`初步判定异常，但后端精确诊断失败: ${prelimResult.precise_error || '未知错误'}，尝试前端调用精确诊断...`, 'warn')
+          await this.runPreciseDiagnosis(filename)
+        }
+      } else {
+        this.addLog('初步判定正常，获取正常结果报告...', 'success')
+        const report = await fetchReportPreview(this.currentTaskId)
+        this.diagnosisResult = {
+          taskId: this.currentTaskId,
+          status: report.diagnosis && report.diagnosis.fault_name ? '异常' : '正常',
+          timestamp: new Date().toLocaleString(),
+          diagnosis: report.diagnosis,
+          repairAdvice: report.repair_advice,
+          indicators: report.indicators,
+          productInfo: report.product_info
+        }
+
+        if (this.config.diagnosisMode === 'realtime') {
+          sendDiagnosisResultToDashboard({
+            taskId: this.currentTaskId,
+            filename: filename,
+            status: this.diagnosisResult.status,
+            timestamp: this.diagnosisResult.timestamp,
+            diagnosis: this.diagnosisResult.diagnosis,
+            repairAdvice: this.diagnosisResult.repairAdvice,
+            indicators: this.diagnosisResult.indicators
+          })
+        }
+
+        this.addLog(`诊断完成(初步-正常): ${filename}`, 'success')
+      }
+    },
+
+    async runPreciseDiagnosis(filename) {
+      this.addLog('正在调用精确诊断API...', 'info')
+      await diagnose(this.currentTaskId, this.config.dataPath, filename)
+      this.addLog('精确诊断API调用成功，等待结果...', 'info')
+      
+      let attempts = 0
+      const maxAttempts = 60
+      
+      while (attempts < maxAttempts && this.isRunning) {
+        this.addLog(`检查诊断状态 (尝试 ${attempts + 1}/${maxAttempts})`, 'info')
+        const status = await getJobStatus(this.currentTaskId)
+        this.addLog(`当前状态: ${status.status}`, 'info')
+        
+        if (status.status === 'Completed') {
+          this.addLog('精确诊断完成，获取报告...', 'info')
+          const report = await fetchReportPreview(this.currentTaskId)
+          this.diagnosisResult = {
+            taskId: this.currentTaskId,
+            status: report.diagnosis && report.diagnosis.fault_name ? '异常' : '正常',
+            timestamp: new Date().toLocaleString(),
+            diagnosis: report.diagnosis,
+            repairAdvice: report.repair_advice,
+            indicators: report.indicators,
+            productInfo: report.product_info
+          }
+          
+          if (this.config.diagnosisMode === 'realtime') {
+            sendDiagnosisResultToDashboard({
+              taskId: this.currentTaskId,
+              filename: filename,
+              status: this.diagnosisResult.status,
+              timestamp: this.diagnosisResult.timestamp,
+              diagnosis: this.diagnosisResult.diagnosis,
+              repairAdvice: this.diagnosisResult.repairAdvice,
+              indicators: this.diagnosisResult.indicators
+            })
+          }
+          
+          if (this.diagnosisResult.status === '异常') {
+            this.showAbnormalAlert(filename)
+          }
+          
+          this.addLog(`诊断完成(精确): ${filename}`, 'success')
+          break
+        }
+        attempts++
+        await this.sleep(2000)
+      }
+      
+      if (attempts >= maxAttempts) {
+        this.addLog('诊断超时，请检查后端服务', 'warn')
       }
     },
 

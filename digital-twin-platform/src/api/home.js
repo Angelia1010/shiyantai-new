@@ -69,6 +69,14 @@ export function diagnose(task_id, path, file_name) {
   })
 }
 
+export function preliminaryDiagnose(data) {
+  return request({
+    url: `/db/preliminary_diagnose`,
+    method: 'post',
+    data
+  })
+}
+
 
 export async function storeReport(data) {
   console.log('storeReport', data)

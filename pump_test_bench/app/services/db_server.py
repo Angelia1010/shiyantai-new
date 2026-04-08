@@ -236,6 +236,45 @@ def diagnose():
         return jsonify({"error": str(e)}), 400
 
 
+# ============ 初步诊断接口（仿真数据 vs 试验数据对比） ============
+
+@app.route('/preliminary_diagnose', methods=['POST'])
+def api_preliminary_diagnose():
+    """
+    初步诊断：接收试验数据和仿真数据，对比各变量偏差。
+    - 超过阈值变量数 > exceeded_limit 时判定为异常，自动触发精确诊断
+    - 否则返回正常结果，不触发精确诊断
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            raise ValueError("请求体必须是JSON格式")
+
+        task_id = data.get('task_id')
+        if not task_id:
+            raise ValueError("task_id is required.")
+
+        experiment_data = data.get('experiment_data', [])
+        simulation_data = data.get('simulation_data', {})
+        threshold = data.get('threshold')
+        exceeded_limit = data.get('exceeded_limit')
+        file_name = data.get('file_name')
+
+        result = db_ops.preliminary_diagnose(
+            task_id=task_id,
+            experiment_data=experiment_data,
+            simulation_data=simulation_data,
+            threshold=threshold,
+            exceeded_limit=exceeded_limit,
+            file_name=file_name
+        )
+
+        return jsonify(result), 200
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 400
+
+
 # ============ 仿真数据模型接口 ============
 
 @app.route('/dataModels', methods=['GET'])
