@@ -1,32 +1,17 @@
 import request from '@/utils/request'
 
 export function readExcelApi(query) {
-  // console.log('query', query)
-  const { page, page_size = 100, file_names, path, sheet_names } = query || {};
-  // const params = {
-  //     page,
-  //     page_size,
-  //     file_name: fileName,
-  //     group_channel: group_channel
-  //   }
-  // const queryString = new URLSearchParams(params).toString();
-  // const queryString = params.map(encodeURIComponent).join('=');
+  const { page, page_size = 100, file_names, path } = query || {};
   let fileNamesArray = [];
   if (Array.isArray(file_names)) {
-    fileNamesArray = file_names; // 已经是数组，直接使用
+    fileNamesArray = file_names;
   } else if (typeof file_names === 'string' && file_names.trim()) {
-    fileNamesArray = [file_names]; // 字符串转为单元素数组
+    fileNamesArray = [file_names];
   }
-  // 将 sheet_names 数组转为逗号分隔的字符串
-  const sheetNamesStr = Array.isArray(sheet_names)
-    ? sheet_names.join(',')               // ["A","B"] → "A,B"
-    : typeof sheet_names === 'string'
-      ? sheet_names                       // 已是字符串，直接用
-      : undefined;                        // 其他情况（如 null）设为 undefined
   return request({
     url: `/file/read_excel`,
     method: 'get',
-    params: { page, page_size, file_names: fileNamesArray, path, sheet_names: sheetNamesStr }
+    params: { page, page_size, file_names: fileNamesArray, path }
   })
 }
 

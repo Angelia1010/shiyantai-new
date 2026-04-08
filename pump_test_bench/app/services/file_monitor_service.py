@@ -93,20 +93,14 @@ def read_tdms():
 def read_excel():
     """根据文件名读取 Excel 文件数据，支持分页读取"""
     try:
-        # 获取请求参数
-        page = int(request.args.get('page', 0))  # 页码，默认为0
-        page_size = int(request.args.get('page_size', 500))  # 每页大小，默认为500
-        file_names = request.args.getlist('file_names[]')  # 获取文件名列表（支持多个文件）
+        page = int(request.args.get('page', 0))
+        page_size = int(request.args.get('page_size', 500))
+        file_names = request.args.getlist('file_names[]')
         if not file_names:
-            # 兼容单个文件名的参数名
             file_name = request.args.get('file_name')
             if file_name:
                 file_names = [file_name]
-        path = request.args.get('path')  # 获取文件路径
-        sheet_names_str = request.args.get('sheet_names', '')  # 获取sheet名称，逗号分隔
-        
-        # 解析sheet名称列表
-        sheet_names = [s.strip() for s in sheet_names_str.split(',') if s.strip()] if sheet_names_str else []
+        path = request.args.get('path')
     except ValueError as e:
         return jsonify({"error": f"Invalid parameter format: {str(e)}"}), 400
 
@@ -115,32 +109,33 @@ def read_excel():
     
     if not path:
         return jsonify({"error": "path parameter is required"}), 400
-    
-    if not sheet_names:
-        return jsonify({"error": "sheet_names parameter is required"}), 400
 
     file_data = {}
     for file_name in file_names:
-        # 构建文件路径，处理路径末尾的斜杠
         if path and path.endswith('/'):
             file_path = os.path.join(path.rstrip('/'), file_name)
         else:
             file_path = os.path.join(path, file_name) if path else file_name
         
-        # 验证文件是否存在
         if not os.path.isfile(file_path):
             file_data[file_name] = {"error": "File not found"}
             continue
         
-        # 验证文件扩展名
         if not file_path.lower().endswith(('.xlsx', '.xls', '.txt')):
             file_data[file_name] = {"error": "Invalid file type. Only .xlsx, .xls and .txt files are supported"}
             continue
         
         try:
             if file_path.lower().endswith('.txt'):
+                sheet_names = ['default']
                 page_data_response = handle_request_txt_page_data(file_path, sheet_names, page, page_size)
             else:
+                xl = pd.ExcelFile(file_path)
+                sheet_names = [xl.sheet_names[0]] if xl.sheet_names else []
+                xl.close()
+                if not sheet_names:
+                    file_data[file_name] = {"error": "No sheets found in Excel file"}
+                    continue
                 page_data_response = handle_request_page_data(file_path, sheet_names, page, page_size)
             file_data[file_name] = {
                 "data": page_data_response,

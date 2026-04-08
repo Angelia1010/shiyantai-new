@@ -408,7 +408,6 @@ export default {
           page: this.page,
           page_size: this.pageSize,
           file_names: [filename],
-          sheet_names: ['1'],
           path: this.config.dataPath
         })
 
@@ -424,7 +423,8 @@ export default {
           break
         }
         
-        const dataRoot = res.data['1']
+        const sheetName = Object.keys(res.data)[0]
+        const dataRoot = res.data[sheetName]
         
         console.log('loadFileData - dataRoot:', dataRoot)
         console.log('loadFileData - available columns:', dataRoot ? Object.keys(dataRoot) : 'null')
