@@ -125,7 +125,8 @@ export default {
         diagnosisMode: 'realtime',
         autoDiagnosis: true,
         enableSimulation: false,
-        electricalSpeed: null
+        electricalSpeed: null,
+        mediumDensity: 820
       },
       variableConfigs: [
         { name: '供油压力1-1', fileName: 'pressureGY11.data' },
@@ -691,7 +692,8 @@ export default {
         experiment_data: this.experimentData,
         simulation_data: this.simulationData,
         file_name: filename,
-        path: this.config.dataPath
+        path: this.config.dataPath,
+        density: this.config.mediumDensity
       }
 
       const prelimResult = await preliminaryDiagnose(payload)
@@ -769,7 +771,7 @@ export default {
 
     async runPreciseDiagnosis(filename) {
       this.addLog('正在调用精确诊断API...', 'info')
-      await diagnose(this.currentTaskId, this.config.dataPath, filename)
+      await diagnose(this.currentTaskId, this.config.dataPath, filename, this.config.mediumDensity)
       this.addLog('精确诊断API调用成功，等待结果...', 'info')
       
       let attempts = 0

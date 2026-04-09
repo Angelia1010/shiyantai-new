@@ -8,25 +8,46 @@ sys.path.append(parent_dir)
 
 
 class Diagnosis:
-    # 列名关键字（Excel 列名包含此关键字即匹配）
-    COL_MASS_FLOW = '质量流量'   # X1
-    COL_DENSITY = '介质密度'     # X2
+    COL_MASS_FLOW = '质量流量'
+    COL_DENSITY = '介质密度'
+    COL_MASS_FLOW_1 = '回油质量流量1'
+    COL_MASS_FLOW_2 = '回油质量流量2'
+    COL_FLOW_1 = '回油流量1-1'
+    COL_FLOW_2 = '回油流量2-1'
+
+    FLOW_METER_THRESHOLD = 0.15
 
     def __init__(self, file_name, conf_file):
         self.file_name = file_name
 
     # ------------------------------------------------------------------ #
-    #  诊断模型公式                                                         #
+    #  仿真转速模型公式                                                         #
     # ------------------------------------------------------------------ #
     @staticmethod
     def calc_y(x1, x2):
         """
-        诊断模型: Y = 2696.17 + 15468.63 * X1 - 3.42 * X2
-        X1: 质量流量
-        X2: 介质密度
-        Y:  诊断输出
+        仿真转速模型: Y = 2696.17 + 15468.63 * X1 - 3.42 * X2
+        X1: 质量流量（kg/s）
+        X2: 介质密度（kg/m³）
+        Y:  仿真转速（rad/s）
         """
         return 2696.17 + 15468.63 * x1 - 3.42 * x2
+
+    @staticmethod
+    def calc_flow_from_speed(y, density):
+        """
+        根据转速计算理论流量
+        转速-流量公式: q = 0.304921 * f + 0.210230
+        其中 f 为频率（Hz），和转速 y（rad/s）的关系为 y = f * 6 / (2π)
+        所以 f = y * 2π / 6
+        q 为输出流量（L/h）
+        
+        返回: 理论体积流量（L/h）
+        """
+        import math
+        f = y * 2 * math.pi / 6
+        q = 0.304921 * f + 0.210230
+        return q
 
     # ------------------------------------------------------------------ #
     #  数据读取                                                             #
@@ -155,96 +176,282 @@ class Diagnosis:
     # ------------------------------------------------------------------ #
     #  诊断主流程                                                           #
     # ------------------------------------------------------------------ #
-    def diagnosis_process(self, x1=None, x2=None):
+    def diagnosis_process(self, x1=None, x2=None, density=None):
         """
         执行故障诊断，返回 indicators / diagnosis / repair_advice。
 
         :param x1: 质量流量（单值）。为 None 时从文件读取。
         :param x2: 介质密度（单值）。为 None 时从文件读取。
+        :param density: 介质密度（从前端传入，用于流量计诊断）。
         """
-        if x1 is not None and x2 is not None:
-            # 直接传参模式
-            x1_series = pd.Series([float(x1)])
-            x2_series = pd.Series([float(x2)])
-            data_source = f"直接输入 (X1={x1}, X2={x2})"
+        flow_meter_results = self._diagnose_flow_meters(density)
+        
+        indicators = []
+        for fm_result in flow_meter_results:
+            indicators.extend(fm_result['indicators'])
+
+        fault_parts = []
+        analysis_parts = []
+        
+        if flow_meter_results:
+            repair_advice = '【流量计诊断结果】\n'
+            for fm_result in flow_meter_results:
+                repair_advice += fm_result['repair_advice'] + '\n'
+                if fm_result['status'] == '异常':
+                    fault_parts.append(fm_result['name'])
+                    analysis_parts.append(fm_result['analysis'])
         else:
-            # 文件读取模式
-            x1_series, x2_series, sheet, x1_col, x2_col = self._read_data_from_excel()
-            data_source = (
-                f"文件 '{os.path.basename(self.file_name)}' "
-                f"sheet '{sheet}'，列 '{x1_col}' / '{x2_col}'"
-            )
-
-        # ---------- 计算 Y ----------
-        y_series = self.calc_y(x1_series, x2_series)
-
-        x1_mean = float(x1_series.mean())
-        x2_mean = float(x2_series.mean())
-        y_mean  = float(y_series.mean())
-        y_std   = float(y_series.std(ddof=1)) if len(y_series) > 1 else 0.0
-        y_min   = float(y_series.min())
-        y_max   = float(y_series.max())
-        n       = len(y_series)
-
-        # ---------- 异常指标 ----------
-        indicators = [
-            {
-                'name': '质量流量 X1（均值）',
-                'reference': '设计工况值',
-                'value': f'{x1_mean:.6f}'
-            },
-            {
-                'name': '介质密度 X2（均值）',
-                'reference': '设计工况值',
-                'value': f'{x2_mean:.4f}'
-            },
-            {
-                'name': '诊断输出 Y（均值）',
-                'reference': '基准诊断值',
-                'value': f'{y_mean:.2f}'
-            },
-            {
-                'name': '诊断输出 Y（标准差）',
-                'reference': '波动上限',
-                'value': f'{y_std:.2f}'
-            },
-            {
-                'name': '诊断输出 Y（范围）',
-                'reference': '正常区间',
-                'value': f'{y_min:.2f} ~ {y_max:.2f}'
-            },
-            {
-                'name': '有效数据点',
-                'reference': '—',
-                'value': str(n)
-            },
-        ]
-
-        # ---------- 诊断结论 ----------
-        diagnosis = {
-            'fault_name': '诊断模型评估',
-            'location': f'Y 均值 = {y_mean:.2f}（σ = {y_std:.2f}）',
-            'analysis': (
-                f'基于诊断公式 Y = 2696.17 + 15468.63×X1 − 3.42×X2，'
-                f'数据来源：{data_source}。'
-                f'共 {n} 个有效样本，X1 均值 = {x1_mean:.6f}，'
-                f'X2 均值 = {x2_mean:.4f}，'
-                f'诊断输出 Y 均值 = {y_mean:.2f}，标准差 = {y_std:.2f}，'
-                f'范围 [{y_min:.2f}, {y_max:.2f}]。'
-            ),
-        }
-
-        repair_advice = (
-            f'诊断模型计算结果如下：\n'
-            f'  · 质量流量 (X1) 均值：{x1_mean:.6f}\n'
-            f'  · 介质密度 (X2) 均值：{x2_mean:.4f}\n'
-            f'  · 诊断输出 (Y)  均值：{y_mean:.2f}，标准差：{y_std:.2f}\n'
-            f'  · Y 范围：{y_min:.2f} ~ {y_max:.2f}（共 {n} 个样本）\n\n'
-            f'建议将 Y 均值与历史基准值对比，若偏差超过阈值，需检查泵体流量特性及介质状态。'
-        )
+            repair_advice = '未检测到流量计数据，无法进行诊断。\n'
+        
+        if fault_parts:
+            diagnosis = {
+                'fault_name': '涡轮流量计状态异常',
+                'location': '、'.join(fault_parts),
+                'analysis': '\n'.join(analysis_parts),
+            }
+            repair_advice += '\n建议：对异常流量计进行校准或更换。'
+        else:
+            diagnosis = {
+                'fault_name': '涡轮流量计状态正常',
+                'location': '所有流量计',
+                'analysis': '所有流量计状态正常，理论流量与实际流量偏差在允许范围内。',
+            }
 
         return {
             'indicators': indicators,
             'diagnosis': diagnosis,
             'repair_advice': repair_advice,
+        }
+
+    def _read_flow_meter_data(self):
+        """
+        从文件中读取流量计相关数据
+        返回: (mass_flow_1_series, mass_flow_2_series, flow_1_series, flow_2_series, df)
+        """
+        if self.file_name.lower().endswith('.txt'):
+            return self._read_flow_meter_data_from_txt()
+        
+        xl = pd.ExcelFile(self.file_name, engine='openpyxl')
+        for sheet in xl.sheet_names:
+            df = xl.parse(sheet, dtype=object)
+            for col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            mass_flow_1_col = self._find_col(df, self.COL_MASS_FLOW_1)
+            mass_flow_2_col = self._find_col(df, self.COL_MASS_FLOW_2)
+            flow_1_col = self._find_col(df, self.COL_FLOW_1)
+            flow_2_col = self._find_col(df, self.COL_FLOW_2)
+            
+            if mass_flow_1_col or mass_flow_2_col:
+                return (
+                    df[mass_flow_1_col].dropna().reset_index(drop=True) if mass_flow_1_col else None,
+                    df[mass_flow_2_col].dropna().reset_index(drop=True) if mass_flow_2_col else None,
+                    df[flow_1_col].dropna().reset_index(drop=True) if flow_1_col else None,
+                    df[flow_2_col].dropna().reset_index(drop=True) if flow_2_col else None,
+                    df
+                )
+        
+        return None, None, None, None, None
+
+    def _read_flow_meter_data_from_txt(self):
+        """
+        从TXT文件中读取流量计相关数据
+        """
+        encoding = None
+        column_names = []
+        
+        for enc in ['utf-8', 'gbk']:
+            try:
+                with open(self.file_name, 'r', encoding=enc) as f:
+                    header_line = f.readline().strip()
+                    if header_line:
+                        column_names = header_line.split('\t')
+                        encoding = enc
+                        break
+            except (UnicodeDecodeError, UnicodeError):
+                continue
+        
+        if not column_names:
+            return None, None, None, None, None
+        
+        try:
+            df = pd.read_csv(
+                self.file_name,
+                sep='\t',
+                skiprows=[0, 1, 2],
+                header=None,
+                names=column_names,
+                index_col=False,
+                skip_blank_lines=True,
+                encoding=encoding or 'utf-8',
+                on_bad_lines='skip',
+                dtype=str
+            )
+        except Exception:
+            return None, None, None, None, None
+        
+        expected_cols = len(column_names)
+        actual_cols = len(df.columns)
+        
+        if actual_cols != expected_cols:
+            if actual_cols > expected_cols:
+                df = df.iloc[:, :expected_cols]
+            else:
+                while len(df.columns) < expected_cols:
+                    df[f'_extra_{len(df.columns)}'] = ''
+                df = df[column_names]
+        
+        for col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        
+        mass_flow_1_col = self._find_col(df, self.COL_MASS_FLOW_1)
+        mass_flow_2_col = self._find_col(df, self.COL_MASS_FLOW_2)
+        flow_1_col = self._find_col(df, self.COL_FLOW_1)
+        flow_2_col = self._find_col(df, self.COL_FLOW_2)
+        
+        return (
+            df[mass_flow_1_col].dropna().reset_index(drop=True) if mass_flow_1_col else None,
+            df[mass_flow_2_col].dropna().reset_index(drop=True) if mass_flow_2_col else None,
+            df[flow_1_col].dropna().reset_index(drop=True) if flow_1_col else None,
+            df[flow_2_col].dropna().reset_index(drop=True) if flow_2_col else None,
+            df
+        )
+
+    def _diagnose_flow_meters(self, density=None):
+        """
+        诊断两个流量计的状态
+        
+        :param density: 介质密度（kg/m³），从前端传入
+        :return: 流量计诊断结果列表
+        """
+        import math
+        
+        results = []
+        
+        mass_flow_1, mass_flow_2, flow_1, flow_2, df = self._read_flow_meter_data()
+        
+        if density is None:
+            density = self.DEFAULT_DENSITY
+        
+        if mass_flow_1 is not None and len(mass_flow_1) > 0:
+            result = self._diagnose_single_flow_meter(
+                mass_flow_series=mass_flow_1,
+                actual_flow_series=flow_1,
+                density=density,
+                meter_name='流量计1',
+                mass_flow_col_name=self.COL_MASS_FLOW_1,
+                flow_col_name=self.COL_FLOW_1
+            )
+            results.append(result)
+        
+        if mass_flow_2 is not None and len(mass_flow_2) > 0:
+            result = self._diagnose_single_flow_meter(
+                mass_flow_series=mass_flow_2,
+                actual_flow_series=flow_2,
+                density=density,
+                meter_name='流量计2',
+                mass_flow_col_name=self.COL_MASS_FLOW_2,
+                flow_col_name=self.COL_FLOW_2
+            )
+            results.append(result)
+        
+        return results
+
+    def _diagnose_single_flow_meter(self, mass_flow_series, actual_flow_series, density, 
+                                     meter_name, mass_flow_col_name, flow_col_name):
+        """
+        诊断单个流量计
+        
+        :param mass_flow_series: 质量流量数据序列（kg/s）
+        :param actual_flow_series: 实际流量数据序列（L/h）
+        :param density: 介质密度（kg/m³）
+        :param meter_name: 流量计名称
+        :param mass_flow_col_name: 质量流量列名
+        :param flow_col_name: 流量列名
+        :return: 诊断结果字典
+        """
+        import math
+        
+        mass_flow_mean = float(mass_flow_series.mean())
+        
+        y = self.calc_y(mass_flow_mean, density)
+        
+        theoretical_flow = self.calc_flow_from_speed(y, density)
+        
+        indicators = [
+            {
+                'name': f'{meter_name} 质量流量均值',
+                'reference': '输入值',
+                'value': f'{mass_flow_mean:.6f} kg/s'
+            },
+            {
+                'name': f'{meter_name} 仿真转速',
+                'reference': '计算值',
+                'value': f'{y:.2f} rad/s'
+            },
+            {
+                'name': f'{meter_name} 理论流量',
+                'reference': '计算值',
+                'value': f'{theoretical_flow:.2f} L/h'
+            },
+        ]
+        
+        if actual_flow_series is not None and len(actual_flow_series) > 0:
+            actual_flow_mean = float(actual_flow_series.mean())
+            
+            if abs(actual_flow_mean) > 1e-6:
+                relative_deviation = abs(theoretical_flow - actual_flow_mean) / abs(actual_flow_mean)
+            else:
+                relative_deviation = abs(theoretical_flow - actual_flow_mean)
+            
+            is_abnormal = relative_deviation > self.FLOW_METER_THRESHOLD
+            
+            indicators.append({
+                'name': f'{meter_name} 实际流量均值',
+                'reference': '测量值',
+                'value': f'{actual_flow_mean:.2f} L/h'
+            })
+            indicators.append({
+                'name': f'{meter_name} 流量偏差',
+                'reference': f'阈值 {self.FLOW_METER_THRESHOLD*100:.1f}%',
+                'value': f'{relative_deviation*100:.2f}%{" ⚠️超限" if is_abnormal else ""}'
+            })
+            
+            status = '异常' if is_abnormal else '正常'
+            analysis = (
+                f'{meter_name}：质量流量均值={mass_flow_mean:.6f} kg/s，'
+                f'仿真转速={y:.2f} rad/s，'
+                f'理论流量={theoretical_flow:.2f} L/h，'
+                f'实际流量={actual_flow_mean:.2f} L/h，'
+                f'相对偏差={relative_deviation*100:.2f}%，'
+                f'阈值={self.FLOW_METER_THRESHOLD*100:.1f}%，'
+                f'判定为{status}。'
+            )
+            repair_advice = (
+                f'  · {meter_name}：理论流量={theoretical_flow:.2f} L/h，'
+                f'实际流量={actual_flow_mean:.2f} L/h，'
+                f'偏差={relative_deviation*100:.2f}%'
+                f'{" ⚠️异常" if is_abnormal else " ✓正常"}\n'
+            )
+        else:
+            is_abnormal = False
+            status = '无法诊断（缺少实际流量数据）'
+            analysis = (
+                f'{meter_name}：质量流量均值={mass_flow_mean:.6f} kg/s，'
+                f'仿真转速={y:.2f} rad/s，'
+                f'理论流量={theoretical_flow:.2f} L/h，'
+                f'但缺少实际流量数据，无法进行对比诊断。'
+            )
+            repair_advice = (
+                f'  · {meter_name}：理论流量={theoretical_flow:.2f} L/h，'
+                f'缺少实际流量数据\n'
+            )
+        
+        return {
+            'name': meter_name,
+            'status': status,
+            'is_abnormal': is_abnormal,
+            'analysis': analysis,
+            'repair_advice': repair_advice,
+            'indicators': indicators
         }

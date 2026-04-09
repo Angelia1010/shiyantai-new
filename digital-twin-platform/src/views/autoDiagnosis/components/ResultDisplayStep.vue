@@ -122,8 +122,8 @@
           <div slot="header">诊断指标</div>
           <el-table :data="diagnosisResult.indicators" border size="small" max-height="200">
             <el-table-column prop="name" label="指标名称" min-width="150" />
-            <el-table-column prop="reference" label="参考值" width="120" />
-            <el-table-column prop="value" label="实测值" width="120">
+            <el-table-column prop="reference" label="类型" width="120" />
+            <el-table-column prop="value" label="指标值" width="120">
               <template slot-scope="scope">
                 <span :class="{'abnormal-value': isAbnormal(scope.row)}">
                   {{ scope.row.value }}

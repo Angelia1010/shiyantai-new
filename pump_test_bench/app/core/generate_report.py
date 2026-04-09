@@ -34,7 +34,7 @@ class FuelPumpDiagnosisReporter:
             - system: 试验系统
         :param indicators: 异常指标列表，每个指标应包含：
             - name: 指标名称
-            - reference: 参考值
+            - reference: 指标类型
             - value: 诊断值
         :param diagnosis: 诊断信息字典
             - location: 故障定位
@@ -113,8 +113,8 @@ class FuelPumpDiagnosisReporter:
             # 设置表头
             hdr = table.rows[0].cells
             hdr[0].text = "指标名称"
-            hdr[1].text = "参考值"
-            hdr[2].text = "诊断值"
+            hdr[1].text = "指标类型"
+            hdr[2].text = "指标值"
             
             # 填充指标数据
             for idx, indicator in enumerate(indicators, 1):

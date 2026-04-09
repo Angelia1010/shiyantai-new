@@ -197,10 +197,10 @@ def deleteJob(task_id):
     else:
         raise Exception(f"Task {task_id} not found")
     
-def store_fault_diagnosis_report(task_id, type, file_name=None, x1=None, x2=None):
+def store_fault_diagnosis_report(task_id, type, file_name=None, x1=None, x2=None, density=None):
     try:
         dia = Diagnosis(file_name, "")
-        new_alarms = dia.diagnosis_process(x1=x1, x2=x2)
+        new_alarms = dia.diagnosis_process(x1=x1, x2=x2, density=density)
         task = session.query(FaultDiagnosisTask).filter_by(task_id=task_id).first()
         reporter = FuelPumpDiagnosisReporter()
         product_info = {
@@ -322,7 +322,7 @@ DEFAULT_DEVIATION_THRESHOLD = 0.15
 DEFAULT_EXCEEDED_LIMIT = 3
 
 def preliminary_diagnose(task_id, experiment_data, simulation_data,
-                         threshold=None, exceeded_limit=None, file_name=None, path=None):
+                         threshold=None, exceeded_limit=None, file_name=None, path=None, density=None):
     """
     初步诊断：对比仿真数据与试验数据，判断是否存在异常。
 
@@ -333,6 +333,7 @@ def preliminary_diagnose(task_id, experiment_data, simulation_data,
     :param exceeded_limit: 超限变量数量阈值（默认3）
     :param file_name: 文件名（用于精确诊断时传入）
     :param path: 文件路径（用于拼接完整文件路径）
+    :param density: 介质密度（kg/m³），用于精确诊断
     :return: dict 包含初步诊断结果
     """
     thr = threshold if threshold is not None else DEFAULT_DEVIATION_THRESHOLD
@@ -410,7 +411,7 @@ def preliminary_diagnose(task_id, experiment_data, simulation_data,
     if is_abnormal and file_name:
         try:
             full_file_path = os.path.join(path, file_name) if path else file_name
-            store_fault_diagnosis_report(task_id, '0', file_name=full_file_path)
+            store_fault_diagnosis_report(task_id, '0', file_name=full_file_path, density=density)
             result['precise_diagnosis_triggered'] = True
         except Exception as e:
             result['precise_diagnosis_triggered'] = False

@@ -61,11 +61,11 @@ export function getJobStatus(taskId) {
   })
 }
 
-export function diagnose(task_id, path, file_name) {
+export function diagnose(task_id, path, file_name, density) {
   return request({
     url: `/db/diagnose`,
     method: 'get',
-    params: { task_id, path, file_name }
+    params: { task_id, path, file_name, density }
   })
 }
 

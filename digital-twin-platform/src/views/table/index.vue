@@ -160,8 +160,8 @@
           <div class="section-title">诊断指标</div>
           <el-table :data="reportDialog.data.indicators" border size="small">
             <el-table-column prop="name" label="指标名称" />
-            <el-table-column prop="reference" label="参考值" />
-            <el-table-column prop="value" label="实测值" />
+            <el-table-column prop="reference" label="类型" />
+            <el-table-column prop="value" label="指标值" />
           </el-table>
         </div>
 

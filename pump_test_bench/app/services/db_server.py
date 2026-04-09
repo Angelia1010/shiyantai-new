@@ -215,20 +215,19 @@ def diagnose():
 
         x1 = request.args.get('x1', type=float)
         x2 = request.args.get('x2', type=float)
+        density = request.args.get('density', type=float)
 
         if x1 is not None and x2 is not None:
-            # 直接传参模式
             task_id = db_ops.store_fault_diagnosis_report(
-                task_id, '0', file_name=None, x1=x1, x2=x2
+                task_id, '0', file_name=None, x1=x1, x2=x2, density=density
             )
         else:
-            # 文件模式
             path = request.args.get('path')
             file_name = request.args.get('file_name')
             if not all([path, file_name]):
                 raise ValueError("需要提供 (path + file_name) 或 (x1 + x2)。")
             file_real_name = os.path.join(path, file_name)
-            task_id = db_ops.store_fault_diagnosis_report(task_id, '0', file_name=file_real_name)
+            task_id = db_ops.store_fault_diagnosis_report(task_id, '0', file_name=file_real_name, density=density)
 
         return jsonify({"message": "Diagnosis completed", "task_id": task_id}), 200
     except Exception as e:
@@ -260,6 +259,7 @@ def api_preliminary_diagnose():
         exceeded_limit = data.get('exceeded_limit')
         file_name = data.get('file_name')
         path = data.get('path')
+        density = data.get('density')
 
         result = db_ops.preliminary_diagnose(
             task_id=task_id,
@@ -268,7 +268,8 @@ def api_preliminary_diagnose():
             threshold=threshold,
             exceeded_limit=exceeded_limit,
             file_name=file_name,
-            path=path
+            path=path,
+            density=density
         )
 
         return jsonify(result), 200
