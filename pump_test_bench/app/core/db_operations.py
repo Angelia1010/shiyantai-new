@@ -279,6 +279,22 @@ def retrieve_fault_diagnosis_report(task_id):
     except Exception as e:
         raise Exception(f"Error retrieving fault diagnosis report: {str(e)}")
 
+def _get_diagnosis_result(report_json):
+    """从 report_json 中解析诊断结果，返回 'normal' / 'abnormal' / None"""
+    import json
+    if not report_json:
+        return None
+    try:
+        report = json.loads(report_json) if isinstance(report_json, str) else report_json
+        fault_name = report.get('diagnosis', {}).get('fault_name', '')
+        if not fault_name or '正常' in fault_name:
+            return 'normal'
+        if fault_name == '待精确诊断':
+            return None
+        return 'abnormal'
+    except Exception:
+        return None
+
 def query_tasks(
     page: int = 1,          # 第几页，默认第1页
     page_size: int = 10,    # 每页条数，默认10条
@@ -308,7 +324,14 @@ def query_tasks(
     total_pages = (total_count + page_size - 1) // page_size
 
     tasks = query.offset((page - 1) * page_size).limit(page_size).all()
-    tasks_data = [{"task_id": task.task_id,  "status": task.status, "type":task.type, "files":task.files, "path":task.path} for task in tasks]
+    tasks_data = [{
+        "task_id": task.task_id,
+        "status": task.status,
+        "type": task.type,
+        "files": task.files,
+        "path": task.path,
+        "diagnosis_result": _get_diagnosis_result(task.report_json)
+    } for task in tasks]
 
     return {
         "tasks": tasks_data,

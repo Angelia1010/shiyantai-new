@@ -101,6 +101,14 @@
                     <el-tag v-else type="warning" size="small">诊断中</el-tag>
                   </template>
                 </el-table-column>
+                <el-table-column label="诊断结果" width="100">
+                  <template slot-scope="scope">
+                    <el-tag v-if="scope.row.status !== 'Completed'" type="info" size="small">诊断中</el-tag>
+                    <el-tag v-else-if="scope.row.diagnosis_result === 'normal'" type="success" size="small">正常</el-tag>
+                    <el-tag v-else-if="scope.row.diagnosis_result === 'abnormal'" type="danger" size="small">异常</el-tag>
+                    <span v-else>--</span>
+                  </template>
+                </el-table-column>
                 <el-table-column label="操作" width="220">
                   <template slot-scope="{ row }">
                     <el-button size="mini" @click="deleteJob(row)">删除</el-button>
@@ -132,6 +140,13 @@
             <template slot-scope="scope">
               <el-tag v-if="scope.row.status === 'Completed'" type="success" size="small">已完成</el-tag>
               <el-tag v-else type="warning" size="small">进行中</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="诊断结果" width="120">
+            <template slot-scope="scope">
+              <el-tag v-if="scope.row.groupDiagnosisResult === 'all_normal'" type="success" size="small">正常</el-tag>
+              <el-tag v-else-if="scope.row.groupDiagnosisResult === 'has_abnormal'" type="danger" size="small">异常</el-tag>
+              <el-tag v-else type="info" size="small">诊断中</el-tag>
             </template>
           </el-table-column>
           <el-table-column label="工作目录">
@@ -315,7 +330,19 @@ export default {
         }
       });
       
-      return Object.values(groups).sort((a, b) => b.createTime - a.createTime);
+      return Object.values(groups).map(group => {
+        const completedTasks = group.originalTasks.filter(t => t.status === 'Completed');
+        const hasAbnormal = completedTasks.some(t => t.diagnosis_result === 'abnormal');
+        const allNormal = completedTasks.length > 0 && completedTasks.every(t => t.diagnosis_result === 'normal');
+        if (hasAbnormal) {
+          group.groupDiagnosisResult = 'has_abnormal';
+        } else if (allNormal && completedTasks.length === group.taskCount) {
+          group.groupDiagnosisResult = 'all_normal';
+        } else {
+          group.groupDiagnosisResult = 'pending';
+        }
+        return group;
+      }).sort((a, b) => b.createTime - a.createTime);
     }
   },
   created() {
