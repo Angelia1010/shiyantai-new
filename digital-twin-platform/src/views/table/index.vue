@@ -596,7 +596,7 @@ export default {
       this.getList();
     },
     addTask() {
-      this.$router.push(`/example/tree`);
+      this.$router.push(`/autoDiagnosis/index`);
     },
     stopJob(row) {
       stopJob(row.task_id)
@@ -619,14 +619,20 @@ export default {
         });
     },
     deleteJob(row) {
-      deleteJob(row.task_id)
-        .then((response) => {
-          this.$message.success("任务已删除！");
-          this.getList();
-        })
-        .catch((error) => {
-          this.$message.error(error);
-        });
+      this.$confirm('确定要删除该任务吗？', '删除确认', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }).then(() => {
+        deleteJob(row.task_id)
+          .then((response) => {
+            this.$message.success("任务已删除！");
+            this.getList();
+          })
+          .catch((error) => {
+            this.$message.error(error);
+          });
+      }).catch(() => {});
     },
     startAutoRefresh() {
       clearInterval(this.refreshInterval);
