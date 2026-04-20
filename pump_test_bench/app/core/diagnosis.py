@@ -16,6 +16,7 @@ class Diagnosis:
     COL_FLOW_2 = '回油流量2-1'
 
     FLOW_METER_THRESHOLD = 0.15
+    MASS_FLOW_UNIT_CONVERSION = 60.0
 
     def __init__(self, file_name, conf_file):
         self.file_name = file_name
@@ -84,16 +85,17 @@ class Diagnosis:
             x2_col = self._find_col(df, self.COL_DENSITY)
             if x2_col:
                 valid = df[[x1_col, x2_col]].dropna()
+                x1_converted = valid[x1_col] / self.MASS_FLOW_UNIT_CONVERSION
                 return (
-                    valid[x1_col].reset_index(drop=True),
+                    x1_converted.reset_index(drop=True),
                     valid[x2_col].reset_index(drop=True),
                     sheet, x1_col, x2_col,
                 )
             else:
-                x1 = df[x1_col].dropna().reset_index(drop=True)
+                x1 = df[x1_col].dropna() / self.MASS_FLOW_UNIT_CONVERSION
                 x2 = pd.Series([self.DEFAULT_DENSITY] * len(x1))
                 x2_col = f'{self.COL_DENSITY}（默认{self.DEFAULT_DENSITY}）'
-                return x1, x2, sheet, x1_col, x2_col
+                return x1.reset_index(drop=True), x2, sheet, x1_col, x2_col
 
         raise ValueError(
             f"文件 '{os.path.basename(self.file_name)}' 中未找到含 '{self.COL_MASS_FLOW}' 的 sheet"
@@ -162,16 +164,17 @@ class Diagnosis:
         x2_col = self._find_col(df, self.COL_DENSITY)
         if x2_col:
             valid = df[[x1_col, x2_col]].dropna()
+            x1_converted = valid[x1_col] / self.MASS_FLOW_UNIT_CONVERSION
             return (
-                valid[x1_col].reset_index(drop=True),
+                x1_converted.reset_index(drop=True),
                 valid[x2_col].reset_index(drop=True),
                 'data', x1_col, x2_col,
             )
         else:
-            x1 = df[x1_col].dropna().reset_index(drop=True)
+            x1 = df[x1_col].dropna() / self.MASS_FLOW_UNIT_CONVERSION
             x2 = pd.Series([self.DEFAULT_DENSITY] * len(x1))
             x2_col = f'{self.COL_DENSITY}（默认{self.DEFAULT_DENSITY}）'
-            return x1, x2, 'data', x1_col, x2_col
+            return x1.reset_index(drop=True), x2, 'data', x1_col, x2_col
 
     # ------------------------------------------------------------------ #
     #  诊断主流程                                                           #
@@ -244,8 +247,8 @@ class Diagnosis:
             
             if mass_flow_1_col or mass_flow_2_col:
                 return (
-                    df[mass_flow_1_col].dropna().reset_index(drop=True) if mass_flow_1_col else None,
-                    df[mass_flow_2_col].dropna().reset_index(drop=True) if mass_flow_2_col else None,
+                    (df[mass_flow_1_col].dropna() / self.MASS_FLOW_UNIT_CONVERSION).reset_index(drop=True) if mass_flow_1_col else None,
+                    (df[mass_flow_2_col].dropna() / self.MASS_FLOW_UNIT_CONVERSION).reset_index(drop=True) if mass_flow_2_col else None,
                     df[flow_1_col].dropna().reset_index(drop=True) if flow_1_col else None,
                     df[flow_2_col].dropna().reset_index(drop=True) if flow_2_col else None,
                     df
@@ -310,8 +313,8 @@ class Diagnosis:
         flow_2_col = self._find_col(df, self.COL_FLOW_2)
         
         return (
-            df[mass_flow_1_col].dropna().reset_index(drop=True) if mass_flow_1_col else None,
-            df[mass_flow_2_col].dropna().reset_index(drop=True) if mass_flow_2_col else None,
+            (df[mass_flow_1_col].dropna() / self.MASS_FLOW_UNIT_CONVERSION).reset_index(drop=True) if mass_flow_1_col else None,
+            (df[mass_flow_2_col].dropna() / self.MASS_FLOW_UNIT_CONVERSION).reset_index(drop=True) if mass_flow_2_col else None,
             df[flow_1_col].dropna().reset_index(drop=True) if flow_1_col else None,
             df[flow_2_col].dropna().reset_index(drop=True) if flow_2_col else None,
             df
