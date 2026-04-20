@@ -5,7 +5,6 @@ Vue.use(Router)
 
 /* Layout */
 import Layout from '@/layout'
-import AIChaterNew from '@/components/AI/AIChaterNew.vue'
 
 /**
  * Note: sub-menu only appear when route children.length >= 1
@@ -77,74 +76,11 @@ export const constantRoutes = [
     name: 'Example',
     meta: { title: '任务管理', icon: 'el-icon-s-help' },
     children: [
-      // {
-      //   path: 'setting',
-      //   name: 'Setting',
-      //   component: () => import('@/views/setting/index'),
-      //   meta: { title: '试验台数据同步', icon: 'el-icon-setting' }
-      // },
       {
         path: 'table',
         name: 'Table',
         component: () => import('@/views/table/index'),
         meta: { title: '任务列表', icon: 'table' }
-      },
-      {
-        path: 'tree',
-        name: 'Tree',
-        component: () => import('@/views/tree/index'),
-        meta: { title: '任务创建', icon: 'form' }
-      }
-    ]
-  },
-  {
-    path: '/dataModel',
-    component: Layout,
-    redirect: '/dataModel/index',
-    name: 'DataModel',
-    meta: { title: '仿真管理', icon: 'el-icon-data-analysis' },
-    children: [
-      {
-        path: 'index',
-        name: 'DataModelList',
-        component: () => import('@/views/dataModel/index'),
-        meta: { title: '仿真列表', icon: 'el-icon-s-grid' }
-      },
-      // {
-      //   path: 'create',
-      //   name: 'DataModelCreate',
-      //   component: () => import('@/views/dataModel/create'),
-      //   meta: { title: '创建仿真', icon: 'el-icon-plus' },
-      // }
-      {
-        path: 'simulationView',
-        name: 'simulationView',
-        component: () => import('@/views/dataModel/simulationView'),
-        meta: { title: '仿真界面', icon: 'el-icon-stopwatch' },
-      }
-    ]
-  },
-  {
-    path: '/aichat',
-    component: Layout,
-    children: [
-      {
-        path: 'index',
-        name: 'Form',
-        component: AIChaterNew,
-        meta: { title: 'AI Chat', icon: 'el-icon-chat-dot-round' }
-      }
-    ]
-  },
-  {
-    path: '/form',
-    component: Layout,
-    children: [
-      {
-        path: 'index',
-        name: 'Form',
-        component: () => import('@/views/form/index'),
-        meta: { title: '权限设置', icon: 'tree' }
       }
     ]
   },
