@@ -48,7 +48,7 @@
         :feature-map="featureMap"
         @start="startDiagnosis"
         @stop="stopDiagnosis"
-        @prev="currentStep = 1"
+        @prev="handleDiagnosisPrev"
         @next="handleDiagnosisComplete"
       />
     </div>
@@ -228,6 +228,14 @@ export default {
 
     handleSkipFileSelect() {
       this.currentStep = 2
+    },
+
+    handleDiagnosisPrev() {
+      if (this.config.diagnosisMode === 'realtime') {
+        this.currentStep = 0
+      } else {
+        this.currentStep = 1
+      }
     },
 
     async startDiagnosis() {
