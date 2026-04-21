@@ -85,7 +85,8 @@ import {
   diagnose,
   preliminaryDiagnose,
   getJobStatus,
-  setWatchPath
+  setWatchPath,
+  saveFrontendLog
 } from '@/api/home'
 import {
   openModel,
@@ -182,6 +183,7 @@ export default {
       if (this.logs.length > 200) {
         this.logs.shift()
       }
+      saveFrontendLog(message, level, 'autoDiagnosis').catch(() => {})
     },
 
     addVariable() {

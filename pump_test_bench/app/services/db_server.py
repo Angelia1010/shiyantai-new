@@ -4,11 +4,16 @@ import sys
 import traceback
 from werkzeug.serving import WSGIRequestHandler
 
-# 设置 socket 选项
 WSGIRequestHandler.protocol_version = "HTTP/1.1"
 WSGIRequestHandler.tcp_nodelay = True
 
-# 将项目根目录添加到 sys.path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
+log_config_path = os.path.join(project_root, 'log')
+sys.path.insert(0, log_config_path)
+from log_config import setup_logger, log_frontend_message
+
+logger = setup_logger('db_server')
+
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
 sys.path.append(parent_dir)
 import app.core.db_operations as db_ops
@@ -52,6 +57,7 @@ def api_store_report():
         return jsonify({"message": "Report stored successfully", "task_id": task_id}), 200
     except Exception as e:
         traceback.print_exc()
+        logger.error(f"存储报告失败: {str(e)}")
         return jsonify({"error": str(e)}), 400
     
 # 存储诊断报告的 API
@@ -66,7 +72,7 @@ def stopJob():
         db_ops.stopJob(task_id)
         return jsonify({"message": "Report stored successfully", "task_id": task_id}), 200
     except Exception as e:
-        print("Error:", str(e))  # 打印错误信息
+        logger.error(f"停止任务失败: {str(e)}")
         return jsonify({"error": str(e)}), 400
     
 @app.route('/startJob', methods=['GET'])
@@ -84,13 +90,12 @@ def startJob():
         db_ops.startJob(task_id)
         return jsonify({"message": "Report stored successfully", "task_id": task_id}), 200
     except Exception as e:
-        print("Error:", str(e))  # 打印错误信息
+        logger.error(f"启动任务失败: {str(e)}")
         return jsonify({"error": str(e)}), 400
     
 @app.route('/deleteJob', methods=['GET'])
 def deleteJob():
     try:
-        # 从查询参数中获取数据
         task_id = request.args.get('task_id')
         if not task_id :
             raise ValueError("task_id are required parameters.")
@@ -98,17 +103,16 @@ def deleteJob():
         db_ops.deleteJob(task_id)
         return jsonify({"message": "Report stored successfully", "task_id": task_id}), 200
     except Exception as e:
-        print("Error:", str(e))  # 打印错误信息
+        logger.error(f"删除任务失败: {str(e)}")
         return jsonify({"error": str(e)}), 400
     
 @app.route('/getGoingJob', methods=['GET'])
 def getGoingJob():
     try:
-        # 从查询参数中获取数据
         task = db_ops.getOngingJob()
         return jsonify(task), 200
     except Exception as e:
-        print("Error:", str(e))  # 打印错误信息
+        logger.error(f"获取运行中任务失败: {str(e)}")
         return jsonify({"error": str(e)}), 400
 
 @app.route('/getJobStatus', methods=['GET'])
@@ -120,7 +124,7 @@ def getJobStatus():
         status = db_ops.getJobStatus(taskId)
         return jsonify({"status":status}), 200
     except Exception as e:
-        print("Error:", str(e))  # 打印错误信息
+        logger.error(f"获取任务状态失败: {str(e)}")
         return jsonify({"error": str(e)}), 400
 
 # 获取结构化诊断报告（供前端展示）
@@ -196,7 +200,7 @@ def api_create_job():
             "file_name": file_name
         }), 200
     except Exception as e:
-        print("Error:", str(e))  # 打印错误信息
+        logger.error(f"创建任务失败: {str(e)}")
         return jsonify({"error": str(e)}), 400
 
 
@@ -390,6 +394,47 @@ def api_download_analysis_result(model_id):
 
 
 # ============ 自动诊断流程接口 ============
+
+@app.route('/log/frontend', methods=['POST'])
+def save_frontend_log():
+    """保存前端日志"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Request body is required"}), 400
+        
+        message = data.get('message', '')
+        level = data.get('level', 'info')
+        source = data.get('source', 'frontend')
+        
+        log_frontend_message(message, level, source)
+        return jsonify({"success": True, "message": "Log saved"}), 200
+    except Exception as e:
+        logger.error(f"保存前端日志失败: {str(e)}")
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route('/log/frontend/batch', methods=['POST'])
+def save_frontend_logs_batch():
+    """批量保存前端日志"""
+    try:
+        data = request.get_json()
+        if not data or 'logs' not in data:
+            return jsonify({"error": "logs array is required"}), 400
+        
+        logs = data.get('logs', [])
+        source = data.get('source', 'frontend')
+        
+        for log_entry in logs:
+            message = log_entry.get('message', '')
+            level = log_entry.get('level', 'info')
+            log_frontend_message(message, level, source)
+        
+        return jsonify({"success": True, "message": f"Saved {len(logs)} logs"}), 200
+    except Exception as e:
+        logger.error(f"批量保存前端日志失败: {str(e)}")
+        return jsonify({"error": str(e)}), 400
+
 
 auto_diagnosis_state = {
     'running': False,

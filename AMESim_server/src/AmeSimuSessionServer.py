@@ -4,32 +4,33 @@ import json
 import os
 import sys
 
-# 获取当前脚本所在目录的父目录（项目根目录）
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MODEL_DIR = os.path.join(BASE_DIR, "model")
 
+project_root = os.path.dirname(BASE_DIR)
+log_config_path = os.path.join(project_root, 'log')
+sys.path.insert(0, log_config_path)
+from log_config import setup_logger
+
+logger = setup_logger('AmeSimuSessionServer')
+
 def StartUp():
-    # 添加 Python 模块路径
     ame_path = os.environ.get("AME")
     if ame_path:
-        print("AME path",ame_path)
+        logger.info(f"AME path: {ame_path}")
         module_path = os.path.join(ame_path, "scripting", "python")
         sys.path.append(module_path)
         sys.path.append(os.path.join(module_path, "win64"))
         sys.path.append(os.path.join(ame_path,"win64"))
 
-        # 添加 DLLs 路径
         os.environ["PATH"] = os.path.join(ame_path, "sys", "python", "win64", "DLLs") + os.pathsep + os.environ["PATH"]
         os.environ["CONDA_DLL_SEARCH_MODIFICATION_ENABLE"] = "1"
-        #请根据自身情况修改Amesim的安装路径
         os.add_dll_directory(os.path.join(ame_path,"win64"))
         os.add_dll_directory(module_path)
         os.add_dll_directory(os.path.join(module_path, "win64"))
 
-        # 禁用用户站点
         os.environ["PYTHONNOUSERSITE"] = "1"
 
-        # 设置 QT 插件路径
         os.environ["QT_PLUGIN_PATH"] = os.path.join(ame_path, "win64")
 
 StartUp()
@@ -37,10 +38,8 @@ StartUp()
 if 'ame_apy' not in sys.modules:
     try:
         from ame_apy import *
-    # except ImportError:
-    #     print('Unable to import Simcenter Amesim API module.\nCheck the AME environment variable.')
     except Exception as e:
-        print("Import error:", repr(e))
+        logger.error(f"Import error: {repr(e)}")
 
 # 创建Flask应用
 app = Flask(__name__)
@@ -112,9 +111,8 @@ class AmeSimuSessionServiceHandler:
     def set_comp_parameter(self, path_of_parameter, value_of_parameter):
         AMESetParameterValue(path_of_parameter, value_of_parameter)
 
-    # 运行仿真实验
     def run_simulation(self):
-        print("in AMERunSimulation")
+        logger.info("in AMERunSimulation")
         AMERunSimulation()
     
     # 获取指定变量结果数据
@@ -315,13 +313,14 @@ def set_comp_parameter():
 def run_simulation():
     """运行仿真"""
     try:
-        print("in run simulation")
+        logger.info("in run simulation")
         handler.run_simulation()
         return jsonify({
             'success': True,
             'message': 'Simulation completed successfully'
         })
     except Exception as e:
+        logger.error(f"运行仿真失败: {str(e)}")
         return jsonify({
             'success': False,
             'error': str(e)
@@ -473,22 +472,9 @@ def internal_error(error):
     }), 500
 
 if __name__ == '__main__':
-    print("Starting AMESim Flask Server...")
-    print("Server will be available at http://0.0.0.0:5003")
+    logger.info("Starting AMESim Flask Server...")
+    logger.info("Server will be available at http://0.0.0.0:5003")
     app.run(host='0.0.0.0', port=5003, debug=True,threaded = False)
-    # 测试API功能
-    
-    # print("Init API done:",AMEInitAPI())
-    
-    # print("open model done:",AMEOpenAmeFile("D:/files/Riselab_WANG_Hongxuan/Project_503/Amesim_simulation/AMESim_Server-main/model/test.ame"))
-
-    # print("Run simulation done:",AMERunSimulation())
-
-    # print("Get time variable:",AMEGetVariableValues("qout@pump01"))
-
-    # AMECloseCircuit(False)
-
-    # AMECloseAPI()
 
 
 

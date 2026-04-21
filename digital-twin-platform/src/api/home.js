@@ -185,5 +185,21 @@ export function updateArticle(data) {
   })
 }
 
+export function saveFrontendLog(message, level = 'info', source = 'frontend') {
+  return request({
+    url: '/db/log/frontend',
+    method: 'post',
+    data: { message, level, source }
+  })
+}
+
+export function saveFrontendLogsBatch(logs, source = 'frontend') {
+  return request({
+    url: '/db/log/frontend/batch',
+    method: 'post',
+    data: { logs, source }
+  })
+}
+
 
 

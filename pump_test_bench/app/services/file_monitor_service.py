@@ -8,9 +8,15 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import threading
 
-# 将项目根目录添加到 sys.path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..'))
+log_config_path = os.path.join(project_root, 'log')
+sys.path.insert(0, log_config_path)
+from log_config import setup_logger
+
+logger = setup_logger('file_monitor_service')
+
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
-print("项目根目录（上一级目录）:", parent_dir)
+logger.info(f"项目根目录（上一级目录）: {parent_dir}")
 sys.path.append(parent_dir)
 from app.core.table_processor import handle_request_all_data,handle_request_page_data,handle_request_txt_page_data
 from app.core.tmds_data_process import handle_request_tmds_data
@@ -33,9 +39,8 @@ observer_lock = threading.Lock()
 @app.route('/files', methods=['GET'])
 def get_files():
     try:
-        path = request.args.get('path')  # 获取文件名列表
-        print("files params:------------------")
-        print(path)
+        path = request.args.get('path')
+        logger.info(f"files params: {path}")
         if not path:
             return jsonify({"error": "path parameter is required"}), 400
         files = [f for f in os.listdir(path) 
@@ -43,6 +48,7 @@ def get_files():
          and f.lower().endswith((".tdms", ".xlsx", ".xls", ".txt"))]
         return jsonify({"files": files}), 200
     except Exception as e:
+        logger.error(f"获取文件列表失败: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/read_tdms', methods=['GET'])
@@ -67,16 +73,15 @@ def read_tdms():
     except ValueError:
         return jsonify({"error": "Invalid group_channel format. Expected 'GroupName/ChannelName'"}), 400
 
-    print(group_channel_list)
+    logger.info(f"组通道列表: {group_channel_list}")
     file_data = {}
     for file_name in file_names:
-        # 构建文件路径，处理路径末尾的斜杠
         if path and path.endswith('/'):
             file_path = os.path.join(path.rstrip('/'), file_name)
         else:
             file_path = os.path.join(path, file_name) if path else file_name
 
-        print(f"文件路径: {file_path}")
+        logger.info(f"文件路径: {file_path}")
         if not os.path.isfile(file_path):
             file_data[file_name] = {"error": "File not found"}
             continue
@@ -149,7 +154,6 @@ def read_excel():
     return jsonify(file_data), 200
 
 
-# 实时监测目录下是否有新文件
 class WatcherHandler(FileSystemEventHandler):
     def __init__(self, watch_path):
         self.watch_path = watch_path
@@ -157,9 +161,8 @@ class WatcherHandler(FileSystemEventHandler):
     def on_created(self, event):
         if not event.is_directory:
             new_files.append(os.path.basename(event.src_path))
-            print(f"新文件被添加: {event.src_path}")
+            logger.info(f"新文件被添加: {event.src_path}")
 
-# 停止当前监控
 def stop_watching():
     global observer
     with observer_lock:
@@ -167,29 +170,25 @@ def stop_watching():
             observer.stop()
             observer.join()
             observer = None
-            print("已停止当前监控")
+            logger.info("已停止当前监控")
             return True
         return False
 
-# 启动监控线程
 def start_watching(watch_path=None):
     global observer, directory_path
     
-    # 如果提供了新路径，更新监控路径
     if watch_path:
         directory_path = watch_path
     
-    # 确保目录存在
     if not os.path.exists(directory_path):
         try:
             os.makedirs(directory_path, exist_ok=True)
-            print(f"创建监控目录: {directory_path}")
+            logger.info(f"创建监控目录: {directory_path}")
         except Exception as e:
-            print(f"创建目录失败: {e}")
+            logger.error(f"创建目录失败: {e}")
             return False
     
     with observer_lock:
-        # 如果已有监控，先停止
         if observer is not None:
             observer.stop()
             observer.join()
@@ -198,7 +197,7 @@ def start_watching(watch_path=None):
         observer = Observer()
         observer.schedule(event_handler, directory_path, recursive=False)
         observer.start()
-        print(f"开始监控目录: {directory_path}")
+        logger.info(f"开始监控目录: {directory_path}")
         return True
 
 # 后台线程启动默认监控
