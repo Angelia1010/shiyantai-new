@@ -26,6 +26,21 @@
 
     <el-row :gutter="20">
       <el-col :span="24">
+        <div class="search-container">
+          <el-input
+            v-model="searchKeyword"
+            placeholder="请输入文件名称进行搜索"
+            prefix-icon="el-icon-search"
+            clearable
+            @input="handleSearch"
+          >
+          </el-input>
+        </div>
+      </el-col>
+    </el-row>
+
+    <el-row :gutter="20">
+      <el-col :span="24">
         <div class="file-list-container">
           <div v-if="loading" class="loading-container">
             <i class="el-icon-loading"></i>
@@ -37,25 +52,28 @@
             <p>该路径下没有可用的文件</p>
           </div>
           
-          <el-checkbox-group v-else v-model="localSelectedFiles" class="file-checkbox-group">
-            <el-checkbox 
-              v-for="file in files" 
-              :key="file" 
+          <div v-else-if="filteredFiles.length === 0" class="empty-container">
+            <i class="el-icon-search"></i>
+            <p>未找到匹配的文件</p>
+          </div>
+          
+          <el-radio-group v-else v-model="localSelectedFile" class="file-radio-group">
+            <el-radio
+              v-for="file in filteredFiles"
+              :key="file"
               :label="file"
-              class="file-checkbox-item"
+              class="file-radio-item"
             >
-              <div class="file-item">
-                <i class="el-icon-document file-icon"></i>
-                <span class="file-name">{{ file }}</span>
-              </div>
-            </el-checkbox>
-          </el-checkbox-group>
+              <i class="el-icon-document file-icon"></i>
+              <span class="file-name" v-html="highlightText(file)"></span>
+            </el-radio>
+          </el-radio-group>
         </div>
       </el-col>
     </el-row>
 
     <div class="selection-info">
-      <el-tag type="info">已选择 {{ localSelectedFiles.length }} 个文件</el-tag>
+      <el-tag type="info">已选择 {{ localSelectedFile ? 1 : 0 }} 个文件</el-tag>
     </div>
 
     <div class="action-bar">
@@ -63,11 +81,11 @@
         <i class="el-icon-arrow-left"></i>
         上一步
       </el-button>
-      <el-button 
-        type="primary" 
-        size="medium" 
+      <el-button
+        type="primary"
+        size="medium"
         @click="handleNext"
-        :disabled="localSelectedFiles.length === 0"
+        :disabled="!localSelectedFile"
       >
         开始诊断
         <i class="el-icon-arrow-right"></i>
@@ -94,17 +112,25 @@ export default {
   data() {
     return {
       files: [],
-      loading: false
+      loading: false,
+      searchKeyword: ''
     }
   },
   computed: {
-    localSelectedFiles: {
+    localSelectedFile: {
       get() {
-        return this.selectedFiles
+        return this.selectedFiles && this.selectedFiles.length > 0 ? this.selectedFiles[0] : ''
       },
       set(val) {
-        this.$emit('update:selected-files', val)
+        this.$emit('update:selected-files', val ? [val] : [])
       }
+    },
+    filteredFiles() {
+      if (!this.searchKeyword.trim()) {
+        return this.files
+      }
+      const keyword = this.searchKeyword.trim().toLowerCase()
+      return this.files.filter(file => file.toLowerCase().includes(keyword))
     }
   },
   mounted() {
@@ -130,6 +156,19 @@ export default {
     },
     handleNext() {
       this.$emit('next')
+    },
+    handleSearch() {
+      if (this.filteredFiles.length > 0 && !this.filteredFiles.includes(this.localSelectedFile)) {
+        this.localSelectedFile = ''
+      }
+    },
+    highlightText(text) {
+      if (!this.searchKeyword.trim()) {
+        return text
+      }
+      const keyword = this.searchKeyword.trim()
+      const regex = new RegExp(`(${keyword})`, 'gi')
+      return text.replace(regex, '<span class="highlight-text">$1</span>')
     }
   }
 }
@@ -147,6 +186,10 @@ export default {
   align-items: center;
   font-size: 16px;
   font-weight: bold;
+}
+
+.search-container {
+  margin-bottom: 15px;
 }
 
 .file-list-container {
@@ -174,31 +217,46 @@ export default {
   margin-bottom: 10px;
 }
 
-.file-checkbox-group {
+.file-radio-group {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 15px;
 }
 
-.file-checkbox-item {
-  margin: 0 !important;
-  width: calc(25% - 10px);
-  min-width: 200px;
-}
-
-.file-item {
+.file-radio-item {
   display: flex;
   align-items: center;
-  padding: 10px;
-  border: 1px solid #ebeef5;
-  border-radius: 4px;
-  background: #fafafa;
-  transition: all 0.3s;
+  margin: 0 !important;
+  padding: 12px 15px;
+  width: calc(25% - 15px);
+  min-width: 220px;
+  border: 2px solid #dcdfe6;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  transition: all 0.3s ease;
 }
 
-.file-checkbox-item.is-checked .file-item {
-  background: #ecf5ff;
+.file-radio-item:hover {
+  border-color: #c0c4cc;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  transform: translateY(-2px);
+}
+
+.file-radio-item.is-checked {
+  background: linear-gradient(135deg, #ecf5ff 0%, #f5f7fa 100%);
   border-color: #409eff;
+  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.2);
+}
+
+.file-radio-item >>> .el-radio__input {
+  margin-right: 8px;
+}
+
+.file-radio-item >>> .el-radio__label {
+  display: flex;
+  align-items: center;
+  padding: 0;
 }
 
 .file-icon {
@@ -211,6 +269,14 @@ export default {
   font-size: 13px;
   color: #606266;
   word-break: break-all;
+}
+
+.highlight-text {
+  color: #409eff;
+  font-weight: bold;
+  background-color: #e6f2ff;
+  padding: 0 2px;
+  border-radius: 2px;
 }
 
 .selection-info {
