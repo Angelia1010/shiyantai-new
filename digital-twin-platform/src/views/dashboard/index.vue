@@ -322,7 +322,6 @@
       </div>
     </div>
 
-    <AIChater />
   </div>
 </template>
 
@@ -337,7 +336,6 @@ import {
   storeReport,
   createTask,
 } from "@/api/home";
-import AIChater from "@/components/AI/AIChater.vue";
 import { stopJob, downloadFile, fetchReportPreview } from "@/api/article";
 import { Message } from "element-ui";
 import PumpModel from "./PumpModel.vue";
@@ -349,7 +347,6 @@ import {
 
 export default {
   components: {
-    AIChater,
     PumpModel,
     PumpModel2D,
   },
