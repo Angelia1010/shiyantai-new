@@ -221,7 +221,7 @@
                   </svg>
                   <span>{{ result.filename }}</span>
                 </div>
-                <div class="item-fault" v-if="result.diagnosis && result.diagnosis.fault_name">
+                <div class="item-fault" v-if="result.status === '异常' && result.diagnosis && result.diagnosis.fault_name">
                   <span class="fault-label">故障类型:</span>
                   <span class="fault-value">{{ result.diagnosis.fault_name }}</span>
                 </div>

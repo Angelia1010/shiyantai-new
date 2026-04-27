@@ -721,7 +721,7 @@ export default {
           const report = await fetchReportPreview(this.currentTaskId)
           this.diagnosisResult = {
             taskId: this.currentTaskId,
-            status: report.diagnosis && report.diagnosis.fault_name ? '异常' : '正常',
+            status: report.diagnosis && report.diagnosis.fault_name && report.diagnosis.fault_name.includes('异常') ? '异常' : '正常',
             timestamp: new Date().toLocaleString(),
             diagnosis: report.diagnosis,
             repairAdvice: report.repair_advice,
@@ -755,7 +755,7 @@ export default {
         const report = await fetchReportPreview(this.currentTaskId)
         this.diagnosisResult = {
           taskId: this.currentTaskId,
-          status: report.diagnosis && report.diagnosis.fault_name ? '异常' : '正常',
+          status: report.diagnosis && report.diagnosis.fault_name && report.diagnosis.fault_name.includes('异常') ? '异常' : '正常',
           timestamp: new Date().toLocaleString(),
           diagnosis: report.diagnosis,
           repairAdvice: report.repair_advice,
@@ -797,7 +797,7 @@ export default {
           const report = await fetchReportPreview(this.currentTaskId)
           this.diagnosisResult = {
             taskId: this.currentTaskId,
-            status: report.diagnosis && report.diagnosis.fault_name ? '异常' : '正常',
+            status: report.diagnosis && report.diagnosis.fault_name && report.diagnosis.fault_name.includes('异常') ? '异常' : '正常',
             timestamp: new Date().toLocaleString(),
             diagnosis: report.diagnosis,
             repairAdvice: report.repair_advice,
@@ -894,7 +894,7 @@ export default {
         const report = await fetchReportPreview(taskId)
         this.diagnosisResult = {
           taskId: taskId,
-          status: report.diagnosis && report.diagnosis.fault_name ? '异常' : '正常',
+          status: report.diagnosis && report.diagnosis.fault_name && report.diagnosis.fault_name.includes('异常') ? '异常' : '正常',
           timestamp: new Date().toLocaleString(),
           diagnosis: report.diagnosis,
           repairAdvice: report.repair_advice,
