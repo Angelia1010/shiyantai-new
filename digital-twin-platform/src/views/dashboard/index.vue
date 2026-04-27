@@ -293,10 +293,45 @@
           
           <div class="detail-section" v-if="selectedDiagnosisResult.indicators">
             <div class="section-title">关键指标</div>
-            <div class="indicators-grid">
-              <div class="indicator-item" v-for="(value, key) in selectedDiagnosisResult.indicators" :key="key">
-                <span class="indicator-name">{{ key }}</span>
-                <span class="indicator-value">{{ typeof value === 'number' ? value.toFixed(4) : value }}</span>
+            <div class="indicators-list">
+              <div 
+                class="indicator-card" 
+                v-for="(indicator, index) in formatIndicators(selectedDiagnosisResult.indicators)" 
+                :key="index"
+                :class="{ 'abnormal': indicator.isAbnormal }"
+              >
+                <div class="indicator-header">
+                  <div class="indicator-icon" :class="indicator.type">
+                    <svg v-if="indicator.type === 'flow'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/>
+                    </svg>
+                    <svg v-else-if="indicator.type === 'speed'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="10"/>
+                      <path d="M12 6v6l4 2"/>
+                    </svg>
+                    <svg v-else-if="indicator.type === 'pressure'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M12 2v20M2 12h20"/>
+                    </svg>
+                    <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="3"/>
+                      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                    </svg>
+                  </div>
+                  <div class="indicator-status" v-if="indicator.isAbnormal">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="10"/>
+                      <line x1="12" y1="8" x2="12" y2="12"/>
+                      <line x1="12" y1="16" x2="12.01" y2="16"/>
+                    </svg>
+                  </div>
+                </div>
+                <div class="indicator-body">
+                  <div class="indicator-name">{{ indicator.name }}</div>
+                  <div class="indicator-value">{{ indicator.value }}</div>
+                </div>
+                <div class="indicator-footer">
+                  <span class="indicator-reference">{{ indicator.reference }}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -515,6 +550,38 @@ export default {
 
     clearAbnormalWarning() {
       this.latestAbnormalResult = null;
+    },
+
+    formatIndicators(indicators) {
+      if (!indicators || !Array.isArray(indicators)) {
+        return [];
+      }
+      return indicators.map(item => {
+        const name = item.name || '';
+        const value = item.value || '';
+        const reference = item.reference || '';
+        
+        let type = 'default';
+        if (name.includes('流量')) {
+          type = 'flow';
+        } else if (name.includes('转速')) {
+          type = 'speed';
+        } else if (name.includes('压力')) {
+          type = 'pressure';
+        }
+        
+        const isAbnormal = value.includes('⚠️') || value.includes('超限') || value.includes('异常');
+        
+        const cleanValue = value.replace(' ⚠️超限', '').replace(' ✓正常', '').replace(' ⚠️异常', '');
+        
+        return {
+          name,
+          value: cleanValue,
+          reference,
+          type,
+          isAbnormal
+        };
+      });
     },
 
     getParticleStyle(index) {
@@ -2160,31 +2227,150 @@ export default {
   color: #ff0055;
 }
 
-.indicators-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
+.indicators-list {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 
-.indicator-item {
-  background: rgba(0, 20, 40, 0.5);
-  border: 1px solid rgba(0, 212, 255, 0.1);
-  border-radius: 8px;
-  padding: 12px;
+.indicator-card {
+  background: linear-gradient(135deg, rgba(0, 30, 60, 0.6) 0%, rgba(0, 20, 40, 0.8) 100%);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  border-radius: 12px;
+  padding: 16px;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.indicator-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: linear-gradient(to bottom, #00d4ff, #00ff88);
+  opacity: 0.6;
+}
+
+.indicator-card:hover {
+  border-color: rgba(0, 212, 255, 0.4);
+  transform: translateX(4px);
+  box-shadow: 0 4px 20px rgba(0, 212, 255, 0.1);
+}
+
+.indicator-card.abnormal {
+  border-color: rgba(255, 0, 85, 0.4);
+  background: linear-gradient(135deg, rgba(255, 0, 85, 0.1) 0%, rgba(0, 20, 40, 0.8) 100%);
+}
+
+.indicator-card.abnormal::before {
+  background: linear-gradient(to bottom, #ff0055, #ff6b00);
+}
+
+.indicator-card.abnormal:hover {
+  border-color: rgba(255, 0, 85, 0.6);
+  box-shadow: 0 4px 20px rgba(255, 0, 85, 0.15);
+}
+
+.indicator-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.indicator-icon {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: rgba(0, 212, 255, 0.1);
+  border: 1px solid rgba(0, 212, 255, 0.3);
+  color: #00d4ff;
+}
+
+.indicator-icon.flow {
+  background: rgba(0, 212, 255, 0.1);
+  border-color: rgba(0, 212, 255, 0.3);
+  color: #00d4ff;
+}
+
+.indicator-icon.speed {
+  background: rgba(0, 255, 136, 0.1);
+  border-color: rgba(0, 255, 136, 0.3);
+  color: #00ff88;
+}
+
+.indicator-icon.pressure {
+  background: rgba(255, 107, 0, 0.1);
+  border-color: rgba(255, 107, 0, 0.3);
+  color: #ff6b00;
+}
+
+.indicator-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.indicator-status {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ff0055;
+  animation: pulseWarning 1.5s ease-in-out infinite;
+}
+
+.indicator-status svg {
+  width: 20px;
+  height: 20px;
+}
+
+@keyframes pulseWarning {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.1); }
+}
+
+.indicator-body {
+  margin-bottom: 10px;
 }
 
 .indicator-name {
-  display: block;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
   margin-bottom: 6px;
+  line-height: 1.4;
 }
 
 .indicator-value {
-  display: block;
-  font-size: 14px;
-  font-weight: 600;
-  color: #00d4ff;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.5px;
+}
+
+.indicator-card.abnormal .indicator-value {
+  color: #ff6b00;
+}
+
+.indicator-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.indicator-reference {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.4);
+  padding: 4px 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .repair-advice {
