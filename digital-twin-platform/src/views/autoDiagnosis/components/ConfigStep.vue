@@ -36,6 +36,25 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <el-row :gutter="20">
+          <el-col :span="8">
+            <el-form-item label="介质密度">
+              <el-input 
+                v-model.number="localConfig.mediumDensity" 
+                placeholder="如: 820"
+                type="number"
+                clearable
+              >
+                <template #prepend>
+                  <i class="el-icon-data-line"></i>
+                </template>
+                <template #append>
+                  kg/m³
+                </template>
+              </el-input>
+            </el-form-item>
+          </el-col>
+        </el-row>
         <div class="form-tip">
           <template v-if="localConfig.diagnosisMode === 'realtime'">
             <i class="el-icon-info"></i> 实时监控模式：持续监控文件夹，新文件出现时自动诊断
@@ -60,7 +79,7 @@
       
       <el-form label-width="120px" :disabled="!localConfig.enableSimulation">
         <el-row :gutter="20">
-          <el-col :span="8">
+          <el-col :span="12">
             <el-form-item label="模型文件路径">
               <el-input 
                 v-model="localConfig.ameModel" 
@@ -73,7 +92,7 @@
               </el-input>
             </el-form-item>
           </el-col>
-          <el-col :span="8">
+          <el-col :span="12">
             <el-form-item label="电传转速">
               <el-select 
                 v-model="localConfig.electricalSpeed" 
@@ -89,26 +108,9 @@
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :span="8">
-            <el-form-item label="介质密度">
-              <el-input 
-                v-model.number="localConfig.mediumDensity" 
-                placeholder="如: 820"
-                type="number"
-                clearable
-              >
-                <template #prepend>
-                  <i class="el-icon-data-line"></i>
-                </template>
-                <template #append>
-                  kg/m³
-                </template>
-              </el-input>
-            </el-form-item>
-          </el-col>
         </el-row>
         <div class="form-tip">
-          <i class="el-icon-info"></i> 选择电传转速后，将自动配置对应的三个流量控制参数；介质密度用于流量计诊断计算
+          <i class="el-icon-info"></i> 选择电传转速后，将自动配置对应的三个流量控制参数
         </div>
 
         <el-divider content-position="left">
