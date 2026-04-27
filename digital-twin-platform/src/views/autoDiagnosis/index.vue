@@ -156,6 +156,10 @@ export default {
       statusMessage: '等待启动',
       monitorTimer: null,
       dataTimer: null,
+      heartbeatTimer: null,
+      lastHeartbeat: 0,
+      fileMonitorWorker: null,
+      workerHeartbeatTimer: null,
       page: 0,
       pageSize: 500,
       featuresQueue: [],
@@ -168,14 +172,284 @@ export default {
       dashboardOpened: false
     }
   },
+  mounted() {
+    document.addEventListener('visibilitychange', this.handleVisibilityChange)
+  },
   beforeDestroy() {
+    document.removeEventListener('visibilitychange', this.handleVisibilityChange)
     this.stopAllTimers()
+    if (this.fileMonitorWorker) {
+      this.fileMonitorWorker.postMessage({ type: 'STOP' })
+      this.fileMonitorWorker.terminate()
+      this.fileMonitorWorker = null
+    }
     if (this.modelOpened) {
       closeModel().catch(() => {})
     }
     closeBroadcastChannel()
   },
   methods: {
+    initFileMonitorWorker() {
+      if (this.fileMonitorWorker) {
+        return
+      }
+      
+      try {
+        const workerCode = `
+let monitorTimer = null
+let isRunning = false
+let dataPath = ''
+let checkInterval = 5000
+let lastCheckTime = 0
+
+self.onmessage = function(e) {
+  const { type, payload } = e.data
+
+  switch (type) {
+    case 'START':
+      startMonitor(payload)
+      break
+    case 'STOP':
+      stopMonitor()
+      break
+    case 'UPDATE_CONFIG':
+      updateConfig(payload)
+      break
+    case 'HEARTBEAT_CHECK':
+      sendHeartbeat()
+      break
+    default:
+      console.log('Unknown message type:', type)
+  }
+}
+
+function startMonitor(config) {
+  if (isRunning) {
+    return
+  }
+  
+  isRunning = true
+  dataPath = config.dataPath || dataPath
+  checkInterval = config.checkInterval || 5000
+  
+  self.postMessage({
+    type: 'STATUS',
+    payload: {
+      status: 'started',
+      message: '监控已启动',
+      dataPath: dataPath,
+      checkInterval: checkInterval
+    }
+  })
+
+  checkNewFiles()
+  
+  monitorTimer = setInterval(() => {
+    if (isRunning) {
+      checkNewFiles()
+    }
+  }, checkInterval)
+}
+
+function stopMonitor() {
+  isRunning = false
+  
+  if (monitorTimer) {
+    clearInterval(monitorTimer)
+    monitorTimer = null
+  }
+  
+  self.postMessage({
+    type: 'STATUS',
+    payload: {
+      status: 'stopped',
+      message: '监控已停止'
+    }
+  })
+}
+
+function updateConfig(config) {
+  if (config.dataPath) {
+    dataPath = config.dataPath
+  }
+  if (config.checkInterval) {
+    checkInterval = config.checkInterval
+    if (isRunning && monitorTimer) {
+      clearInterval(monitorTimer)
+      monitorTimer = setInterval(() => {
+        if (isRunning) {
+          checkNewFiles()
+        }
+      }, checkInterval)
+    }
+  }
+  
+  self.postMessage({
+    type: 'STATUS',
+    payload: {
+      status: 'config_updated',
+      message: '配置已更新',
+      dataPath: dataPath,
+      checkInterval: checkInterval
+    }
+  })
+}
+
+function checkNewFiles() {
+  lastCheckTime = Date.now()
+  
+  self.postMessage({
+    type: 'CHECK_FILES',
+    payload: {
+      dataPath: dataPath,
+      timestamp: lastCheckTime
+    }
+  })
+}
+
+function sendHeartbeat() {
+  self.postMessage({
+    type: 'HEARTBEAT',
+    payload: {
+      isRunning: isRunning,
+      lastCheckTime: lastCheckTime,
+      timestamp: Date.now()
+    }
+  })
+}
+`
+        
+        const blob = new Blob([workerCode], { type: 'application/javascript' })
+        const workerUrl = URL.createObjectURL(blob)
+        this.fileMonitorWorker = new Worker(workerUrl)
+        
+        this.fileMonitorWorker.onmessage = async (e) => {
+          const { type, payload } = e.data
+          
+          switch (type) {
+            case 'STATUS':
+              this.addLog(`[Worker] ${payload.message}`, 'info')
+              break
+            case 'CHECK_FILES':
+              await this.handleWorkerCheckFiles(payload)
+              break
+            case 'HEARTBEAT':
+              this.lastHeartbeat = payload.timestamp
+              break
+            default:
+              console.log('Unknown worker message:', type, payload)
+          }
+        }
+        
+        this.fileMonitorWorker.onerror = (error) => {
+          this.addLog(`[Worker] 错误: ${error.message}`, 'error')
+        }
+        
+        this.addLog('Web Worker 文件监控器已初始化', 'success')
+      } catch (error) {
+        this.addLog(`Web Worker 初始化失败: ${error.message}，将使用备用监控方式`, 'warn')
+        this.fileMonitorWorker = null
+      }
+    },
+
+    async handleWorkerCheckFiles(payload) {
+      if (!this.isRunning) return
+      
+      try {
+        const response = await newFileListAPI(payload.dataPath)
+        const newFiles = response.new_files || []
+        
+        for (const filename of newFiles) {
+          if (!this.processedFiles.includes(filename)) {
+            this.processedFiles.push(filename)
+            this.addLog(`检测到新文件: ${filename}`, 'info')
+            await this.processFile(filename)
+          }
+        }
+      } catch (error) {
+        this.addLog('监控出错: ' + error.message, 'error')
+      }
+    },
+
+    startWorkerHeartbeat() {
+      this.lastHeartbeat = Date.now()
+      this.workerHeartbeatTimer = setInterval(() => {
+        if (this.fileMonitorWorker && this.isRunning) {
+          this.fileMonitorWorker.postMessage({ type: 'HEARTBEAT_CHECK' })
+        }
+      }, 3000)
+    },
+
+    stopWorkerHeartbeat() {
+      if (this.workerHeartbeatTimer) {
+        clearInterval(this.workerHeartbeatTimer)
+        this.workerHeartbeatTimer = null
+      }
+    },
+
+    handleVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        this.addLog('页面重新可见，检查监控状态...', 'info')
+        if (this.isRunning && this.config.diagnosisMode === 'realtime') {
+          if (!this.fileMonitorWorker && !this.monitorTimer) {
+            this.addLog('检测到监控已停止，重新启动监控', 'warn')
+            this.restartRealtimeMonitor()
+          }
+        }
+      } else {
+        this.addLog('页面进入后台状态，Web Worker 将继续监控', 'info')
+      }
+    },
+
+    restartRealtimeMonitor() {
+      this.stopAllTimers()
+      this.addLog('重新启动实时监控', 'info')
+      
+      if (this.fileMonitorWorker) {
+        this.fileMonitorWorker.postMessage({
+          type: 'START',
+          payload: {
+            dataPath: this.config.dataPath,
+            checkInterval: 5000
+          }
+        })
+        this.startWorkerHeartbeat()
+      } else {
+        this.startMonitorTimer()
+        this.startHeartbeat()
+      }
+    },
+
+    startMonitorTimer() {
+      this.monitorTimer = setInterval(async () => {
+        if (!this.isRunning) return
+        this.lastHeartbeat = Date.now()
+        try {
+          const response = await newFileListAPI(this.config.dataPath)
+          const newFiles = response.new_files || []
+          
+          for (const filename of newFiles) {
+            if (!this.processedFiles.includes(filename)) {
+              this.processedFiles.push(filename)
+              this.addLog(`检测到新文件: ${filename}`, 'info')
+              await this.processFile(filename)
+            }
+          }
+        } catch (error) {
+          this.addLog('监控出错: ' + error.message, 'error')
+        }
+      }, 5000)
+    },
+
+    startHeartbeat() {
+      this.lastHeartbeat = Date.now()
+      this.heartbeatTimer = setInterval(() => {
+        if (this.isRunning) {
+          this.lastHeartbeat = Date.now()
+        }
+      }, 3000)
+    },
+
     addLog(message, level = 'info') {
       const now = new Date()
       const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`
@@ -297,23 +571,23 @@ export default {
         message: '监控中 - 等待新文件...'
       })
 
-      this.monitorTimer = setInterval(async () => {
-        if (!this.isRunning) return
-        try {
-          const response = await newFileListAPI(this.config.dataPath)
-          const newFiles = response.new_files || []
-          
-          for (const filename of newFiles) {
-            if (!this.processedFiles.includes(filename)) {
-              this.processedFiles.push(filename)
-              this.addLog(`检测到新文件: ${filename}`, 'info')
-              await this.processFile(filename)
-            }
+      this.initFileMonitorWorker()
+      
+      if (this.fileMonitorWorker) {
+        this.fileMonitorWorker.postMessage({
+          type: 'START',
+          payload: {
+            dataPath: this.config.dataPath,
+            checkInterval: 5000
           }
-        } catch (error) {
-          this.addLog('监控出错: ' + error.message, 'error')
-        }
-      }, 5000)
+        })
+        this.startWorkerHeartbeat()
+        this.addLog('Web Worker 监控已启动（后台标签页不受影响）', 'success')
+      } else {
+        this.startMonitorTimer()
+        this.startHeartbeat()
+        this.addLog('备用监控定时器已启动', 'info')
+      }
     },
 
     async startFileMode() {
@@ -845,6 +1119,9 @@ export default {
     stopDiagnosis() {
       this.isRunning = false
       this.stopAllTimers()
+      if (this.fileMonitorWorker) {
+        this.fileMonitorWorker.postMessage({ type: 'STOP' })
+      }
       this.currentProcessStep = 0
       this.statusMessage = '已停止'
       this.addLog('诊断流程已停止', 'warn')
@@ -869,6 +1146,11 @@ export default {
         clearInterval(this.dataTimer)
         this.dataTimer = null
       }
+      if (this.heartbeatTimer) {
+        clearInterval(this.heartbeatTimer)
+        this.heartbeatTimer = null
+      }
+      this.stopWorkerHeartbeat()
     },
 
     handleDiagnosisComplete() {
