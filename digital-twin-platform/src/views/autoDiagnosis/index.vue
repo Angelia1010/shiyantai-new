@@ -127,7 +127,7 @@ export default {
         autoDiagnosis: true,
         enableSimulation: false,
         electricalSpeed: null,
-        mediumDensity: 900
+        mediumDensity: 850
       },
       variableConfigs: [
         { name: '供油压力1-1', fileName: 'pressureGY11.data' },
