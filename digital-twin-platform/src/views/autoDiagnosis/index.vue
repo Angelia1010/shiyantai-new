@@ -127,7 +127,8 @@ export default {
         autoDiagnosis: true,
         enableSimulation: false,
         electricalSpeed: null,
-        mediumDensity: 850
+        mediumDensity: 850,
+        groupSize: 5
       },
       variableConfigs: [
         { name: '供油压力1-1', fileName: 'pressureGY11.data' },
@@ -164,7 +165,6 @@ export default {
       pageSize: 500,
       featuresQueue: [],
       queueThreshold: 60,
-      groupSize: 50,
       processedFiles: [],
       currentTaskId: null,
       modelOpened: false,
@@ -759,11 +759,11 @@ function sendHeartbeat() {
           break
         }
         
-        for (let i = 0; i < maxLen; i += this.groupSize) {
+        for (let i = 0; i < maxLen; i += this.config.groupSize) {
           const featureMap = {}
           for (const field of fields) {
             const arr = allFieldData[field] || []
-            const group = arr.slice(i, i + this.groupSize)
+            const group = arr.slice(i, i + this.config.groupSize)
               .map(v => v === 'nan' || v === null || v === undefined ? NaN : Number(v))
               .filter(v => typeof v === 'number' && !isNaN(v))
             

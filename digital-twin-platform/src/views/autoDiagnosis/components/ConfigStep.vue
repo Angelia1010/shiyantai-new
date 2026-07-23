@@ -54,6 +54,24 @@
               </el-input>
             </el-form-item>
           </el-col>
+          <el-col :span="8">
+            <el-form-item label="分组大小">
+              <el-input 
+                v-model.number="localConfig.groupSize" 
+                placeholder="数据分组行数"
+                type="number"
+                :min="1"
+                clearable
+              >
+                <template #prepend>
+                  <i class="el-icon-s-operation"></i>
+                </template>
+                <template #append>
+                  行/组
+                </template>
+              </el-input>
+            </el-form-item>
+          </el-col>
         </el-row>
         <div class="form-tip">
           <template v-if="localConfig.diagnosisMode === 'realtime'">
