@@ -98,6 +98,7 @@
                 <el-table-column label="状态" width="100">
                   <template slot-scope="scope">
                     <el-tag v-if="scope.row.status === 'Completed'" type="success" size="small">已完成</el-tag>
+                    <el-tag v-else-if="scope.row.status === 'Stop'" type="info" size="small">未运行</el-tag>
                     <el-tag v-else type="warning" size="small">诊断中</el-tag>
                   </template>
                 </el-table-column>
@@ -116,7 +117,7 @@
                       <el-button size="mini" @click="download(row)">下载</el-button>
                       <el-button size="mini" type="primary" @click="viewReport(row)">查看</el-button>
                     </template>
-                    <el-button v-else size="mini" disabled>诊断中</el-button>
+                    <el-button v-else size="mini" disabled>{{ row.status === 'Stop' ? '未运行' : '诊断中' }}</el-button>
                   </template>
                 </el-table-column>
               </el-table>
@@ -139,6 +140,7 @@
           <el-table-column label="完成状态" width="120">
             <template slot-scope="scope">
               <el-tag v-if="scope.row.status === 'Completed'" type="success" size="small">已完成</el-tag>
+              <el-tag v-else-if="scope.row.status === 'Stop'" type="info" size="small">未运行</el-tag>
               <el-tag v-else type="warning" size="small">进行中</el-tag>
             </template>
           </el-table-column>
@@ -248,8 +250,8 @@ export default {
         },
         {
           id: 2,
-          label: "运行中",
-          value: "Pending",
+          label: "已完成",
+          value: "Completed",
         },
       ],
       // 保存页码和每页多少条
