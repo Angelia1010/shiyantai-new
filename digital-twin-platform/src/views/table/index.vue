@@ -30,7 +30,7 @@
       <!-- 查询按钮 -->
       <div class="query-btn">
         <el-button size="small" @click="cancel">重置</el-button>
-        <el-button type="primary" size="small" @click="getList">查询</el-button>
+        <el-button type="primary" size="small" @click="handleQuery">查询</el-button>
       </div>
     </el-card>
 
@@ -330,7 +330,7 @@ export default {
         }
       });
       
-      return Object.values(groups).map(group => {
+      const allGroups = Object.values(groups).map(group => {
         const completedTasks = group.originalTasks.filter(t => t.status === 'Completed');
         const hasAbnormal = completedTasks.some(t => t.diagnosis_result === 'abnormal');
         const allNormal = completedTasks.length > 0 && completedTasks.every(t => t.diagnosis_result === 'normal');
@@ -343,6 +343,12 @@ export default {
         }
         return group;
       }).sort((a, b) => b.createTime - a.createTime);
+      
+      // 前端分页：基于全量排序后的数据切片
+      this.page.total = allGroups.length;
+      const start = (this.page.currentPage - 1) * this.page.pageSize;
+      const end = start + this.page.pageSize;
+      return allGroups.slice(start, end);
     }
   },
   created() {
@@ -365,8 +371,8 @@ export default {
       const req = {
         nameOrCode: this.formData.nameOrCode,
         status: this.formData.status,
-        page: this.page.currentPage,
-        pageSize: this.page.pageSize,
+        page: 1,
+        pageSize: 100000,
       };
       
       if (this.formData.dateRange && this.formData.dateRange.length === 2) {
@@ -376,7 +382,6 @@ export default {
       
       fetchList(req).then((response) => {
         this.tableData = response.tasks;
-        this.page.total = response.total_count;
         this.listLoading = false;
         
         const allTaskIds = new Set(response.tasks.map(task => task.task_id));
@@ -562,26 +567,21 @@ export default {
           this.reportDialog.visible = false;
         });
     },
-    // 改变每页多少条的时候触发
+    // 改变每页多少条的时候触发（前端分页，无需请求后端）
     handleSizeChange(pageSize) {
       this.page = {
         ...this.page,
         pageSize: pageSize,
+        currentPage: 1,
       };
-      // 调获取列表接口
-      this.getTableList();
     },
-    // 查看当前第几页数的时候触发
+    // 查看当前第几页数的时候触发（前端分页，无需请求后端）
     handleCurrentChange(currentPage) {
       this.page = {
         ...this.page,
         currentPage: currentPage,
       };
-      // 调获取列表接口
-      this.getTableList();
     },
-    // 获取列表接口
-    getTableList() {},
     // 取消
     cancel() {
       this.formData = {
@@ -590,9 +590,13 @@ export default {
         dateRange: null,
       };
     },
-    // 确定
+    // 确定（主动查询，重置到第1页）
     confirm() {
-      // 调用获取列表接口
+      this.handleQuery();
+    },
+    // 主动查询，重置到第1页
+    handleQuery() {
+      this.page.currentPage = 1;
       this.getList();
     },
     addTask() {
