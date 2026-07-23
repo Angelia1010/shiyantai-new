@@ -13,10 +13,10 @@ class Diagnosis:
     COL_MASS_FLOW_1 = '回油质量流量1'
     COL_MASS_FLOW_2 = '回油质量流量2'
     COL_FLOW_1 = '回油流量1-1'
-    COL_FLOW_2 = '回油流量2-1'
+    COL_FLOW_2 = '回油流量1-2'
 
     FLOW_METER_THRESHOLD = 0.15
-    MASS_FLOW_UNIT_CONVERSION = 60.0
+    MASS_FLOW_UNIT_CONVERSION = 3600.0
 
     def __init__(self, file_name, conf_file):
         self.file_name = file_name
@@ -338,22 +338,22 @@ class Diagnosis:
         
         if mass_flow_1 is not None and len(mass_flow_1) > 0:
             result = self._diagnose_single_flow_meter(
-                mass_flow_series=mass_flow_1,
+                mass_flow_series=mass_flow_2,
                 actual_flow_series=flow_1,
                 density=density,
                 meter_name='回路1流量计',
-                mass_flow_col_name=self.COL_MASS_FLOW_1,
+                mass_flow_col_name=self.COL_MASS_FLOW_2,
                 flow_col_name=self.COL_FLOW_1
             )
             results.append(result)
 
         if mass_flow_1 is not None and len(mass_flow_1) > 0:
             result = self._diagnose_single_flow_meter(
-                mass_flow_series=mass_flow_1,
+                mass_flow_series=mass_flow_2,
                 actual_flow_series=flow_2,
                 density=density,
                 meter_name='回路2流量计',
-                mass_flow_col_name=self.COL_MASS_FLOW_1,
+                mass_flow_col_name=self.COL_MASS_FLOW_2,
                 flow_col_name=self.COL_FLOW_2
             )
             results.append(result)
@@ -377,7 +377,7 @@ class Diagnosis:
         诊断单个流量计
         
         :param mass_flow_series: 质量流量数据序列（kg/s）
-        :param actual_flow_series: 实际流量数据序列（L/min，将转换为L/h进行比较）
+        :param actual_flow_series: 实际流量数据序列（L/h）
         :param density: 介质密度（kg/m³）
         :param meter_name: 流量计名称
         :param mass_flow_col_name: 质量流量列名
@@ -412,19 +412,18 @@ class Diagnosis:
         
         if actual_flow_series is not None and len(actual_flow_series) > 0:
             actual_flow_mean = float(actual_flow_series.mean())
-            actual_flow_mean_lh = actual_flow_mean * 60.0
             
-            if abs(actual_flow_mean_lh) > 1e-6:
-                relative_deviation = abs(theoretical_flow - actual_flow_mean_lh) / abs(actual_flow_mean_lh)
+            if abs(actual_flow_mean) > 1e-6:
+                relative_deviation = abs(theoretical_flow - actual_flow_mean) / abs(actual_flow_mean)
             else:
-                relative_deviation = abs(theoretical_flow - actual_flow_mean_lh)
+                relative_deviation = abs(theoretical_flow - actual_flow_mean)
             
             is_abnormal = relative_deviation > self.FLOW_METER_THRESHOLD
             
             indicators.append({
                 'name': f'{meter_name} 实际流量均值',
                 'reference': '测量值',
-                'value': f'{actual_flow_mean:.2f} L/min ({actual_flow_mean_lh:.2f} L/h)'
+                'value': f'{actual_flow_mean:.2f} L/h'
             })
             indicators.append({
                 'name': f'{meter_name} 流量偏差',
@@ -437,14 +436,14 @@ class Diagnosis:
                 f'{meter_name}：质量流量均值={mass_flow_mean:.6f} kg/s，'
                 f'仿真转速={y:.2f} rad/s，'
                 f'理论流量={theoretical_flow:.2f} L/h，'
-                f'实际流量={actual_flow_mean:.2f} L/min（{actual_flow_mean_lh:.2f} L/h），'
+                f'实际流量={actual_flow_mean:.2f} L/h，'
                 f'相对偏差={relative_deviation*100:.2f}%，'
                 f'阈值={self.FLOW_METER_THRESHOLD*100:.1f}%，'
                 f'判定为{status}。'
             )
             repair_advice = (
                 f'  · {meter_name}：理论流量={theoretical_flow:.2f} L/h，'
-                f'实际流量={actual_flow_mean:.2f} L/min（{actual_flow_mean_lh:.2f} L/h），'
+                f'实际流量={actual_flow_mean:.2f} L/h，'
                 f'偏差={relative_deviation*100:.2f}%'
                 f'{" ⚠️异常" if is_abnormal else " ✓正常"}\n'
             )
@@ -459,7 +458,7 @@ class Diagnosis:
             )
             repair_advice = (
                 f'  · {meter_name}：理论流量={theoretical_flow:.2f} L/h，'
-                f'缺少实际流量数据（L/min）\n'
+                f'缺少实际流量数据（L/h）\n'
             )
         
         return {
