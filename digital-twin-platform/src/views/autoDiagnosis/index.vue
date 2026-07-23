@@ -358,11 +358,20 @@ function sendHeartbeat() {
       try {
         const response = await newFileListAPI(payload.dataPath)
         const newFiles = response.new_files || []
+        const modifiedFiles = response.modified_files || []
         
-        for (const filename of newFiles) {
+        // 将被修改的文件从已处理列表中移除，使其能被重新处理
+        for (const filename of modifiedFiles) {
+          const idx = this.processedFiles.indexOf(filename)
+          if (idx !== -1) this.processedFiles.splice(idx, 1)
+        }
+        
+        // 合并新文件和修改文件统一处理
+        const allFiles = [...newFiles, ...modifiedFiles]
+        for (const filename of allFiles) {
           if (!this.processedFiles.includes(filename)) {
             this.processedFiles.push(filename)
-            this.addLog(`检测到新文件: ${filename}`, 'info')
+            this.addLog(`检测到${newFiles.includes(filename) ? '新文件' : '文件更新'}: ${filename}`, 'info')
             await this.processFile(filename)
           }
         }
@@ -427,11 +436,20 @@ function sendHeartbeat() {
         try {
           const response = await newFileListAPI(this.config.dataPath)
           const newFiles = response.new_files || []
+          const modifiedFiles = response.modified_files || []
           
-          for (const filename of newFiles) {
+          // 将被修改的文件从已处理列表中移除，使其能被重新处理
+          for (const filename of modifiedFiles) {
+            const idx = this.processedFiles.indexOf(filename)
+            if (idx !== -1) this.processedFiles.splice(idx, 1)
+          }
+          
+          // 合并新文件和修改文件统一处理
+          const allFiles = [...newFiles, ...modifiedFiles]
+          for (const filename of allFiles) {
             if (!this.processedFiles.includes(filename)) {
               this.processedFiles.push(filename)
-              this.addLog(`检测到新文件: ${filename}`, 'info')
+              this.addLog(`检测到${newFiles.includes(filename) ? '新文件' : '文件更新'}: ${filename}`, 'info')
               await this.processFile(filename)
             }
           }

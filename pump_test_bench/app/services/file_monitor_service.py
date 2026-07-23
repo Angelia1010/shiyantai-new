@@ -30,6 +30,8 @@ default_directory_path = os.path.join(parent_dir, "app", "test_data")
 directory_path = default_directory_path
 # 存储监控到的新文件
 new_files = []
+# 存储监控到的被修改的文件
+modified_files = []
 # 全局 observer 实例
 observer = None
 # 线程锁，用于保护 observer 操作
@@ -157,11 +159,29 @@ def read_excel():
 class WatcherHandler(FileSystemEventHandler):
     def __init__(self, watch_path):
         self.watch_path = watch_path
+        self._last_modified = {}  # {filename: timestamp} 用于防抖
+        self._debounce_seconds = 2.0  # 同一文件修改事件的防抖间隔
         
     def on_created(self, event):
         if not event.is_directory:
             new_files.append(os.path.basename(event.src_path))
             logger.info(f"新文件被添加: {event.src_path}")
+    
+    def on_modified(self, event):
+        """监听文件修改事件，带防抖机制"""
+        if event.is_directory:
+            return
+        fname = os.path.basename(event.src_path)
+        # 只关注支持的文件类型
+        if not fname.lower().endswith((".tdms", ".xlsx", ".xls", ".txt")):
+            return
+        now = time.time()
+        last = self._last_modified.get(fname, 0)
+        if now - last < self._debounce_seconds:
+            return  # 防抖：忽略短时间内的重复事件
+        self._last_modified[fname] = now
+        modified_files.append(fname)
+        logger.info(f"文件被修改: {event.src_path}")
 
 def stop_watching():
     global observer
@@ -234,8 +254,9 @@ def set_watch_path():
         if not os.path.isdir(path):
             return jsonify({"error": "Path must be a directory"}), 400
         
-        # 清空之前监控到的新文件列表
+        # 清空之前监控到的新文件列表和被修改文件列表
         new_files.clear()
+        modified_files.clear()
         
         # 启动新的监控
         success = start_watching(path)
@@ -262,7 +283,7 @@ def get_watch_path():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# 获取实时监测到的新文件
+# 获取实时监测到的新文件和被修改文件
 @app.route('/new_files', methods=['GET'])
 def get_new_files():
     try:
@@ -275,15 +296,18 @@ def get_new_files():
                 "message": "Path mismatch",
                 "current_watch_path": directory_path,
                 "requested_path": path,
-                "new_files": []
+                "new_files": [],
+                "modified_files": []
             }), 200
         
+        result = {"new_files": [], "modified_files": []}
         if new_files:
-            files = new_files.copy()  # 复制新文件列表
-            new_files.clear()  # 清空已返回的文件列表
-            return jsonify({"new_files": files}), 200
-        else:
-            return jsonify({"new_files": []}), 200
+            result["new_files"] = new_files.copy()
+            new_files.clear()
+        if modified_files:
+            result["modified_files"] = modified_files.copy()
+            modified_files.clear()
+        return jsonify(result), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

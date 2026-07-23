@@ -616,7 +616,7 @@ export default {
           try {
             console.log("开始获取新文件列表");
             const response = await newFileListAPI(this.path);
-            this.fileNames = response.new_files || [];
+            this.fileNames = [...(response.new_files || []), ...(response.modified_files || [])];
             console.log("新文件列表:", this.fileNames);
             if (this.fileNames.length) {
               for (const filename of this.fileNames) {
