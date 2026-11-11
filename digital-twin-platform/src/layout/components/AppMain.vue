@@ -25,7 +25,9 @@ export default {
   height: calc(100vh - 50px);
   width: 100%;
   position: relative;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: #f3f5f8;
 }
 
 .fixed-header + .app-main {

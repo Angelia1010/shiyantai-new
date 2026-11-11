@@ -63,8 +63,9 @@ export default {
   height: 50px;
   overflow: hidden;
   position: relative;
-  background: #fff;
-  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
+  background: #111a29;
+  border-bottom: 1px solid rgba(120, 150, 190, 0.12);
+  color: #c7d2e0;
 
   .hamburger-container {
     line-height: 46px;
@@ -75,8 +76,17 @@ export default {
     -webkit-tap-highlight-color: transparent;
 
     &:hover {
-      background: rgba(0, 0, 0, 0.025);
+      background: rgba(255, 255, 255, 0.05);
     }
+  }
+
+  ::v-deep .hamburger {
+    fill: #c7d2e0;
+  }
+
+  ::v-deep .el-breadcrumb__inner,
+  ::v-deep .el-breadcrumb__inner a {
+    color: #c7d2e0;
   }
 
   .breadcrumb-container {
@@ -97,7 +107,7 @@ export default {
       padding: 0 8px;
       height: 100%;
       font-size: 18px;
-      color: #5a5e66;
+      color: #c7d2e0;
       vertical-align: text-bottom;
 
       &.hover-effect {
@@ -105,7 +115,7 @@ export default {
         transition: background 0.3s;
 
         &:hover {
-          background: rgba(0, 0, 0, 0.025);
+          background: rgba(255, 255, 255, 0.05);
         }
       }
     }
@@ -121,10 +131,11 @@ export default {
           cursor: pointer;
           font-size: 20px;
           vertical-align: middle;
-          color: #409eff;
+          color: #6ea2ff;
         }
 
         .user-name {
+          color: #eef3fa;
           margin-left: 6px;
           font-size: 14px;
           vertical-align: middle;

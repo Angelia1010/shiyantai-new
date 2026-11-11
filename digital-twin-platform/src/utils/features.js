@@ -78,3 +78,24 @@ export function mean(values) {
   const nums = toNumbers(values || [])
   return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null
 }
+
+/** 根据测点名称推断单位（试验台导出数据不带单位，这里按命名约定）。 */
+export function fieldUnit(name) {
+  if (!name) return ''
+  if (name.includes('转速')) return 'rpm'
+  if (name.includes('扭矩')) return 'N·m'
+  if (name.includes('压力')) return 'MPa'
+  if (name.includes('温度')) return '°C'
+  if (name.includes('流量')) return 'L/h'
+  return ''
+}
+
+/** 数值显示：按量级保留合适的小数位。 */
+export function formatValue(value) {
+  if (value === null || value === undefined || Number.isNaN(value)) return '--'
+  const abs = Math.abs(value)
+  if (abs >= 1000) return value.toFixed(0)
+  if (abs >= 100) return value.toFixed(1)
+  if (abs >= 1) return value.toFixed(2)
+  return value.toFixed(3)
+}

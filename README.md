@@ -54,7 +54,7 @@ X1 = 质量流量均值 / 3600（kg/s），X2 = 介质密度；仿真转速 Y = 
    npm run dev          # 开发，http://localhost:9528
    npm run build:prod   # 生产构建，配合 deploy/nginx.conf
    ```
-   工作台的三维模型文件（`public/model/*.glb` 等）体积较大，没有放进仓库，请从共享盘拷贝到 `digital-twin-platform/public/model/`。
+   新版 Node（17 及以上）需先设置 `$env:NODE_OPTIONS = "--openssl-legacy-provider"`。
 
 ## 目录
 
@@ -70,6 +70,8 @@ pump_test_bench/
 AMESim_server/              AMESim 仿真服务与 Python/Java 客户端示例
 DeepSeek-model/             本地大模型部署说明与可选的独立推理接口
 digital-twin-platform/      前端
+  src/views/dashboard/      工作台；三维场景在 scene/（部件、材质、视角配置见 scene/components.js）
+  public/model/             试验台三维模型 shiyantai5.glb；public/*.hdr 为环境贴图
 deploy/nginx.conf           生产部署示例
 ```
 

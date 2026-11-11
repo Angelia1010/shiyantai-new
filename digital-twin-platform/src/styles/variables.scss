@@ -1,13 +1,14 @@
 // sidebar
-$menuText:#bfcbd9;
-$menuActiveText:#409EFF;
-$subMenuActiveText:#f4f4f5; //https://github.com/ElemeFE/element/issues/12951
+// 与工作台统一的深色外壳
+$menuText:#9fb0c6;
+$menuActiveText:#6ea2ff;
+$subMenuActiveText:#eef3fa; //https://github.com/ElemeFE/element/issues/12951
 
-$menuBg:#304156;
-$menuHover:#263445;
+$menuBg:#111a29;
+$menuHover:#182437;
 
-$subMenuBg:#1f2d3d;
-$subMenuHover:#001528;
+$subMenuBg:#0d1522;
+$subMenuHover:#0b111c;
 
 $sideBarWidth: 210px;
 

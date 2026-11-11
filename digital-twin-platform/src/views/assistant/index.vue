@@ -143,7 +143,7 @@ export default {
   display: flex;
   gap: 20px;
   padding: 20px;
-  height: calc(100vh - 50px);
+  height: 100%;
   box-sizing: border-box;
 }
 .files-card {

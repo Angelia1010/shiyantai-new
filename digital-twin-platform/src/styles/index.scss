@@ -65,6 +65,28 @@ div:focus {
   padding: 20px;
 }
 
+// 管理页面统一的页头：标题 + 右侧操作
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.page-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #1f2937;
+  padding-left: 10px;
+  border-left: 4px solid #2f6bff;
+  line-height: 1.2;
+}
+
+.el-card {
+  border-radius: 8px;
+}
+
 // /* ===== 新增：深色主题覆盖 ===== */
 // @import './dark-theme.scss';
 

@@ -335,23 +335,6 @@ export default {
 <style scoped>
 .auto-diagnosis-container {
   padding: 20px;
-  background-color: #f5f7fa;
-  min-height: 100vh;
-  overflow-y: auto;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
-
-.page-title {
-  font-size: 24px;
-  font-weight: bold;
-  color: #303133;
-  margin: 0;
 }
 
 .steps-card {
@@ -359,8 +342,6 @@ export default {
 }
 
 .step-content {
-  min-height: calc(100vh - 250px);
-  overflow-y: auto;
   padding-bottom: 20px;
 }
 </style>

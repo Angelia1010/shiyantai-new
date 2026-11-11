@@ -1,5 +1,8 @@
 <template>
   <div class="app-container">
+    <div class="page-header">
+      <h2 class="page-title">任务列表</h2>
+    </div>
     <el-card class="box-card" :body-style="{ padding: '20px' }">
       <el-form :inline="true" :model="filters" size="small">
         <el-form-item label="关键字">
@@ -43,7 +46,7 @@
         :data="tasks"
         border
         row-key="task_id"
-        height="calc(100vh - 380px)"
+        height="calc(100vh - 430px)"
         @selection-change="selected = $event"
       >
         <el-table-column type="selection" width="50" />
