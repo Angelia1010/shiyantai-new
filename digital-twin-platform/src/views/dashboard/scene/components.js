@@ -14,24 +14,24 @@
 export const COMPONENTS = {
   被试件1高低压双联泵: {
     label: '被试件 1 · 高低压双联泵',
-    material: 'pump',
+    material: 'testPiece',
     fields: ['燃油泵实际转速', 'P1进口压力', 'P2低压出口压力', 'P3高压出口压力', 'T3进口温度', 'T4高压出口温度', '振动传感器1-1']
   },
   被试件2: {
     label: '被试件 2',
-    material: 'pump',
+    material: 'testPiece',
     fields: ['电传实际转速', '电传扭矩', '振动传感器2-1', '振动传感器3-1']
   },
-  被试件2周边管路: { label: '被试件 2 周边管路', material: 'pipe', fields: ['T5出口温度'] },
+  被试件2周边管路: { label: '被试件 2 周边管路', material: 'supplyPipe', fields: ['T5出口温度'] },
   供油管路: {
     label: '供油管路',
-    material: 'pipe',
+    material: 'supplyPipe',
     fields: ['供油压力1-1', '供油压力1-2', '供油温度1-1', '供油温度1-2', '供油流量1-1', '供油流量1-2'],
     colorBy: { temperature: ['供油温度1-1', '供油温度1-2'], pressure: ['供油压力1-1', '供油压力1-2'] }
   },
   回油管路: {
     label: '回油管路',
-    material: 'pipe',
+    material: 'returnPipe',
     fields: ['回油压力1-1', '回油压力1-2', '回油压力2-1', '回油压力2-2', '回油温度1-1', '回油温度1-2'],
     colorBy: { temperature: ['回油温度1-1', '回油温度1-2'], pressure: ['回油压力1-1', '回油压力1-2'] }
   },
@@ -57,7 +57,7 @@ export const COMPONENTS = {
   温控系统_板式换热器: { label: '温控系统 · 板式换热器', material: 'equipment', fields: [] },
   离心泵_油路块: { label: '离心泵 · 油路块', material: 'equipment', fields: [] },
   循环油箱: { label: '循环油箱', material: 'tank', fields: [] },
-  循环油路: { label: '循环油路', material: 'pipe', fields: [] },
+  循环油路: { label: '循环油路', material: 'loopPipe', fields: [] },
   底座支架: { label: '底座支架', material: 'frame', fields: [], selectable: false }
 }
 
@@ -69,27 +69,34 @@ export const DIAGNOSIS_TARGETS = {
 
 /**
  * 两套外观：
- * - tech  科技风：深蓝半金属本体 + 发光轮廓线 + 边缘光 + 动态效果
- * - real  写实：工业材质
- * 每个材质类别给出本体参数（MeshStandardMaterial）和轮廓线颜色。
+ * - tech  科技风：关键部件（被试件、管路、油箱、仪表）用各自的醒目颜色并带发光轮廓，
+ *         辅助设备和底座用中性灰压暗，与深蓝背景拉开对比；带边缘光和动态效果
+ * - real  写实：工业金属材质
+ *
+ * 材质类别参数：
+ *   color/metalness/roughness  本体（MeshStandardMaterial）
+ *   glow         自发光强度（本体颜色 × glow），让细小的管路也清晰可见
+ *   edge         轮廓线颜色；edgeOpacity 轮廓线不透明度（辅助部件调低，减少杂乱）
  */
 export const STYLES = {
   tech: {
     label: '科技',
-    exposure: 1.0,
-    envIntensity: 0.35,
-    rim: 0.85,
+    exposure: 1.1,
+    envIntensity: 0.4,
+    rim: 0.35,
     edges: true,
     fog: true,
     effects: true, // 扫描光带、波纹、粒子、自转
     materials: {
-      pump: { color: 0x163a63, metalness: 0.55, roughness: 0.38, edge: 0x5cc8ff },
-      pipe: { color: 0x0f3550, metalness: 0.6, roughness: 0.35, edge: 0x38bdf8 },
-      instrument: { color: 0x4a3a12, metalness: 0.5, roughness: 0.4, edge: 0xfbbf24 },
-      equipment: { color: 0x14304e, metalness: 0.5, roughness: 0.42, edge: 0x60a5fa },
-      tank: { color: 0x11314f, metalness: 0.45, roughness: 0.45, edge: 0x22d3ee },
-      frame: { color: 0x0c1b2c, metalness: 0.4, roughness: 0.6, edge: 0x1e5a8a },
-      default: { color: 0x12304d, metalness: 0.5, roughness: 0.45, edge: 0x3b82f6 }
+      testPiece: { color: 0xe07a2e, metalness: 0.45, roughness: 0.4, glow: 0.18, edge: 0xffb070, edgeOpacity: 0.7 },
+      supplyPipe: { color: 0x14b8d8, metalness: 0.4, roughness: 0.35, glow: 0.45, edge: 0x67e8f9, edgeOpacity: 0.8 },
+      returnPipe: { color: 0x22c55e, metalness: 0.4, roughness: 0.35, glow: 0.45, edge: 0x86efac, edgeOpacity: 0.8 },
+      loopPipe: { color: 0x8b5cf6, metalness: 0.4, roughness: 0.35, glow: 0.4, edge: 0xc4b5fd, edgeOpacity: 0.7 },
+      tank: { color: 0x2f6fd6, metalness: 0.35, roughness: 0.4, glow: 0.12, edge: 0x93c5fd, edgeOpacity: 0.6 },
+      instrument: { color: 0xeab308, metalness: 0.4, roughness: 0.35, glow: 0.3, edge: 0xfde68a, edgeOpacity: 0.8 },
+      equipment: { color: 0x6b7a8f, metalness: 0.5, roughness: 0.5, glow: 0, edge: 0x9fb3c8, edgeOpacity: 0.18 },
+      frame: { color: 0x2a3444, metalness: 0.4, roughness: 0.7, glow: 0, edge: 0x4b5d75, edgeOpacity: 0.12 },
+      default: { color: 0x5b6879, metalness: 0.5, roughness: 0.5, glow: 0, edge: 0x8aa0b8, edgeOpacity: 0.15 }
     }
   },
   real: {
@@ -101,16 +108,29 @@ export const STYLES = {
     fog: false,
     effects: false,
     materials: {
-      pump: { color: 0x9aa3ad, metalness: 0.85, roughness: 0.35 },
-      pipe: { color: 0x8e959e, metalness: 0.9, roughness: 0.28 },
+      testPiece: { color: 0x9aa3ad, metalness: 0.85, roughness: 0.35 },
+      supplyPipe: { color: 0x8e959e, metalness: 0.9, roughness: 0.28 },
+      returnPipe: { color: 0x8e959e, metalness: 0.9, roughness: 0.28 },
+      loopPipe: { color: 0x8e959e, metalness: 0.9, roughness: 0.28 },
+      tank: { color: 0x2f5876, metalness: 0.35, roughness: 0.5 },
       instrument: { color: 0xc08a2c, metalness: 0.7, roughness: 0.35 },
       equipment: { color: 0x5d6875, metalness: 0.6, roughness: 0.45 },
-      tank: { color: 0x2f5876, metalness: 0.35, roughness: 0.5 },
       frame: { color: 0x2c323b, metalness: 0.45, roughness: 0.7 },
       default: { color: 0x7b838e, metalness: 0.7, roughness: 0.42 }
     }
   }
 }
+
+/** 科技风下的颜色图例（三维视图左下角）。 */
+export const LEGEND = [
+  { label: '被试件', category: 'testPiece' },
+  { label: '供油管路', category: 'supplyPipe' },
+  { label: '回油管路', category: 'returnPipe' },
+  { label: '循环油路', category: 'loopPipe' },
+  { label: '油箱', category: 'tank' },
+  { label: '流量计/传感器', category: 'instrument' },
+  { label: '辅助设备', category: 'equipment' }
+].map(item => ({ ...item, color: '#' + STYLES.tech.materials[item.category].color.toString(16).padStart(6, '0') }))
 
 /**
  * 预设视角：相对模型包围盒中心的方向（会自动归一化）和距离倍数。

@@ -27,7 +27,7 @@ const MODEL_URL = '/model/shiyantai5.glb'
 const ENV_URL = '/qwantani_dusk_1_puresky_4k.hdr'
 const ASSEMBLY_NODE = '总装图'
 const FLY_DURATION_MS = 900
-const EDGE_THRESHOLD_DEG = 28 // 相邻面夹角大于该值才画轮廓线
+const EDGE_THRESHOLD_DEG = 40 // 相邻面夹角大于该值才画轮廓线（调大可减少细碎线条）
 const FOG_COLOR = 0x0a1424
 const HOVER_EMISSIVE = new THREE.Color(0x2f6bff)
 const SELECT_EMISSIVE = new THREE.Color(0x3f8cff)
@@ -492,13 +492,13 @@ export class TestBenchScene {
       blending: THREE.AdditiveBlending
     })
     this._enhance(edgeMaterial, { gain: 2.2 })
-    return { category, material, edgeMaterial, baseColor: new THREE.Color(), baseEdge: new THREE.Color() }
+    return { category, material, edgeMaterial, baseColor: new THREE.Color(), baseEdge: new THREE.Color(), glow: 0, edgeOpacity: 0.55 }
   }
 
   _assignComponents(assembly) {
     const replaced = new Set() // CAD 自带的材质，替换后释放
     const glass = new THREE.MeshStandardMaterial({
-      color: 0x7fb8e8, metalness: 0.1, roughness: 0.05, transparent: true, opacity: 0.25, depthWrite: false
+      color: 0x9fb3c8, metalness: 0, roughness: 0.1, transparent: true, opacity: 0.05, depthWrite: false
     })
     this._enhance(glass, { gain: 0.8 })
     this.glassMaterial = glass
@@ -621,8 +621,12 @@ export class TestBenchScene {
       mats.material.envMapIntensity = style.envIntensity
       mats.baseColor.setHex(preset.color)
       mats.baseEdge.setHex(preset.edge || 0x38bdf8)
+      mats.glow = preset.glow || 0
+      mats.edgeOpacity = preset.edgeOpacity === undefined ? 0.55 : preset.edgeOpacity
       mats.material.color.copy(mats.baseColor)
+      mats.material.emissive.copy(mats.baseColor).multiplyScalar(mats.glow)
       mats.edgeMaterial.color.copy(mats.baseEdge)
+      mats.edgeMaterial.opacity = mats.edgeOpacity
     }
     Object.values(this.components).forEach(apply)
     if (this.defaultMaterials) apply(this.defaultMaterials)
@@ -873,15 +877,15 @@ export class TestBenchScene {
       const edge = comp.edgeMaterial
       if (comp.displayColor) mat.color.copy(comp.displayColor)
       if (comp.displayEdge) edge.color.copy(comp.displayEdge)
-      edge.opacity = 0.55
-      mat.emissive.setRGB(0, 0, 0)
+      edge.opacity = comp.edgeOpacity
+      mat.emissive.copy(mat.color).multiplyScalar(comp.glow) // 关键部件微微自发光
       mat.emissiveIntensity = 1
       if (comp.key === this.selectedKey || comp.key === this.hoveredKey) {
         const selected = comp.key === this.selectedKey
         mat.emissive.copy(selected ? SELECT_EMISSIVE : HOVER_EMISSIVE)
         mat.emissiveIntensity = selected ? 0.45 : 0.3
         edge.color.copy(HIGHLIGHT_EDGE)
-        edge.opacity = selected ? 1 : 0.85
+        edge.opacity = Math.max(comp.edgeOpacity, selected ? 1 : 0.85)
       }
     }
     this._updateLabels()

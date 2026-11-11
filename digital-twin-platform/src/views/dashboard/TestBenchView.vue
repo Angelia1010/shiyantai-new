@@ -44,7 +44,12 @@
       <span class="legend-value">{{ format(legend.max) }}</span>
     </div>
     <div v-else-if="colorMode !== 'none' && !loading" class="legend muted">暂无{{ colorModes[colorMode].label }}数据，部件以灰色显示</div>
-    <div v-else-if="!loading" class="hint">拖动旋转 · 右键平移 · 滚轮缩放 · 点击部件查看测点</div>
+    <div v-else-if="!loading && styleName === 'tech'" class="legend category-legend">
+      <span v-for="item in categoryLegend" :key="item.category" class="legend-item">
+        <i :style="{ background: item.color, boxShadow: '0 0 6px ' + item.color }" />{{ item.label }}
+      </span>
+    </div>
+    <div v-if="!loading && !selected" class="hint">拖动旋转 · 右键平移 · 滚轮缩放 · 点击部件查看测点</div>
 
     <!-- 悬停提示 -->
     <div v-if="hover" class="hover-tip" :style="{ left: hover.x + 14 + 'px', top: hover.y + 14 + 'px' }">
@@ -81,7 +86,7 @@
 </template>
 
 <script>
-import { COLOR_MODES, STYLES, VIEWS } from './scene/components'
+import { COLOR_MODES, LEGEND, STYLES, VIEWS } from './scene/components'
 import { COLOR_STOPS, TestBenchScene } from './scene/TestBenchScene'
 import { fieldUnit, formatValue } from '@/utils/features'
 
@@ -98,6 +103,7 @@ export default {
       views: VIEWS,
       colorModes: COLOR_MODES,
       styles: STYLES,
+      categoryLegend: LEGEND,
       activeView: 'overview',
       colorMode: 'none',
       styleName: 'tech',
@@ -278,8 +284,7 @@ $glass: rgba(8, 18, 34, 0.72);
     box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.6);
   }
 }
-.legend,
-.hint {
+.legend {
   position: absolute;
   left: 16px;
   bottom: 14px;
@@ -299,9 +304,30 @@ $glass: rgba(8, 18, 34, 0.72);
     color: #8fa6c2;
   }
 }
+.category-legend {
+  flex-wrap: wrap;
+  max-width: calc(100% - 320px);
+  gap: 6px 14px;
+}
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  i {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+  }
+}
 .hint {
+  position: absolute;
+  right: 16px;
+  bottom: 18px;
+  font-size: 12px;
   color: rgba(143, 166, 194, 0.7);
   pointer-events: none;
+  z-index: 3;
 }
 .legend-bar {
   width: 140px;
