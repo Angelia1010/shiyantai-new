@@ -5,6 +5,7 @@
  *   const scene = new TestBenchScene(container, callbacks)
  *   scene.setView('overview') / setStyle('tech') / setColorMode('temperature')
  *   scene.updateData(featureMap) / setAlarms(['回油流量计1']) / focusComponent(key)
+ *   scene.setExploded(true) / toggleTour()
  *   scene.dispose()
  *
  * callbacks:
@@ -14,6 +15,8 @@
  *   onHover(info | null)         { key, label, x, y }，x/y 为相对容器的像素坐标
  *   onSelect(key | null)
  *   onLegend(legend | null)      { mode, min, max, unit }
+ *   onView(name)                 当前视角（预设视角名，聚焦部件时为 ''）
+ *   onTour(active)               自动巡检开始/结束
  */
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
@@ -47,8 +50,12 @@ const NEUTRAL_EDGE = srgb(0x29435f)
 export const COLOR_STOPS = ['#2563eb', '#06b6d4', '#22c55e', '#facc15', '#ef4444']
 const STOP_COLORS = COLOR_STOPS.map(srgb)
 // 显示悬浮标签的部件（管路贯穿整台设备，标签位置没有意义，不加）
-// 值为引线长度（像素）：两个流量计挨得很近，引线一短一长把标签上下错开
-const LABELED = { 被试件1高低压双联泵: 46, 回油流量计1: 34, 回油流量计2: 78 }
+// lead 为引线长度、dx 为标签相对锚点的水平偏移（像素）：两个流量计挨得很近，标签一左一右
+const LABELED = {
+  被试件1高低压双联泵: { lead: 46, dx: 0 },
+  回油流量计1: { lead: 44, dx: -52 },
+  回油流量计2: { lead: 44, dx: 52 }
+}
 
 // 科技风动态效果
 const INTRO_MS = 2600 // 加载后：镜头推进 + 模型自下而上“生成”
@@ -57,6 +64,11 @@ const SCAN_SWEEP_MS = 2600 // 每次扫描用时
 const RIPPLE_PERIOD_MS = 3600 // 地面波纹周期
 const RIPPLE_COUNT = 3
 const AUTO_ROTATE_IDLE_MS = 15000 // 无操作多久后开始缓慢自转
+const DEFAULT_FLOW_SPEED = 0.7 // 没有流量数据时的演示流速
+const ALARM_RETURN_MS = 3500 // 告警自动定位后，无人操作多久退回总览
+const EXPLODE_MS = 1200
+const TOUR_DWELL_MS = 3800 // 巡检时每个部件停留时间
+const TOUR_KEYS = ['循环油箱', '管道式加热器', '回油流量计1', '回油流量计2', '被试件1高低压双联泵', '被试件2']
 
 // 注入到部件材质与轮廓线材质的着色代码：扫描光带 + 生成动画（revealY 以上的片元丢弃）
 const FX_VERTEX_DECL = 'varying vec3 vFxWorld;\n'
@@ -69,9 +81,10 @@ uniform float revealY;
 varying vec3 vFxWorld;
 `
 // 管路“流动”光斑：以油液来源部件为起点，按距离向外移动（光斑头部朝流动方向），用本体颜色提亮
-const FX_FLOW_DECL = 'uniform float fxTime;\nuniform float flowStrength;\nuniform vec3 flowSource;\n'
-const FX_FLOW_BODY = `float flowPhase = fract(distance(vFxWorld, flowSource) * 2.2 - fxTime * 0.7);
-gl_FragColor.rgb += diffuseColor.rgb * smoothstep(0.82, 1.0, flowPhase) * 2.2 * flowStrength;
+// flowOffset 每帧按该管路的流速累加（流速随实测流量变化），flowGain 在流量为 0 时调暗
+const FX_FLOW_DECL = 'uniform float flowStrength;\nuniform vec3 flowSource;\nuniform float flowOffset;\nuniform float flowGain;\n'
+const FX_FLOW_BODY = `float flowPhase = fract(distance(vFxWorld, flowSource) * 2.2 - flowOffset);
+gl_FragColor.rgb += diffuseColor.rgb * smoothstep(0.82, 1.0, flowPhase) * 2.2 * flowStrength * flowGain;
 `
 const FX_FRAGMENT_BODY = `if (vFxWorld.y > revealY) discard;
 float fxBand = scanStrength * (1.0 - smoothstep(0.0, scanWidth, abs(vFxWorld.y - scanY)));
@@ -215,8 +228,8 @@ function backgroundTexture() {
   return tex
 }
 
-/** 地面光圈：细圆环 + 淡色圆盘，单位半径，通过 scale 控制大小。 */
-function makeHalo(color) {
+/** 地面光圈：细圆环 + 淡色圆盘，单位半径，通过 scale 控制大小；wave 为 true 时附带向外扩散的冲击波。 */
+function makeHalo(color, wave = false) {
   const group = new THREE.Group()
   const ringMat = new THREE.MeshBasicMaterial({
     color, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
@@ -234,6 +247,45 @@ function makeHalo(color) {
   })
   group.position.y = 0.004
   group.userData.materials = [ringMat, discMat]
+  group.userData.waves = []
+  if (wave) {
+    for (let i = 0; i < 2; i++) {
+      const waveMat = new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+      })
+      const w = new THREE.Mesh(new THREE.RingGeometry(0.94, 1, 96), waveMat)
+      w.rotation.x = -Math.PI / 2
+      w.raycast = () => {}
+      group.add(w)
+      group.userData.waves.push(w)
+      group.userData.materials.push(waveMat)
+    }
+  }
+  return group
+}
+
+/** 运行光环：一圈虚线弧段，单位半径，绕 y 轴旋转表示设备在运转。 */
+function makeRunRing(color) {
+  const group = new THREE.Group()
+  const mat = new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+  })
+  const faint = new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity: 0.25, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+  })
+  const dashes = 12
+  for (let i = 0; i < dashes; i++) {
+    const start = (i / dashes) * Math.PI * 2
+    const arc = new THREE.Mesh(new THREE.RingGeometry(0.92, 1, 12, 1, start, (Math.PI * 2 / dashes) * 0.55), mat)
+    arc.rotation.x = -Math.PI / 2
+    arc.raycast = () => {}
+    group.add(arc)
+  }
+  const inner = new THREE.Mesh(new THREE.RingGeometry(0.8, 0.82, 96), faint)
+  inner.rotation.x = -Math.PI / 2
+  inner.raycast = () => {}
+  group.add(inner)
+  group.userData.materials = [mat, faint]
   return group
 }
 
@@ -263,7 +315,6 @@ export class TestBenchScene {
       scanColor: { value: srgb(0x7dd3fc) },
       scanStrength: { value: 0 },
       revealY: { value: 1e5 },
-      fxTime: { value: 0 },
       flowStrength: { value: 1 }
     }
     this.effects = true // 科技风动态效果开关（写实风关闭）
@@ -315,7 +366,7 @@ export class TestBenchScene {
     controls.rotateSpeed = 0.7
     controls.autoRotateSpeed = 0.35
     controls.addEventListener('change', () => { this.needsRender = true })
-    controls.addEventListener('start', () => { this.lastInteraction = performance.now() })
+    controls.addEventListener('start', () => this._onUserInput())
     this.controls = controls
   }
 
@@ -345,7 +396,7 @@ export class TestBenchScene {
     // 实体深色地面：接收阴影，让设备“落地”；远处由雾融入背景
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(1, 1),
-      new THREE.MeshStandardMaterial({ color: srgb(0x070d18), metalness: 0.1, roughness: 0.9, envMapIntensity: 0.3 })
+      new THREE.MeshStandardMaterial({ color: srgb(0x050a14), metalness: 0.05, roughness: 1, envMapIntensity: 0.2 })
     )
     floor.rotation.x = -Math.PI / 2
     floor.position.y = -0.001
@@ -577,7 +628,11 @@ export class TestBenchScene {
    */
   _enhance(material, { rim = false, gain = 1, flow = false } = {}) {
     const fx = this.fx
-    if (flow) material.userData.flowSource = { value: new THREE.Vector3() }
+    if (flow) {
+      material.userData.flowSource = { value: new THREE.Vector3() }
+      material.userData.flowOffset = { value: 0 }
+      material.userData.flowGain = { value: 1 }
+    }
     material.onBeforeCompile = shader => {
       Object.assign(shader.uniforms, {
         scanY: fx.scanY, scanWidth: fx.scanWidth, scanColor: fx.scanColor,
@@ -589,9 +644,10 @@ export class TestBenchScene {
         (flow ? FX_FLOW_BODY : '') + FX_FRAGMENT_BODY.replace('FX_GAIN', gain.toFixed(2))
       )
       if (flow) {
-        shader.uniforms.fxTime = fx.fxTime
         shader.uniforms.flowStrength = fx.flowStrength
         shader.uniforms.flowSource = material.userData.flowSource
+        shader.uniforms.flowOffset = material.userData.flowOffset
+        shader.uniforms.flowGain = material.userData.flowGain
         frag = FX_FLOW_DECL + frag
       }
       if (rim) {
@@ -683,7 +739,14 @@ export class TestBenchScene {
           if (comp.selectable) this.pickables.push(obj)
         }
       })
-      if (comp) comp.box.union(new THREE.Box3().setFromObject(child))
+      if (comp) {
+        comp.box.union(new THREE.Box3().setFromObject(child))
+        comp.node = child
+      }
+    })
+    Object.values(this.components).forEach(comp => {
+      comp.baseBox = comp.box.clone() // 拆解前的位置
+      comp.mainBox = this._mainBox(comp)
     })
     replaced.forEach(m => m.dispose())
 
@@ -761,7 +824,7 @@ export class TestBenchScene {
   }
 
   _createLabels() {
-    Object.entries(LABELED).forEach(([key, lead]) => {
+    Object.entries(LABELED).forEach(([key, { lead, dx }]) => {
       const comp = this.components[key]
       if (!comp) return
       // CSS2DRenderer 会改写外层元素的 transform，偏移放在内层：
@@ -770,18 +833,26 @@ export class TestBenchScene {
       const el = document.createElement('div')
       el.className = 'tb-label'
       el.style.setProperty('--lead', `${lead}px`)
+      el.style.setProperty('--dx', `${dx}px`)
       wrapper.appendChild(el)
       el.innerHTML = '<div class="tb-label__name"></div><div class="tb-label__value"></div><i class="tb-label__dot"></i>'
       el.querySelector('.tb-label__name').textContent = comp.label
       const obj = new CSS2DObject(wrapper)
       obj.position.copy(this._labelAnchor(comp))
+      obj.userData.base = obj.position.clone()
       this.scene.add(obj)
       comp.label2d = { obj, el, valueEl: el.querySelector('.tb-label__value') }
     })
   }
 
-  /** 标签锚点：部件主体（体积最大且不是底板的零件）顶面中心。 */
+  /** 标签锚点：部件主体顶面中心。 */
   _labelAnchor(comp) {
+    const box = comp.mainBox || comp.box
+    return box.getCenter(new THREE.Vector3()).setY(box.max.y)
+  }
+
+  /** 部件主体：体积最大且不是底板的零件的包围盒（标签、运行光环以它为准）。 */
+  _mainBox(comp) {
     let best = null
     let bestVolume = -1
     comp.meshes.forEach(mesh => {
@@ -794,9 +865,7 @@ export class TestBenchScene {
         best = b
       }
     })
-    const box = best || comp.box
-    const c = box.getCenter(new THREE.Vector3())
-    return c.setY(box.max.y)
+    return best ? best.clone() : comp.box.clone()
   }
 
   // ------------------------------------------------------------------ 对外接口
@@ -857,6 +926,7 @@ export class TestBenchScene {
     const dist = Math.max(this._fitDistance(box, target, dir) * margin, this.controls.minDistance * 1.2)
     const position = target.clone().addScaledVector(dir, dist)
     this.lastInteraction = performance.now()
+    if (this.cb.onView) this.cb.onView(view ? name : '')
     if (!animate) {
       this.camera.position.copy(position)
       this.controls.target.copy(target)
@@ -919,12 +989,15 @@ export class TestBenchScene {
   updateData(featureMap) {
     this.featureMap = featureMap || {}
     this._extendRanges()
+    this._updateStates()
     this._applyColors()
     this._applyHighlights()
   }
 
   setAlarms(keys) {
+    const previous = this.alarms
     this.alarms = new Set((keys || []).filter(k => this.components[k]))
+    const added = [...this.alarms].filter(k => !previous.has(k))
     // 告警部件脚下的红色光圈
     Object.keys(this.alarmHalos).forEach(key => {
       if (this.alarms.has(key)) return
@@ -936,13 +1009,191 @@ export class TestBenchScene {
     })
     this.alarms.forEach(key => {
       if (this.alarmHalos[key]) return
-      const halo = makeHalo(0xff3b3b)
+      const halo = makeHalo(0xff3b3b, true)
       this._glow(halo)
       this._placeHalo(halo, key)
       this.scene.add(halo)
       this.alarmHalos[key] = halo
     })
     this._applyHighlights()
+    // 新出现的告警：镜头自动飞过去，无人操作则稍后退回总览（巡检中不打断）
+    if (added.length && !this.tour && !this.intro && this.modelBox) {
+      this.focusComponent(added[0])
+      this.alarmReturn = { key: added[0], at: performance.now() + ALARM_RETURN_MS }
+    }
+  }
+
+  // ------------------------------------------------------------------ 拆解视图
+  /** 拆解 / 合拢：各部件沿自身相对整机中心的水平方向散开，并略微抬高。 */
+  setExploded(on) {
+    if (!this.modelBox) return
+    if (!this.explodePrepared) this._prepareExplode()
+    this.explode = { from: this.explodeT || 0, to: on ? 1 : 0, start: performance.now() }
+    this.lastInteraction = performance.now()
+  }
+
+  _prepareExplode() {
+    const center = this.modelBox.getCenter(new THREE.Vector3())
+    const r = this.modelRadius
+    for (const comp of Object.values(this.components)) {
+      if (COMPONENTS[comp.key].explode === false || !comp.node) continue
+      const c = comp.baseBox.getCenter(new THREE.Vector3())
+      const dir = new THREE.Vector3(c.x - center.x, 0, c.z - center.z)
+      const dist = dir.length()
+      if (dist < 1e-6) dir.set(0, 0, 1)
+      dir.normalize()
+      comp.explodeOffset = dir.multiplyScalar(r * 0.12 + dist * 0.35).setY(r * 0.08)
+      // 节点位置是父节点局部坐标（父级有缩放/旋转），把世界坐标目标换算回局部坐标
+      const parent = comp.node.parent
+      const world = comp.node.getWorldPosition(new THREE.Vector3())
+      comp.nodeBase = comp.node.position.clone()
+      comp.nodeExploded = parent.worldToLocal(world.add(comp.explodeOffset))
+    }
+    this.explodePrepared = true
+  }
+
+  _updateExplode(now) {
+    if (!this.explode) return
+    const { from, to, start } = this.explode
+    const t = Math.min(1, (now - start) / EXPLODE_MS)
+    this.explodeT = from + (to - from) * easeInOutCubic(t)
+    const k = this.explodeT
+    for (const comp of Object.values(this.components)) {
+      if (!comp.explodeOffset) continue
+      comp.node.position.lerpVectors(comp.nodeBase, comp.nodeExploded, k)
+      comp.box.copy(comp.baseBox).translate(comp.explodeOffset.clone().multiplyScalar(k))
+      if (comp.label2d) comp.label2d.obj.position.copy(comp.label2d.obj.userData.base).addScaledVector(comp.explodeOffset, k)
+      if (comp.runRing) comp.runRing.position.copy(comp.runRing.userData.base).addScaledVector(comp.explodeOffset, k)
+    }
+    this._placeHalo(this.selectHalo, this.selectedKey)
+    Object.entries(this.alarmHalos).forEach(([key, halo]) => this._placeHalo(halo, key))
+    this.renderer.shadowMap.needsUpdate = true
+    this.needsRender = true
+    if (t >= 1) this.explode = null
+  }
+
+  // ------------------------------------------------------------------ 自动巡检
+  /** 开始/停止巡检：依次聚焦关键部件，结束后回到总览；任何鼠标操作都会中止。 */
+  toggleTour() {
+    if (this.tour) {
+      this._stopTour(true)
+      return
+    }
+    const keys = TOUR_KEYS.filter(k => this.components[k])
+    if (!keys.length) return
+    this.alarmReturn = null
+    this.tour = { keys, index: -1, next: performance.now() }
+    if (this.cb.onTour) this.cb.onTour(true)
+  }
+
+  _updateTour(now) {
+    if (!this.tour || now < this.tour.next) return
+    this.tour.index++
+    if (this.tour.index >= this.tour.keys.length) {
+      this._stopTour(true)
+      return
+    }
+    this.focusComponent(this.tour.keys[this.tour.index])
+    this.tour.next = now + TOUR_DWELL_MS
+  }
+
+  _stopTour(returnHome) {
+    this.tour = null
+    if (this.cb.onTour) this.cb.onTour(false)
+    if (returnHome) {
+      this.select(null)
+      this.setView('overview')
+    }
+  }
+
+  /** 用户亲自操作（拖动、点击、滚轮）：中止巡检，取消告警后的自动返回。 */
+  _onUserInput() {
+    const now = performance.now()
+    this.lastInteraction = now
+    this.lastUserInput = now
+    if (this.tour) this._stopTour(false)
+  }
+
+  /** 根据最新数据更新管路流量与被试件运行状态。 */
+  _updateStates() {
+    for (const comp of Object.values(this.components)) {
+      const conf = COMPONENTS[comp.key]
+      if (conf.flowBy) {
+        const v = average(this.featureMap, conf.flowBy)
+        comp.flowRate = v === null ? null : Math.abs(v)
+        if (comp.flowRate !== null) comp.flowMax = Math.max(comp.flowMax || 0, comp.flowRate)
+      }
+      if (conf.runBy) {
+        const stat = this.featureMap[conf.runBy]
+        const running = stat && typeof stat.avg === 'number' ? Math.abs(stat.avg) > 1 : null
+        if (running !== comp.running) {
+          comp.running = running
+          this._setRunRing(comp, running === true)
+        }
+      }
+    }
+  }
+
+  /** 管路流动光斑：有流量数据时速度随流量变化，流量为 0 时停住并变暗；没有数据时按演示速度流动。 */
+  _updateFlow(dt) {
+    for (const comp of Object.values(this.components)) {
+      const u = comp.material.userData
+      if (!u.flowOffset) continue
+      let target = DEFAULT_FLOW_SPEED
+      let gain = 1
+      if (comp.flowRate !== undefined && comp.flowRate !== null) {
+        const ratio = comp.flowMax > 0 ? comp.flowRate / comp.flowMax : 0
+        target = ratio < 0.02 ? 0 : 0.25 + 1.1 * ratio
+        gain = ratio < 0.02 ? 0.25 : 1
+      }
+      if (comp.flowSpeed === undefined) comp.flowSpeed = target
+      comp.flowSpeed += (target - comp.flowSpeed) * Math.min(1, dt * 3) // 平滑过渡，避免流速突变
+      u.flowOffset.value = (u.flowOffset.value + comp.flowSpeed * dt) % 1000
+      u.flowGain.value += (gain - u.flowGain.value) * Math.min(1, dt * 3)
+    }
+  }
+
+  /** 被试件运行时：脚下虚线光环旋转，泵体呼吸发光。 */
+  _setRunRing(comp, on) {
+    if (on && !comp.runRing) {
+      const ring = makeRunRing(0xffa94d)
+      const box = comp.mainBox || comp.box
+      const c = box.getCenter(new THREE.Vector3())
+      const size = box.getSize(new THREE.Vector3())
+      ring.userData.base = new THREE.Vector3(c.x, box.min.y + size.y * 0.02, c.z)
+      ring.position.copy(ring.userData.base)
+      if (comp.explodeOffset) ring.position.addScaledVector(comp.explodeOffset, this.explodeT || 0)
+      ring.scale.setScalar(Math.max(size.x, size.z) * 0.75)
+      this._glow(ring)
+      this.scene.add(ring)
+      comp.runRing = ring
+    } else if (!on && comp.runRing) {
+      this.scene.remove(comp.runRing)
+      comp.runRing.traverse(o => { if (o.geometry) o.geometry.dispose() })
+      comp.runRing.userData.materials.forEach(m => m.dispose())
+      comp.runRing = null
+    }
+    this._applyHighlights()
+  }
+
+  _updateRunning(now, dt) {
+    const pulse = 0.5 + 0.5 * Math.sin(now / 450)
+    for (const comp of Object.values(this.components)) {
+      if (comp.runRing) comp.runRing.rotation.y += dt * 1.4
+      const busy = comp.key === this.selectedKey || comp.key === this.hoveredKey || this.alarms.has(comp.key)
+      if (comp.running && !busy) comp.material.emissiveIntensity = 1 + 1.6 * pulse
+    }
+  }
+
+  /** 告警光圈的冲击波：两圈红环交替向外扩散。 */
+  _updateAlarmWaves(now) {
+    Object.values(this.alarmHalos).forEach(halo => {
+      halo.userData.waves.forEach((w, i) => {
+        const t = ((now / 1400) + i / 2) % 1
+        w.scale.setScalar(1 + 1.8 * t)
+        w.material.opacity = 0.8 * (1 - t)
+      })
+    })
   }
 
   /** 把光圈放到部件正下方的地面上。 */
@@ -987,7 +1238,11 @@ export class TestBenchScene {
       active = true
     }
     if (!this.effects || !this.modelBox) return active
-    this.fx.fxTime.value = now / 1000
+    const dt = Math.min(0.1, (now - (this.lastTick || now)) / 1000)
+    this.lastTick = now
+    this._updateFlow(dt)
+    this._updateRunning(now, dt)
+    this._updateAlarmWaves(now)
 
     // 周期扫描光带
     if (!this.intro) {
@@ -1088,7 +1343,7 @@ export class TestBenchScene {
         edge.color.copy(i === 0 && comp.displayEdge ? comp.displayEdge : mats.baseEdge)
         edge.opacity = mats.edgeOpacity
         mat.emissive.copy(mat.color).multiplyScalar(mats.glow) // 关键部件微微自发光
-        mat.emissiveIntensity = 1
+        mat.emissiveIntensity = i === 0 && comp.running === false ? 0.3 : 1 // 被试件停机时变暗
         if (comp.key === this.selectedKey || comp.key === this.hoveredKey) {
           const selected = comp.key === this.selectedKey
           mat.emissive.copy(selected ? SELECT_EMISSIVE : HOVER_EMISSIVE)
@@ -1154,7 +1409,7 @@ export class TestBenchScene {
     }
     this._onDown = e => {
       this.downAt = { x: e.clientX, y: e.clientY }
-      this.lastInteraction = performance.now()
+      this._onUserInput()
     }
     this._onUp = e => {
       if (!this.downAt || e.button !== 0) return
@@ -1220,6 +1475,17 @@ export class TestBenchScene {
       if (t >= 1) this.fly = null
     }
     const animating = this._updateEffects(now)
+    this._updateExplode(now)
+    this._updateTour(now)
+    if (this.alarmReturn && now >= this.alarmReturn.at) {
+      const { key } = this.alarmReturn
+      this.alarmReturn = null
+      // 期间有人操作过（拖动、点击）就不打扰
+      if (this.selectedKey === key && (this.lastUserInput || 0) < now - ALARM_RETURN_MS) {
+        this.select(null)
+        this.setView('overview')
+      }
+    }
     this.controls.update()
     this._processHover()
 

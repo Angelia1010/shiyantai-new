@@ -10,6 +10,9 @@
  * - colorBy   “温度/压力”着色模式下用于给该部件上色的测点（取均值）
  * - flowFrom  管路的油液来源部件：管路上的流动光斑从该部件向外移动，表示流向
  *             （供油：油箱 → 被试件；回油：被试件 → 流量计 → 油箱）
+ * - flowBy    决定流动光斑速度的流量测点（取均值）：流量越大流得越快，流量为 0 时停住
+ * - runBy     判断被试件是否运行的转速测点：运行时泵体呼吸发光、脚下光环旋转
+ * - explode   拆解视图中是否移动（底座不动）
  *
  * 测点与部件的对应关系是按部件名称推断的，如与实际管路不符，直接修改这里即可。
  */
@@ -17,18 +20,27 @@ export const COMPONENTS = {
   被试件1高低压双联泵: {
     label: '被试件 1 · 高低压双联泵',
     material: 'testPiece',
+    runBy: '燃油泵实际转速',
     fields: ['燃油泵实际转速', 'P1进口压力', 'P2低压出口压力', 'P3高压出口压力', 'T3进口温度', 'T4高压出口温度', '振动传感器1-1']
   },
   被试件2: {
     label: '被试件 2',
     material: 'testPiece',
+    runBy: '电传实际转速',
     fields: ['电传实际转速', '电传扭矩', '振动传感器2-1', '振动传感器3-1']
   },
-  被试件2周边管路: { label: '被试件 2 周边管路', material: 'supplyPipe', flowFrom: '循环油箱', fields: ['T5出口温度'] },
+  被试件2周边管路: {
+    label: '被试件 2 周边管路',
+    material: 'supplyPipe',
+    flowFrom: '循环油箱',
+    flowBy: ['供油流量1-1', '供油流量1-2'],
+    fields: ['T5出口温度']
+  },
   供油管路: {
     label: '供油管路',
     material: 'supplyPipe',
     flowFrom: '循环油箱',
+    flowBy: ['供油流量1-1', '供油流量1-2'],
     fields: ['供油压力1-1', '供油压力1-2', '供油温度1-1', '供油温度1-2', '供油流量1-1', '供油流量1-2'],
     colorBy: { temperature: ['供油温度1-1', '供油温度1-2'], pressure: ['供油压力1-1', '供油压力1-2'] }
   },
@@ -36,6 +48,7 @@ export const COMPONENTS = {
     label: '回油管路',
     material: 'returnPipe',
     flowFrom: '被试件1高低压双联泵',
+    flowBy: ['回油流量1-1', '回油流量1-2'],
     fields: ['回油压力1-1', '回油压力1-2', '回油压力2-1', '回油压力2-2', '回油温度1-1', '回油温度1-2'],
     colorBy: { temperature: ['回油温度1-1', '回油温度1-2'], pressure: ['回油压力1-1', '回油压力1-2'] }
   },
@@ -62,7 +75,7 @@ export const COMPONENTS = {
   离心泵_油路块: { label: '离心泵 · 油路块', material: 'equipment', fields: [] },
   循环油箱: { label: '循环油箱', material: 'tank', fields: [] },
   循环油路: { label: '循环油路', material: 'loopPipe', flowFrom: '循环油箱', fields: [] },
-  底座支架: { label: '底座支架', material: 'frame', fields: [], selectable: false }
+  底座支架: { label: '底座支架', material: 'frame', fields: [], selectable: false, explode: false }
 }
 
 /** 诊断报告中的流量计名称 → 模型部件，用于异常定位。 */

@@ -25,6 +25,10 @@
       </div>
       <div class="seg">
         <button :class="['seg-btn', { active: labelsVisible }]" @click="toggleLabels">标签</button>
+        <button :class="['seg-btn', { active: exploded }]" :disabled="loading" @click="toggleExplode">拆解</button>
+        <button :class="['seg-btn', { active: touring }]" :disabled="loading" @click="toggleTour">
+          {{ touring ? '停止巡检' : '巡检' }}
+        </button>
       </div>
       <div class="help">
         <i class="el-icon-question" />
@@ -116,6 +120,8 @@ export default {
       colorMode: 'none',
       styleName: 'tech',
       labelsVisible: true,
+      exploded: false,
+      touring: false,
       loading: true,
       progress: 0,
       error: '',
@@ -156,7 +162,9 @@ export default {
         this.selectedKey = key
         this.$emit('select', key)
       },
-      onLegend: legend => { this.legend = legend }
+      onLegend: legend => { this.legend = legend },
+      onView: name => { this.activeView = name },
+      onTour: active => { this.touring = active }
     })
   },
   beforeDestroy() {
@@ -175,6 +183,13 @@ export default {
     changeStyle(key) {
       this.styleName = key
       this.scene.setStyle(key)
+    },
+    toggleExplode() {
+      this.exploded = !this.exploded
+      this.scene.setExploded(this.exploded)
+    },
+    toggleTour() {
+      this.scene.toggleTour()
     },
     toggleLabels() {
       this.labelsVisible = !this.labelsVisible
@@ -299,6 +314,10 @@ $glass: rgba(8, 18, 34, 0.72);
   transition: background 0.15s, color 0.15s;
   &:hover {
     color: #e6f6ff;
+  }
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
   &.active {
     color: #e6f6ff;
@@ -461,8 +480,9 @@ $glass: rgba(8, 18, 34, 0.72);
    外层元素中心对准部件锚点；标签整体上移“一半高度 + 引线长度(--lead)”，引线向下连到锚点。 */
 .test-bench-view .tb-label {
   --lead: 40px;
+  --dx: 0px;
   position: relative;
-  transform: translateY(calc(-50% - var(--lead)));
+  transform: translate(var(--dx), calc(-50% - var(--lead)));
   padding: 3px 8px 4px;
   border-radius: 3px;
   background: rgba(6, 16, 32, 0.82);
@@ -478,7 +498,7 @@ $glass: rgba(8, 18, 34, 0.72);
   &::after {
     content: '';
     position: absolute;
-    left: 50%;
+    left: calc(50% - var(--dx)); // 标签水平偏移后，引线仍落在锚点正上方
     top: 100%;
     width: 1px;
     height: var(--lead);
@@ -500,16 +520,20 @@ $glass: rgba(8, 18, 34, 0.72);
     border-color: #ef4444;
     border-left-color: #ef4444;
     box-shadow: 0 0 14px rgba(239, 68, 68, 0.6);
+    animation: tb-alarm-blink 0.9s ease-in-out infinite;
     &::after {
       background: linear-gradient(180deg, rgba(239, 68, 68, 0.95), rgba(239, 68, 68, 0.4));
     }
     .tb-label__dot { background: #ef4444; box-shadow: 0 0 8px #ef4444; }
   }
 }
+@keyframes tb-alarm-blink {
+  50% { background: rgba(127, 29, 29, 0.85); box-shadow: 0 0 22px rgba(239, 68, 68, 0.9); }
+}
 // 锚点圆点
 .test-bench-view .tb-label__dot {
   position: absolute;
-  left: 50%;
+  left: calc(50% - var(--dx));
   top: calc(100% + var(--lead));
   width: 7px;
   height: 7px;
