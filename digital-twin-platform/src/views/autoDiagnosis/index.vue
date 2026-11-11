@@ -210,7 +210,6 @@ export default {
           this.currentProcessStep = step
           this.setStatus(message)
         },
-        onFrames: frames => this.broadcast(MessageType.FEATURE_FRAMES, frames),
         isCancelled: () => !this.isRunning
       })
       try {
@@ -258,13 +257,13 @@ export default {
 
     async startRealtimeMode() {
       this.channel = this.channel || openChannel()
-      // 打开工作台展示实时数据（只打开一次，可被浏览器拦截弹窗）
+      // 工作台直接从后端取实时数据；这里顺便打开它（只打开一次，可能被浏览器拦截弹窗）
       if (!this.dashboardWindow || this.dashboardWindow.closed) {
-        this.dashboardWindow = window.open(`${window.location.pathname}#/?mode=realtime`, 'shiyantai_dashboard')
+        this.dashboardWindow = window.open(`${window.location.pathname}#/`, 'shiyantai_dashboard')
       }
-      const { latest_seq: latestSeq, path } = await setWatchPath(this.config.dataPath)
+      const { latest_event_seq: latestSeq, path } = await setWatchPath(this.config.dataPath)
       this.lastEventSeq = latestSeq
-      this.addLog(`开始监控目录：${path}`, 'success')
+      this.addLog(`开始监控目录（含子目录）：${path}`, 'success')
       this.setStatus('监控中，等待新文件...')
       this.ticker = createTicker(POLL_INTERVAL_MS, this.pollWatchEvents)
     },
@@ -278,7 +277,7 @@ export default {
         for (const event of events) {
           if (!this.fileQueue.includes(event.file_name)) {
             this.fileQueue.push(event.file_name)
-            this.addLog(`检测到${event.type === 'created' ? '新文件' : '文件更新'}：${event.file_name}`, 'info')
+            this.addLog(`${event.type === 'created' ? '新文件已写完' : '文件有更新'}：${event.file_name}`, 'info')
           }
         }
       } catch (error) {

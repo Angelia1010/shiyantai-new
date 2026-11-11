@@ -37,17 +37,22 @@ def resolve_data_dir(directory: Optional[str]) -> Path:
 
 
 def resolve_data_file(directory: Optional[str], file_name: Optional[str], allowed_suffixes: Iterable[str]) -> Path:
-    """解析目录下的一个文件。文件名只能是纯文件名，不能带路径分隔符。"""
+    """解析目录下的一个文件。
+
+    file_name 可以是相对于该目录的子路径（如 “36-38摄氏度/S1295-P0.10.txt”，正反斜杠均可），
+    但不能是绝对路径、不能含 “..”，解析后必须仍在该目录内。
+    """
     base = resolve_data_dir(directory)
-    name = (file_name or "").strip()
+    name = (file_name or "").strip().replace("\\", "/")
     if not name:
         raise PathNotAllowed("缺少文件名参数 file_name")
-    if name != os.path.basename(name) or name in (".", "..") or "/" in name or "\\" in name:
+    parts = [p for p in name.split("/") if p not in ("", ".")]
+    if not parts or name.startswith("/") or ":" in name or any(p == ".." for p in parts):
         raise PathNotAllowed(f"文件名不合法：{file_name}")
     suffixes = tuple(s.lower() for s in allowed_suffixes)
-    if not name.lower().endswith(suffixes):
-        raise PathNotAllowed(f"不支持的文件类型：{name}（支持 {', '.join(suffixes)}）")
-    path = (base / name).resolve()
+    if not parts[-1].lower().endswith(suffixes):
+        raise PathNotAllowed(f"不支持的文件类型：{parts[-1]}（支持 {', '.join(suffixes)}）")
+    path = base.joinpath(*parts).resolve()
     if not _is_within(path, base):
         raise PathNotAllowed(f"文件名不合法：{file_name}")
     if not path.is_file():

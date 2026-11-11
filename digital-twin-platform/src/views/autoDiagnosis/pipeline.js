@@ -2,7 +2,7 @@
  * 单个数据文件的自动诊断流程：
  *
  *   1. 创建任务（开启“自动诊断”时）
- *   2. 分页读取文件，计算特征帧（同时推送给工作台播放）
+ *   2. 分页读取文件，计算特征帧（工作台的实时显示由后端实时监控负责，与这里无关）
  *   3. 运行 AMESim 仿真（开启“系统仿真”时）：用试验数据设置模型参数，读回仿真结果
  *   4. 诊断：有仿真数据时做初步诊断（异常时后端自动接着做精确诊断），否则直接做流量计精确诊断
  *
@@ -56,15 +56,13 @@ export class DiagnosisPipeline {
    * @param {Array}  options.variableConfigs  [{ name: 试验变量名, fileName: 仿真结果 .data 文件 }]
    * @param {Function} options.log            (message, level) => void
    * @param {Function} options.onStep         (step: 1-5, message) => void
-   * @param {Function} options.onFrames       (frames) => void 每读完一页调用一次
    * @param {Function} options.isCancelled    () => boolean
    */
-  constructor({ config, variableConfigs, log, onStep, onFrames, isCancelled }) {
+  constructor({ config, variableConfigs, log, onStep, isCancelled }) {
     this.config = config
     this.variableConfigs = variableConfigs
     this.log = log
     this.onStep = onStep
-    this.onFrames = onFrames
     this.isCancelled = isCancelled
     this.modelOpened = false
   }
@@ -135,7 +133,6 @@ export class DiagnosisPipeline {
       fields = fields || pickFields(data.columns)
       const pageFrames = buildFeatureFrames(data.columns, fields, this.config.groupSize)
       frames.push(...pageFrames)
-      if (pageFrames.length) this.onFrames(pageFrames)
       if (!data.has_more) break
     }
     return frames

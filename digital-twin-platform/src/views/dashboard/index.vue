@@ -2,11 +2,11 @@
   <div ref="root" class="dashboard">
     <!-- 状态栏 -->
     <header class="topbar">
-      <span :class="['pill', statusClass]"><i class="dot" />{{ statusText }}</span>
-      <span class="status-msg" :title="statusMessage">
-        {{ liveMode ? statusMessage : '当前没有实时数据，在“自动诊断”中开启实时监控后，这里会同步显示数据与诊断结果' }}
-      </span>
-      <router-link v-if="!liveMode" to="/autoDiagnosis" class="link-btn">前往自动诊断 <i class="el-icon-right" /></router-link>
+      <span :class="['pill', live.state]"><i class="dot" />{{ liveStateText }}</span>
+      <span class="status-msg" :title="live.path || ''">{{ liveMessage }}</span>
+      <button class="link-btn" @click="openPathDialog">
+        <i class="el-icon-folder-opened" /> {{ live.path ? '数据目录' : '设置数据目录' }}
+      </button>
       <div class="stats">
         <div class="stat"><span>诊断记录</span><b>{{ records.length }}</b></div>
         <div :class="['stat', { bad: abnormalCount }]"><span>异常</span><b>{{ abnormalCount }}</b></div>
@@ -32,6 +32,7 @@
     <!-- 右侧：诊断 -->
     <aside class="panel diagnosis">
       <div class="panel-title">最新诊断</div>
+      <div v-if="diagnosisStatus" class="diag-status"><i v-if="diagnosisStatus.includes('正在')" class="el-icon-loading" />自动诊断：{{ diagnosisStatus }}</div>
       <div v-if="latestResult" :class="['verdict', latestResult.result]">
         <div class="verdict-head">
           <span class="verdict-badge">{{ latestResult.statusText }}</span>
@@ -176,18 +177,51 @@
         </div>
       </div>
     </transition>
+    <!-- 数据目录设置 -->
+    <transition name="fade">
+      <div v-if="pathDialog.visible" class="modal" @click.self="pathDialog.visible = false">
+        <div class="modal-card path-card">
+          <div class="modal-head">
+            <span>实时数据目录</span>
+            <i class="el-icon-close" @click="pathDialog.visible = false" />
+          </div>
+          <div class="modal-body">
+            <p class="path-hint">
+              填写试验台写入数据文件的目录（共享目录的映射盘符或网络路径均可），其下各级子目录会一起监控。
+              目录必须在服务器配置项 DATA_ROOTS 允许的范围内。设置后会保存，服务重启后自动恢复。
+            </p>
+            <input
+              v-model.trim="pathDialog.value"
+              class="path-input"
+              placeholder="例如 Z:/试验数据 或 //192.168.1.20/data"
+              @keyup.enter="savePath"
+            >
+            <p v-if="pathDialog.error" class="path-error">{{ pathDialog.error }}</p>
+          </div>
+          <div class="modal-foot">
+            <button class="text-btn" @click="pathDialog.visible = false">取消</button>
+            <button class="primary-btn" :disabled="pathDialog.saving || !pathDialog.value" @click="savePath">
+              {{ pathDialog.saving ? '保存中...' : '开始监控' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
 <script>
 /**
- * 工作台：实时监控大屏。
+ * 工作台：实时监控。
  *
- * 页面不自己读文件，“自动诊断”运行时通过 BroadcastChannel 推送特征帧和诊断结果；
- * 没有推送时显示最近的诊断任务。
+ * 实时数据：每秒向文件服务取最新的特征帧（/live/frames），由后端增量读取试验台正在写入的文件，
+ *   与“自动诊断”页面是否打开无关，任何电脑打开工作台都能看到。
+ * 诊断结果：“自动诊断”运行时通过 BroadcastChannel 推送；没有推送时显示最近的诊断任务。
  */
 import screenfull from 'screenfull'
+import { getLiveFrames, setWatchPath } from '@/api/files'
 import { downloadReport, getReport, listTasks } from '@/api/tasks'
+import { errorMessage } from '@/utils/request'
 import { MessageType, openChannel } from '@/utils/broadcastChannel'
 import { fieldUnit, formatValue } from '@/utils/features'
 import { resultLabel, summarizeReport } from '@/utils/report'
@@ -195,9 +229,9 @@ import { DIAGNOSIS_TARGETS } from './scene/components'
 import TestBenchView from './TestBenchView.vue'
 import TrendChart from './TrendChart.vue'
 
-const FRAME_INTERVAL_MS = 1000
-const MAX_QUEUED_FRAMES = 600 // 积压过多时丢弃最旧的帧
-const HISTORY_LENGTH = 90 // 迷你曲线和趋势图保留的帧数
+const POLL_INTERVAL_MS = 1000
+const HISTORY_LENGTH = 90 // 迷你曲线和趋势图保留的帧数（每帧 1 秒）
+const LIVE_STATE_TEXT = { off: '未配置', waiting: '等待数据', live: '采集中' }
 const MAX_RECORDS = 100
 const DEVIATION_LIMIT = 15 // %
 const DEVIATION_SCALE = 30 // 偏差条满格对应的百分比
@@ -211,7 +245,7 @@ const METRIC_GROUPS = [
 const TREND_GROUPS = {
   pressure: { label: '压力', unit: 'MPa', fields: ['供油压力1-1', '供油压力1-2', '回油压力1-1', '回油压力1-2', 'P1进口压力'] },
   temperature: { label: '温度', unit: '°C', fields: ['供油温度1-1', '供油温度1-2', '回油温度1-1', '回油温度1-2', 'T20加热出口温度'] },
-  flow: { label: '流量', unit: 'L/h', fields: ['供油流量1-1', '供油流量1-2', '回油流量1-1', '回油流量1-2'] },
+  flow: { label: '流量', unit: 'L/h', fields: ['供油流量1-1', '供油流量1-2', '回油流量1-1', '回油流量1-2', '齿轮流量计'] },
   speed: { label: '转速', unit: 'rpm', fields: ['燃油泵实际转速', '电传实际转速'] }
 }
 
@@ -233,9 +267,9 @@ export default {
     return {
       featureMap: {},
       history: Object.fromEntries(TRACKED_FIELDS.map(f => [f, []])),
-      liveMode: this.$route.query.mode === 'realtime',
-      statusMessage: '等待自动诊断推送数据',
-      stopped: false,
+      live: { state: 'off', path: null, file: null, frameTime: '' },
+      pathDialog: { visible: false, value: '', saving: false, error: '' },
+      diagnosisStatus: '',
       records: [],
       latestResult: null,
       alarmComponents: [],
@@ -251,13 +285,15 @@ export default {
     }
   },
   computed: {
-    statusText() {
-      if (!this.liveMode) return '空闲'
-      return this.stopped ? '已停止' : '监控中'
+    liveStateText() {
+      return LIVE_STATE_TEXT[this.live.state] || '未配置'
     },
-    statusClass() {
-      if (!this.liveMode) return 'idle'
-      return this.stopped ? 'stopped' : 'live'
+    liveMessage() {
+      const { state, path, file, frameTime } = this.live
+      if (state === 'off') return '尚未配置实时数据目录，点击右侧按钮设置试验台写入数据的目录'
+      if (state === 'live') return `正在读取 ${file}（数据时间 ${frameTime}）`
+      const last = file ? `，最近文件 ${file}` : ''
+      return `监控 ${path}，等待试验台写入数据${last}`
     },
     hasData() {
       return Object.keys(this.featureMap).length > 0
@@ -287,16 +323,18 @@ export default {
     }
   },
   created() {
-    this.frameQueue = []
+    this.lastSeq = 0
+    this.currentFile = null
     this.channel = openChannel(this.handleMessage)
-    this.frameTimer = setInterval(this.showNextFrame, FRAME_INTERVAL_MS)
+    this.pollLive()
     this.tick()
     this.clockTimer = setInterval(this.tick, 1000)
     if (screenfull.enabled) screenfull.on('change', this.onFullscreenChange)
     this.loadRecentTasks()
   },
   beforeDestroy() {
-    clearInterval(this.frameTimer)
+    this.destroyed = true
+    clearTimeout(this.pollTimer)
     clearInterval(this.clockTimer)
     this.channel.close()
     if (screenfull.enabled) screenfull.off('change', this.onFullscreenChange)
@@ -304,29 +342,68 @@ export default {
   methods: {
     // ------------------------------------------------------------ 数据接收
     handleMessage({ type, payload }) {
-      this.liveMode = true
-      if (type === MessageType.FEATURE_FRAMES) {
-        this.frameQueue.push(...payload)
-        if (this.frameQueue.length > MAX_QUEUED_FRAMES) {
-          this.frameQueue.splice(0, this.frameQueue.length - MAX_QUEUED_FRAMES)
-        }
-      } else if (type === MessageType.DIAGNOSIS_STATUS) {
-        this.statusMessage = payload.message
-        this.stopped = payload.message === '已停止'
+      if (type === MessageType.DIAGNOSIS_STATUS) {
+        this.diagnosisStatus = payload.message
       } else if (type === MessageType.DIAGNOSIS_RESULT) {
         this.addResult(payload)
       }
     },
-    showNextFrame() {
-      if (!this.frameQueue.length) return
-      const frame = this.frameQueue.shift()
-      this.featureMap = frame
+
+    /** 每秒取一次新帧；首次（或服务重启后）取最近 HISTORY_LENGTH 帧填满曲线。 */
+    async pollLive() {
+      try {
+        const first = this.lastSeq === 0
+        const data = await getLiveFrames(this.lastSeq, first ? HISTORY_LENGTH : 300)
+        if (data.latest_seq < this.lastSeq) {
+          // 文件服务重启过，序号从头开始：下一轮重新拉取
+          this.lastSeq = 0
+          this.resetHistory()
+        } else {
+          data.frames.forEach(this.applyFrame)
+          this.lastSeq = data.latest_seq
+        }
+        this.live = { ...this.live, state: data.state, file: data.file, path: data.path }
+      } catch (e) {
+        this.live = { ...this.live, state: 'off' }
+      } finally {
+        if (!this.destroyed) this.pollTimer = setTimeout(this.pollLive, POLL_INTERVAL_MS)
+      }
+    },
+    applyFrame(frame) {
+      if (frame.file !== this.currentFile) {
+        // 换了一个数据文件（新的试验工况），曲线重新开始
+        this.currentFile = frame.file
+        this.resetHistory()
+      }
+      this.featureMap = frame.stats
+      this.live.frameTime = frame.time
       for (const field of TRACKED_FIELDS) {
-        const stat = frame[field]
+        const stat = frame.stats[field]
         if (!stat) continue
         const series = this.history[field]
         series.push(stat.avg)
         if (series.length > HISTORY_LENGTH) series.shift()
+      }
+    },
+    resetHistory() {
+      for (const field of TRACKED_FIELDS) this.history[field] = []
+    },
+    openPathDialog() {
+      this.pathDialog = { visible: true, value: this.live.path || '', saving: false, error: '' }
+    },
+    async savePath() {
+      if (!this.pathDialog.value || this.pathDialog.saving) return
+      this.pathDialog.saving = true
+      this.pathDialog.error = ''
+      try {
+        const status = await setWatchPath(this.pathDialog.value, true)
+        this.live = { ...this.live, state: status.state, path: status.path, file: status.file }
+        this.pathDialog.visible = false
+        this.$message.success(`开始监控：${status.path}`)
+      } catch (e) {
+        this.pathDialog.error = errorMessage(e)
+      } finally {
+        this.pathDialog.saving = false
       }
     },
     addResult(summary) {
@@ -468,6 +545,8 @@ $warn: #f59e0b;
 }
 .link-btn {
   flex-shrink: 0;
+  background: transparent;
+  cursor: pointer;
   color: $accent;
   font-size: 12px;
   padding: 3px 10px;
@@ -518,9 +597,10 @@ $warn: #f59e0b;
       animation: blink 1.6s ease-in-out infinite;
     }
   }
-  &.stopped {
-    color: $warn;
-    .dot { background: $warn; }
+  &.waiting {
+    color: #7dd3fc;
+    border-color: rgba(56, 189, 248, 0.35);
+    .dot { background: #38bdf8; }
   }
 }
 @keyframes blink {
@@ -980,6 +1060,48 @@ $return: #fbbf24;
 .modal-body {
   padding: 14px 18px;
   overflow-y: auto;
+}
+.path-card {
+  width: min(560px, 92vw);
+}
+.path-hint {
+  margin: 0 0 12px;
+  color: $muted;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.path-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid $border;
+  background: rgba(56, 189, 248, 0.05);
+  color: $bright;
+  font-size: 13px;
+  outline: none;
+  &:focus { border-color: $accent; }
+}
+.path-error {
+  margin: 8px 0 0;
+  color: $bad;
+  font-size: 12px;
+}
+.primary-btn {
+  margin-left: 16px;
+  padding: 6px 16px;
+  border: none;
+  border-radius: 4px;
+  background: $blue;
+  color: #fff;
+  cursor: pointer;
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+.diag-status {
+  margin: -4px 0 10px;
+  color: $muted;
+  font-size: 12px;
+  i { margin-right: 4px; }
 }
 .modal-foot {
   padding: 12px 18px;

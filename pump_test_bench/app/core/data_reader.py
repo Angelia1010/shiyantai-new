@@ -2,7 +2,8 @@
 
 支持的格式：
 - Excel（.xlsx / .xls）：第 1 行为列名，读取第一个工作表；
-- TXT（试验台导出的“曲线数据”）：制表符分隔，第 1 行为列名，第 2、3 行为空行，第 4 行起为数据；
+- 文本（.txt / .csv，试验台导出的“曲线数据”）：编码、分隔符、表头等由 table_parser 自动识别，
+  兼容没有表头、行尾多余分隔符、最后一行没写完等情况；
 - TDMS：仅供大模型分析使用，按通道读取为矩阵。
 
 解析后的表格按 (路径, 修改时间, 大小) 缓存，分页读取同一个文件时只解析一次。
@@ -15,9 +16,10 @@ from typing import Dict, Iterator, List, Optional, Tuple
 
 import pandas as pd
 
-TABLE_SUFFIXES = (".xlsx", ".xls", ".txt")
+from pump_test_bench.app.core.table_parser import TEXT_SUFFIXES, normalize_column, read_text_table
+
+TABLE_SUFFIXES = (".xlsx", ".xls") + TEXT_SUFFIXES
 TDMS_SUFFIXES = (".tdms",)
-TXT_ENCODINGS = ("utf-8", "gbk")
 
 _CACHE_SIZE = 4
 _cache: "OrderedDict[Tuple[str, float, int, Optional[str]], pd.DataFrame]" = OrderedDict()
@@ -25,7 +27,7 @@ _cache_lock = threading.Lock()
 
 
 def _to_numeric(df: pd.DataFrame) -> pd.DataFrame:
-    """数值列转为浮点；整列都不是数值的（如“时间”）保留原文本。"""
+    """数值列转为浮点；整列都不是数值的（如“时间”）保留原文本。列名统一规范化。"""
     out = {}
     for col in df.columns:
         converted = pd.to_numeric(df[col], errors="coerce")
@@ -34,36 +36,14 @@ def _to_numeric(df: pd.DataFrame) -> pd.DataFrame:
         else:
             out[col] = df[col]
     result = pd.DataFrame(out)
-    result.columns = [str(c).strip() for c in result.columns]
+    result.columns = [normalize_column(str(c))[0] for c in result.columns]
     return result
 
 
-def _read_txt(path: Path) -> pd.DataFrame:
-    last_error: Optional[Exception] = None
-    for encoding in TXT_ENCODINGS:
-        try:
-            with path.open("r", encoding=encoding) as f:
-                header = f.readline().rstrip("\r\n")
-            columns = [c.strip() for c in header.split("\t")]
-            if not any(columns):
-                raise ValueError(f"文件 {path.name} 没有列名行")
-            df = pd.read_csv(
-                path,
-                sep="\t",
-                skiprows=3,
-                header=None,
-                names=columns,
-                usecols=range(len(columns)),
-                index_col=False,
-                skip_blank_lines=True,
-                encoding=encoding,
-                on_bad_lines="skip",
-                dtype=str,
-            )
-            return df
-        except UnicodeDecodeError as exc:
-            last_error = exc
-    raise ValueError(f"无法识别文件 {path.name} 的编码（已尝试 {', '.join(TXT_ENCODINGS)}）") from last_error
+def _read_text(path: Path) -> pd.DataFrame:
+    layout, rows, _ = read_text_table(path)
+    df = pd.DataFrame(rows, columns=layout.columns, dtype=str)
+    return df.replace("", None)
 
 
 def iter_excel_sheets(path: Path) -> Iterator[Tuple[str, pd.DataFrame]]:
@@ -73,7 +53,7 @@ def iter_excel_sheets(path: Path) -> Iterator[Tuple[str, pd.DataFrame]]:
 
 
 def read_table(path: Path, sheet: Optional[str] = None) -> Tuple[str, pd.DataFrame]:
-    """读取整张表，返回 (工作表名, DataFrame)。TXT 文件的工作表名固定为 "data"。"""
+    """读取整张表，返回 (工作表名, DataFrame)。文本文件的工作表名固定为 "data"。"""
     stat = path.stat()
     key = (str(path), stat.st_mtime, stat.st_size, sheet)
     with _cache_lock:
@@ -83,8 +63,8 @@ def read_table(path: Path, sheet: Optional[str] = None) -> Tuple[str, pd.DataFra
             return sheet_name, df
 
     suffix = path.suffix.lower()
-    if suffix == ".txt":
-        sheet_name, df = "data", _to_numeric(_read_txt(path))
+    if suffix in TEXT_SUFFIXES:
+        sheet_name, df = "data", _to_numeric(_read_text(path))
     elif suffix in (".xlsx", ".xls"):
         with pd.ExcelFile(path) as xl:
             if not xl.sheet_names:

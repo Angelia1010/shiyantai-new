@@ -107,20 +107,51 @@ def test_file_listing_and_paging(file_client, sample_dir, token):
     assert page["has_more"] is True and len(page["columns"]["回油流量1-1"]) == 100
 
 
-def test_watch_events_are_shared_by_all_clients(file_client, sample_dir, token):
-    from pump_test_bench.app.services.file_service import watcher
-    resp = file_client.post("/watch", headers=auth(token), json={"path": str(sample_dir)})
-    start = resp.get_json()["latest_seq"]
-    watcher.record("created", str(sample_dir / "new.xlsx"))
-    watcher.record("modified", str(sample_dir / "new.xlsx"))  # 同一次写入，合并成一条
-    watcher.record("modified", str(sample_dir / "ignore.docx"))
-    watcher.flush(force=True)
-    first = file_client.get(f"/watch/events?since={start}", headers=auth(token)).get_json()
-    second = file_client.get(f"/watch/events?since={start}", headers=auth(token)).get_json()
-    assert [e["file_name"] for e in first["events"]] == ["new.xlsx"]
-    assert first["events"][0]["type"] == "created"
-    assert second["events"] == first["events"]
-    watcher.stop()
+def test_live_monitor_endpoints(file_client, sample_dir, token, monkeypatch):
+    import pump_test_bench.app.services.file_service as fs
+    monkeypatch.setattr(fs, "_monitor", None)  # 用本测试的配置重新创建
+    watch_dir = sample_dir / "live"
+    sub = watch_dir / "36-38摄氏度"
+    sub.mkdir(parents=True)
+    resp = file_client.post("/watch", headers=auth(token), json={"path": str(watch_dir)}).get_json()
+    assert resp["path"] == str(watch_dir) and resp["state"] == "waiting"
+    monitor = fs.get_monitor()
+    monitor.stop()  # 测试中手动调用 scan，避免与后台线程交错
+
+    target = sub / "run.txt"
+    target.write_bytes("时间\t回油流量1-1\t\n\n\n".encode("gbk"))
+    lines = [f"10:00:{i // 10:02d}.{i % 10}00\t{150 + i}\t\n" for i in range(25)]
+    with target.open("ab") as f:
+        f.write("".join(lines[:12]).encode("gbk"))
+    monitor.scan(now=100)
+    live = file_client.get("/live/status", headers=auth(token)).get_json()
+    assert live["state"] == "live" and live["file"] == "36-38摄氏度/run.txt"
+    frames = file_client.get("/live/frames?since=0", headers=auth(token)).get_json()
+    assert [f["time"] for f in frames["frames"]] == ["10:00:00"]  # 第 1 秒已完整，第 2 秒还在累积
+    assert frames["frames"][0]["stats"]["回油流量1-1"]["avg"] == 154.5
+
+    with target.open("ab") as f:
+        f.write("".join(lines[12:]).encode("gbk"))
+    monitor.scan(now=101)
+    monitor.scan(now=105)  # 安静超过 settle 时间：视为写完
+    later = file_client.get(f"/live/frames?since={frames['latest_seq']}", headers=auth(token)).get_json()
+    assert [f["time"] for f in later["frames"]] == ["10:00:01", "10:00:02"]
+    events = file_client.get("/watch/events?since=0", headers=auth(token)).get_json()["events"]
+    assert [(e["type"], e["file_name"]) for e in events] == [("created", "36-38摄氏度/run.txt")]
+
+    # 子目录中的文件可以直接分页读取
+    page = file_client.get("/files/page", headers=auth(token),
+                           query_string={"path": str(watch_dir), "file_name": "36-38摄氏度/run.txt"}).get_json()
+    assert page["total_rows"] == 25
+    listed = file_client.get(f"/files?path={watch_dir}&recursive=1", headers=auth(token)).get_json()["files"]
+    assert "36-38摄氏度/run.txt" in listed
+
+
+def test_file_names_cannot_escape_data_dir(file_client, sample_dir, token):
+    for bad in ("../x.txt", "..\\x.txt", "/etc/passwd.txt", "C:/x.txt", "a/../../x.txt"):
+        resp = file_client.get("/files/page", headers=auth(token),
+                               query_string={"path": str(sample_dir), "file_name": bad})
+        assert resp.status_code == 400, bad
 
 
 def test_frontend_logs_are_sanitised(task_client, token):

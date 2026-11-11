@@ -148,7 +148,7 @@ export default {
       
       this.loading = true
       try {
-        const response = await listFiles(this.config.dataPath)
+        const response = await listFiles(this.config.dataPath, true) // 含子目录，文件名为相对路径
         this.files = response.files || []
       } catch (error) {
         this.files = []

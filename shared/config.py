@@ -40,6 +40,11 @@ def _env_int(name: str, default: int) -> int:
     return int(value) if value else default
 
 
+def _env_float(name: str, default: float) -> float:
+    value = _env(name)
+    return float(value) if value else default
+
+
 def _env_path(name: str, default: Path) -> Path:
     value = _env(name)
     path = Path(value) if value else default
@@ -62,6 +67,8 @@ class Settings:
     amesim_service_port: int
 
     data_roots: Tuple[Path, ...]
+    live_scan_seconds: float
+    live_settle_seconds: float
     db_path: Path
     log_dir: Path
     amesim_model_dir: Path
@@ -107,6 +114,8 @@ def get_settings() -> Settings:
         llm_service_port=_env_int("LLM_SERVICE_PORT", 8999),
         amesim_service_port=_env_int("AMESIM_SERVICE_PORT", 5003),
         data_roots=roots,
+        live_scan_seconds=_env_float("LIVE_SCAN_SECONDS", 1.0),
+        live_settle_seconds=_env_float("LIVE_SETTLE_SECONDS", 3.0),
         db_path=_env_path("DB_PATH", REPO_ROOT / "pump_test_bench" / "data" / "tasks.db"),
         log_dir=_env_path("LOG_DIR", REPO_ROOT / "logs"),
         amesim_model_dir=_env_path("AMESIM_MODEL_DIR", REPO_ROOT / "AMESim_server" / "model"),

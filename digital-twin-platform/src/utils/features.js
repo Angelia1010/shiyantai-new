@@ -13,7 +13,7 @@ export const MONITORED_FIELDS = [
   '供油压力1-1', '供油压力1-2',
   '回油压力1-1', '回油压力1-2', '回油压力2-1', '回油压力2-2',
   '回油流量1-1', '回油流量1-2', '回油流量2-1', '回油流量2-2',
-  '供油流量1-1', '供油流量1-2',
+  '供油流量1-1', '供油流量1-2', '齿轮流量计', '回油质量流量1', '回油质量流量2',
   'T20加热出口温度', 'T3进口温度', 'T4高压出口温度', 'T5出口温度',
   '供油温度1-1', '供油温度1-2',
   '回油温度1-1', '回油温度1-2', '回油温度2-1', '回油温度2-2',
@@ -86,6 +86,7 @@ export function fieldUnit(name) {
   if (name.includes('扭矩')) return 'N·m'
   if (name.includes('压力')) return 'MPa'
   if (name.includes('温度')) return '°C'
+  if (name.includes('质量流量')) return 'kg/h'
   if (name.includes('流量')) return 'L/h'
   return ''
 }
