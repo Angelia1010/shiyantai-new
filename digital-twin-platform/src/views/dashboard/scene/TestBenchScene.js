@@ -20,6 +20,11 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader'
 import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls'
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer'
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer'
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass'
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass'
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass'
+import { GammaCorrectionShader } from 'three/examples/jsm/shaders/GammaCorrectionShader'
 import { COLOR_MODES, COMPONENTS, STYLES, VIEWS } from './components'
 import { fieldUnit, formatValue } from '@/utils/features'
 
@@ -41,10 +46,9 @@ const NEUTRAL_EDGE = srgb(0x29435f)
 // 色标：蓝 → 青 → 绿 → 黄 → 红，与图例 CSS 渐变一致
 export const COLOR_STOPS = ['#2563eb', '#06b6d4', '#22c55e', '#facc15', '#ef4444']
 const STOP_COLORS = COLOR_STOPS.map(srgb)
-// 显示悬浮数值标签的部件
-// （管路贯穿整台设备，标签位置没有意义，不加）
-// 值为标签相对锚点的偏移方向，两个流量计挨得很近，标签分别放左右避免重叠
-const LABELED = { 被试件1高低压双联泵: 'up', 回油流量计1: 'left', 回油流量计2: 'right' }
+// 显示悬浮标签的部件（管路贯穿整台设备，标签位置没有意义，不加）
+// 值为引线长度（像素）：两个流量计挨得很近，引线一短一长把标签上下错开
+const LABELED = { 被试件1高低压双联泵: 46, 回油流量计1: 34, 回油流量计2: 78 }
 
 // 科技风动态效果
 const INTRO_MS = 2600 // 加载后：镜头推进 + 模型自下而上“生成”
@@ -65,9 +69,9 @@ uniform float scanStrength;
 uniform float revealY;
 varying vec3 vFxWorld;
 `
-// 管路“流动”光斑：沿世界坐标的斜向条纹随时间移动，用本体颜色提亮
-const FX_FLOW_DECL = 'uniform float fxTime;\nuniform float flowStrength;\n'
-const FX_FLOW_BODY = `float flowPhase = fract((vFxWorld.x * 0.9 + vFxWorld.y * 0.4 + vFxWorld.z * 0.6) * 2.2 - fxTime * 0.7);
+// 管路“流动”光斑：以油液来源部件为起点，按距离向外移动（光斑头部朝流动方向），用本体颜色提亮
+const FX_FLOW_DECL = 'uniform float fxTime;\nuniform float flowStrength;\nuniform vec3 flowSource;\n'
+const FX_FLOW_BODY = `float flowPhase = fract(distance(vFxWorld, flowSource) * 2.2 - fxTime * 0.7);
 gl_FragColor.rgb += diffuseColor.rgb * smoothstep(0.82, 1.0, flowPhase) * 2.2 * flowStrength;
 `
 const FX_FRAGMENT_BODY = `if (vFxWorld.y > revealY) discard;
@@ -75,6 +79,21 @@ float fxBand = scanStrength * (1.0 - smoothstep(0.0, scanWidth, abs(vFxWorld.y -
 float fxEdge = 1.0 - smoothstep(0.0, scanWidth * 0.6, abs(vFxWorld.y - revealY));
 gl_FragColor.rgb += scanColor * (fxBand * FX_GAIN + fxEdge * 1.6);
 #include <tonemapping_fragment>`
+
+// 选择性辉光：只有加入 BLOOM_LAYER 的物体（轮廓线、管路、光圈、波纹、粒子）发光
+const BLOOM_LAYER = 1
+const MIX_SHADER = { // 正常画面 + 辉光；背景透明处用辉光亮度作为 alpha
+  vertexShader: `varying vec2 vUv;
+void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform sampler2D baseTexture;
+uniform sampler2D bloomTexture;
+varying vec2 vUv;
+void main() {
+  vec4 base = texture2D(baseTexture, vUv);
+  vec3 bloom = texture2D(bloomTexture, vUv).rgb;
+  gl_FragColor = vec4(base.rgb + bloom, max(base.a, max(bloom.r, max(bloom.g, bloom.b))));
+}`
+}
 
 const easeInOutCubic = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
 
@@ -106,56 +125,76 @@ function average(featureMap, fields) {
   return n ? sum / n : null
 }
 
-/** 地面底座贴图：同心圆环 + 刻度 + 中心光晕。 */
-function baseTexture() {
-  const size = 1024
-  const c = size / 2
+/**
+ * 地面底座贴图：贴合模型占地的圆角矩形——内部淡光、发光边框、四角折线、长边刻度。
+ * aspect 为宽/高，贴图按该比例绘制，拉伸到底座上时线条粗细保持一致。
+ */
+function footprintTexture(aspect, outlineOnly = false) {
+  const w = 2048
+  const h = Math.max(256, Math.round(w / aspect))
   const canvas = document.createElement('canvas')
-  canvas.width = canvas.height = size
+  canvas.width = w
+  canvas.height = h
   const ctx = canvas.getContext('2d')
-  const glow = ctx.createRadialGradient(c, c, 0, c, c, c)
-  glow.addColorStop(0, 'rgba(56,140,255,0.28)')
-  glow.addColorStop(0.55, 'rgba(30,90,180,0.10)')
-  glow.addColorStop(1, 'rgba(10,30,70,0)')
-  ctx.fillStyle = glow
-  ctx.fillRect(0, 0, size, size)
-
-  const ring = (r, width, alpha) => {
+  const m = 24 // 边距
+  const r = Math.min(h, w) * 0.12 // 圆角
+  const roundRect = (x, y, rw, rh, rr) => {
     ctx.beginPath()
-    ctx.arc(c, c, r * c, 0, Math.PI * 2)
-    ctx.lineWidth = width
-    ctx.strokeStyle = `rgba(90,190,255,${alpha})`
-    ctx.stroke()
+    ctx.moveTo(x + rr, y)
+    ctx.arcTo(x + rw, y, x + rw, y + rh, rr)
+    ctx.arcTo(x + rw, y + rh, x, y + rh, rr)
+    ctx.arcTo(x, y + rh, x, y, rr)
+    ctx.arcTo(x, y, x + rw, y, rr)
+    ctx.closePath()
   }
-  ring(0.42, 2, 0.35)
-  ring(0.62, 1.5, 0.22)
-  ring(0.9, 3, 0.3)
-  ring(0.93, 1, 0.18)
-  // 外圈刻度
-  for (let i = 0; i < 120; i++) {
-    const a = (i / 120) * Math.PI * 2
-    const long = i % 10 === 0
-    const r1 = 0.9 * c
-    const r2 = (long ? 0.86 : 0.88) * c
-    ctx.beginPath()
-    ctx.moveTo(c + Math.cos(a) * r1, c + Math.sin(a) * r1)
-    ctx.lineTo(c + Math.cos(a) * r2, c + Math.sin(a) * r2)
-    ctx.lineWidth = long ? 2 : 1
-    ctx.strokeStyle = `rgba(90,190,255,${long ? 0.45 : 0.22})`
+  if (outlineOnly) {
+    // 波纹：只有一圈细边
+    roundRect(m, m, w - 2 * m, h - 2 * m, r)
+    ctx.lineWidth = 6
+    ctx.strokeStyle = 'rgba(90,190,255,1)'
     ctx.stroke()
-  }
-  // 四段弧线
-  for (let k = 0; k < 4; k++) {
-    const start = k * (Math.PI / 2) + 0.2
-    ctx.beginPath()
-    ctx.arc(c, c, 0.66 * c, start, start + Math.PI / 4)
-    ctx.lineWidth = 4
-    ctx.strokeStyle = 'rgba(56,189,248,0.4)'
+  } else {
+    const fill = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2)
+    fill.addColorStop(0, 'rgba(56,140,255,0.22)')
+    fill.addColorStop(1, 'rgba(20,60,130,0.04)')
+    roundRect(m, m, w - 2 * m, h - 2 * m, r)
+    ctx.fillStyle = fill
+    ctx.fill()
+    ctx.lineWidth = 5
+    ctx.strokeStyle = 'rgba(90,190,255,0.55)'
     ctx.stroke()
+    roundRect(m + 28, m + 28, w - 2 * m - 56, h - 2 * m - 56, r * 0.8)
+    ctx.lineWidth = 2
+    ctx.strokeStyle = 'rgba(90,190,255,0.22)'
+    ctx.stroke()
+    // 四角折线
+    ctx.lineWidth = 10
+    ctx.strokeStyle = 'rgba(125,211,252,0.9)'
+    const c = Math.min(h, w) * 0.22
+    ;[[m, m, 1, 1], [w - m, m, -1, 1], [m, h - m, 1, -1], [w - m, h - m, -1, -1]].forEach(([x, y, dx, dy]) => {
+      ctx.beginPath()
+      ctx.moveTo(x + dx * (r + c), y)
+      ctx.lineTo(x + dx * r, y)
+      ctx.moveTo(x, y + dy * r)
+      ctx.lineTo(x, y + dy * (r + c * 0.6))
+      ctx.stroke()
+    })
+    // 长边刻度
+    ctx.lineWidth = 3
+    ctx.strokeStyle = 'rgba(90,190,255,0.35)'
+    for (let x = m + r + 40; x < w - m - r - 20; x += 40) {
+      const long = Math.round((x - m) / 40) % 5 === 0
+      ;[m + 28, h - m - 28].forEach((y, k) => {
+        ctx.beginPath()
+        ctx.moveTo(x, y)
+        ctx.lineTo(x, y + (k ? -1 : 1) * (long ? 26 : 14))
+        ctx.stroke()
+      })
+    }
   }
   const tex = new THREE.CanvasTexture(canvas)
   tex.encoding = THREE.sRGBEncoding
-  tex.anisotropy = 4
+  tex.anisotropy = 8
   return tex
 }
 
@@ -232,6 +271,7 @@ export class TestBenchScene {
 
     this._initRenderer()
     this._initScene()
+    this._initPostprocessing()
     this._bindEvents()
     this._loadEnvironment()
     this._loadModel()
@@ -281,10 +321,10 @@ export class TestBenchScene {
     const scene = new THREE.Scene()
     this.scene = scene
 
-    this.hemiLight = new THREE.HemisphereLight(0xdde6ff, 0x101828, 0.45)
+    this.hemiLight = new THREE.HemisphereLight(0xdde6ff, 0x0b1220, 0.3)
     scene.add(this.hemiLight)
 
-    const key = new THREE.DirectionalLight(0xffffff, 1.3)
+    const key = new THREE.DirectionalLight(0xffffff, 2.0) // 主光加强，拉开明暗层次
     key.castShadow = true
     key.shadow.mapSize.set(2048, 2048)
     key.shadow.bias = -0.0004
@@ -293,14 +333,14 @@ export class TestBenchScene {
     scene.add(key.target)
     this.keyLight = key
 
-    this.fillLight = new THREE.DirectionalLight(0x7fa8ff, 0.35)
+    this.fillLight = new THREE.DirectionalLight(0x7fa8ff, 0.25)
     scene.add(this.fillLight)
-    this.rimLight = new THREE.DirectionalLight(0x9fe1ff, 0.5)
+    this.rimLight = new THREE.DirectionalLight(0x9fe1ff, 0.6)
     scene.add(this.rimLight)
 
     // 地面：阴影 + 科技底座贴图 + 两层网格（远处由雾淡出）
     this.ground = new THREE.Group()
-    const shadowPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowMaterial({ opacity: 0.45 }))
+    const shadowPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowMaterial({ opacity: 0.6 }))
     shadowPlane.rotation.x = -Math.PI / 2
     shadowPlane.receiveShadow = true
     this.ground.add(shadowPlane)
@@ -308,7 +348,7 @@ export class TestBenchScene {
 
     const base = new THREE.Mesh(
       new THREE.PlaneGeometry(1, 1),
-      new THREE.MeshBasicMaterial({ map: baseTexture(), transparent: true, depthWrite: false })
+      new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, opacity: 0 }) // 贴图在模型加载后按占地比例生成
     )
     base.rotation.x = -Math.PI / 2
     base.position.y = 0.001
@@ -331,16 +371,15 @@ export class TestBenchScene {
     // 动态效果：地面波纹、上升粒子、选中/告警光圈（尺寸在模型加载后确定）
     this.fxGroup = new THREE.Group()
     this.ripples = []
+    // 波纹：与底座同形状的圆角矩形边框，从底座边缘向外扩散
     for (let i = 0; i < RIPPLE_COUNT; i++) {
-      const ripple = new THREE.Mesh(
-        new THREE.RingGeometry(0.97, 1, 128),
-        new THREE.MeshBasicMaterial({
-          color: 0x38bdf8, transparent: true, opacity: 0, depthWrite: false,
-          blending: THREE.AdditiveBlending, side: THREE.DoubleSide
-        })
-      )
+      const ripple = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({
+        color: 0x38bdf8, transparent: true, opacity: 0, depthWrite: false,
+        blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+      }))
       ripple.rotation.x = -Math.PI / 2
       ripple.position.y = 0.003
+      ripple.layers.enable(BLOOM_LAYER)
       this.fxGroup.add(ripple)
       this.ripples.push(ripple)
     }
@@ -348,6 +387,98 @@ export class TestBenchScene {
     this.selectHalo.visible = false
     scene.add(this.selectHalo)
     scene.add(this.fxGroup)
+    this._glow(this.selectHalo)
+  }
+
+  /**
+   * 后期处理：两次渲染实现选择性辉光。
+   * 1. bloomComposer：非发光物体换成纯黑（透明物体隐藏），只对发光物体做 UnrealBloom
+   * 2. finalComposer：正常渲染 + 叠加辉光 + 转 sRGB
+   * 任何一步失败都退回普通渲染，不影响使用。
+   */
+  _initPostprocessing() {
+    try {
+      const renderer = this.renderer
+      const { clientWidth: w, clientHeight: h } = this.container
+      this.bloomLayer = new THREE.Layers()
+      this.bloomLayer.set(BLOOM_LAYER)
+      this.darkMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 })
+
+      const bloomComposer = new EffectComposer(renderer)
+      bloomComposer.renderToScreen = false
+      bloomComposer.addPass(new RenderPass(this.scene, this.camera))
+      this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 1, 0.4, 0)
+      bloomComposer.addPass(this.bloomPass)
+
+      // WebGL2 下用多重采样渲染目标，保证细线条抗锯齿
+      const size = renderer.getDrawingBufferSize(new THREE.Vector2())
+      const params = { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat }
+      const target = renderer.capabilities.isWebGL2 && THREE.WebGLMultisampleRenderTarget
+        ? new THREE.WebGLMultisampleRenderTarget(size.x, size.y, params)
+        : new THREE.WebGLRenderTarget(size.x, size.y, params)
+      const finalComposer = new EffectComposer(renderer, target)
+      finalComposer.addPass(new RenderPass(this.scene, this.camera))
+      const mix = new ShaderPass(new THREE.ShaderMaterial({
+        uniforms: {
+          baseTexture: { value: null },
+          bloomTexture: { value: bloomComposer.renderTarget2.texture }
+        },
+        vertexShader: MIX_SHADER.vertexShader,
+        fragmentShader: MIX_SHADER.fragmentShader
+      }), 'baseTexture')
+      mix.needsSwap = true
+      finalComposer.addPass(mix)
+      finalComposer.addPass(new ShaderPass(GammaCorrectionShader))
+
+      this.bloomComposer = bloomComposer
+      this.finalComposer = finalComposer
+      this.hiddenForBloom = []
+      this.swappedForBloom = []
+    } catch (e) {
+      console.warn('辉光后期处理不可用，使用普通渲染', e)
+      this.bloomComposer = this.finalComposer = null
+    }
+  }
+
+  /** 把物体加入辉光层。 */
+  _glow(obj) {
+    obj.traverse(o => o.layers.enable(BLOOM_LAYER))
+  }
+
+  _render() {
+    const bloom = this.bloomComposer && this.bloomEnabled
+    if (!bloom) {
+      this.renderer.render(this.scene, this.camera)
+      return
+    }
+    try {
+      // 第一遍：只保留发光物体
+      const fog = this.scene.fog
+      this.scene.fog = null
+      this.scene.traverse(obj => {
+        if (!(obj.isMesh || obj.isLine || obj.isPoints) || !obj.visible) return
+        if (this.bloomLayer.test(obj.layers)) return
+        if (obj.material.transparent) {
+          obj.visible = false
+          this.hiddenForBloom.push(obj)
+        } else {
+          this.swappedForBloom.push([obj, obj.material])
+          obj.material = this.darkMaterial
+        }
+      })
+      this.bloomComposer.render()
+      this.hiddenForBloom.forEach(obj => { obj.visible = true })
+      this.swappedForBloom.forEach(([obj, material]) => { obj.material = material })
+      this.hiddenForBloom.length = 0
+      this.swappedForBloom.length = 0
+      this.scene.fog = fog
+      // 第二遍：正常画面 + 辉光
+      this.finalComposer.render()
+    } catch (e) {
+      console.warn('辉光渲染失败，改用普通渲染', e)
+      this.bloomComposer = null
+      this.renderer.render(this.scene, this.camera)
+    }
   }
 
   /** 按模型尺寸生成上升粒子。 */
@@ -377,6 +508,7 @@ export class TestBenchScene {
     this.particles = new THREE.Points(geometry, material)
     this.particles.raycast = () => {}
     this.particles.userData = { speeds, height }
+    this.particles.layers.enable(BLOOM_LAYER)
     this.fxGroup.add(this.particles)
   }
 
@@ -466,6 +598,7 @@ export class TestBenchScene {
    */
   _enhance(material, { rim = false, gain = 1, flow = false } = {}) {
     const fx = this.fx
+    if (flow) material.userData.flowSource = { value: new THREE.Vector3() }
     material.onBeforeCompile = shader => {
       Object.assign(shader.uniforms, {
         scanY: fx.scanY, scanWidth: fx.scanWidth, scanColor: fx.scanColor,
@@ -479,6 +612,7 @@ export class TestBenchScene {
       if (flow) {
         shader.uniforms.fxTime = fx.fxTime
         shader.uniforms.flowStrength = fx.flowStrength
+        shader.uniforms.flowSource = material.userData.flowSource
         frag = FX_FLOW_DECL + frag
       }
       if (rim) {
@@ -538,10 +672,18 @@ export class TestBenchScene {
           ...this._makeComponentMaterials(conf.material || 'default')
         }
       }
-      const mats = comp || this.defaultMaterials
+      const mainMats = comp || this.defaultMaterials
       const meshes = []
       child.traverse(obj => { if (obj.isMesh) meshes.push(obj) })
+      const childSize = new THREE.Box3().setFromObject(child).getSize(new THREE.Vector3())
+      const childMax = Math.max(childSize.x, childSize.y, childSize.z)
       meshes.forEach(obj => {
+        // 被试件里又大又薄的零件（底板、安装面板）用中性色，只让泵体本身保持醒目
+        let mats = mainMats
+        if (comp && mainMats.category === 'testPiece' && this._isLargePlate(obj, childMax)) {
+          if (!comp.sub) comp.sub = this._makeComponentMaterials('testPieceBase')
+          mats = comp.sub
+        }
         const wasTransparent = obj.material && obj.material.transparent && obj.material.opacity < 0.95
         const asPanel = wasTransparent && mats.category === 'frame'
         if (obj.material) replaced.add(obj.material)
@@ -551,6 +693,8 @@ export class TestBenchScene {
         // 轮廓线作为子对象，跟随网格变换
         const edges = new THREE.LineSegments(new THREE.EdgesGeometry(obj.geometry, EDGE_THRESHOLD_DEG), mats.edgeMaterial)
         edges.raycast = () => {} // 不参与拾取
+        edges.layers.enable(BLOOM_LAYER)
+        if (/Pipe$/.test(mats.category)) obj.layers.enable(BLOOM_LAYER)
         obj.add(edges)
         this.edgeObjects.push(edges)
         if (comp) {
@@ -562,6 +706,26 @@ export class TestBenchScene {
       if (comp) comp.box.union(new THREE.Box3().setFromObject(child))
     })
     replaced.forEach(m => m.dispose())
+
+    // 管路流动光斑的起点：来源部件的中心
+    Object.values(this.components).forEach(comp => {
+      const from = COMPONENTS[comp.key].flowFrom
+      const source = from && this.components[from]
+      const uniform = comp.material.userData.flowSource
+      if (uniform && source) source.box.getCenter(uniform.value)
+    })
+  }
+
+  /** 是否为“大而薄”的板状零件：最薄方向不到最长方向的 8%，且长度超过所属部件的 30%。 */
+  _isLargePlate(mesh, parentMax) {
+    const size = new THREE.Box3().setFromObject(mesh).getSize(new THREE.Vector3())
+    const dims = [size.x, size.y, size.z].sort((a, b) => a - b)
+    return dims[2] > parentMax * 0.3 && dims[0] < dims[2] * 0.08
+  }
+
+  /** 部件用到的所有材质组（主体 + 被试件底板等）。 */
+  _matSets(comp) {
+    return comp.sub ? [comp, comp.sub] : [comp]
   }
 
   /** 按模型尺寸调整相机远近裁剪面、阴影范围、地面、雾。 */
@@ -580,12 +744,28 @@ export class TestBenchScene {
 
     const span = Math.max(size.x, size.z)
     this.shadowPlane.scale.set(span * 4, span * 4, 1)
-    this.basePlate.scale.set(span * 1.05, span * 1.05, 1)
-    this.basePlate.material.opacity = 0.55
+    // 底座贴合模型占地（x 方向 × z 方向），留出边距
+    const pad = Math.min(size.x, size.z) * 0.35
+    const footW = size.x + pad * 2
+    const footD = size.z + pad * 2
+    const center = box.getCenter(new THREE.Vector3())
+    this.footprint = { w: footW, d: footD }
+    this.basePlate.scale.set(footW, footD, 1)
+    this.basePlate.position.x = center.x
+    this.basePlate.position.z = center.z
+    this.basePlate.material.map = footprintTexture(footW / footD)
+    this.basePlate.material.opacity = 1
+    this.basePlate.material.needsUpdate = true
+    const rippleMap = footprintTexture(footW / footD, true)
+    this.ripples.forEach(r => {
+      r.material.map = rippleMap
+      r.material.needsUpdate = true
+      r.position.x = center.x
+      r.position.z = center.z
+    })
     this.grids.forEach(g => g.scale.setScalar(span * 6))
     this.fog = new THREE.Fog(FOG_COLOR, radius * 3.5, radius * 9)
     this.fx.scanWidth.value = size.y * 0.05
-    this.rippleSpan = span
     this._createParticles(box, radius)
 
     const key = this.keyLight
@@ -602,22 +782,42 @@ export class TestBenchScene {
   }
 
   _createLabels() {
-    Object.entries(LABELED).forEach(([key, side]) => {
+    Object.entries(LABELED).forEach(([key, lead]) => {
       const comp = this.components[key]
       if (!comp) return
-      // CSS2DRenderer 会改写外层元素的 transform，偏移放在内层
+      // CSS2DRenderer 会改写外层元素的 transform，偏移放在内层：
+      // 外层中心对准锚点，内层上移“自身一半高度 + 引线长度”，引线向下正好落在锚点上
       const wrapper = document.createElement('div')
       const el = document.createElement('div')
-      el.className = `tb-label side-${side}`
+      el.className = 'tb-label'
+      el.style.setProperty('--lead', `${lead}px`)
       wrapper.appendChild(el)
-      el.innerHTML = '<div class="tb-label__name"></div><div class="tb-label__value">--</div>'
+      el.innerHTML = '<div class="tb-label__name"></div><div class="tb-label__value"></div><i class="tb-label__dot"></i>'
       el.querySelector('.tb-label__name').textContent = comp.label
       const obj = new CSS2DObject(wrapper)
-      const center = comp.box.getCenter(new THREE.Vector3())
-      obj.position.set(center.x, comp.box.max.y + this.modelRadius * 0.05, center.z)
+      obj.position.copy(this._labelAnchor(comp))
       this.scene.add(obj)
       comp.label2d = { obj, el, valueEl: el.querySelector('.tb-label__value') }
     })
+  }
+
+  /** 标签锚点：部件主体（体积最大且不是底板的零件）顶面中心。 */
+  _labelAnchor(comp) {
+    let best = null
+    let bestVolume = -1
+    comp.meshes.forEach(mesh => {
+      if (comp.sub && mesh.material === comp.sub.material) return
+      const b = new THREE.Box3().setFromObject(mesh)
+      const s = b.getSize(new THREE.Vector3())
+      const v = s.x * s.y * s.z
+      if (v > bestVolume) {
+        bestVolume = v
+        best = b
+      }
+    })
+    const box = best || comp.box
+    const c = box.getCenter(new THREE.Vector3())
+    return c.setY(box.max.y)
   }
 
   // ------------------------------------------------------------------ 对外接口
@@ -632,6 +832,11 @@ export class TestBenchScene {
     this.edgeObjects.forEach(e => { e.visible = style.edges })
     this.effects = !!style.effects
     this.fxGroup.visible = this.effects
+    this.bloomEnabled = !!style.bloom
+    if (style.bloom && this.bloomPass) {
+      this.bloomPass.strength = style.bloom.strength
+      this.bloomPass.radius = style.bloom.radius
+    }
     this.fx.flowStrength.value = this.effects ? 1 : 0
     if (!this.effects) {
       this.fx.scanStrength.value = 0
@@ -652,7 +857,7 @@ export class TestBenchScene {
       mats.edgeMaterial.color.copy(mats.baseEdge)
       mats.edgeMaterial.opacity = mats.edgeOpacity
     }
-    Object.values(this.components).forEach(apply)
+    Object.values(this.components).forEach(comp => this._matSets(comp).forEach(apply))
     if (this.defaultMaterials) apply(this.defaultMaterials)
     this._applyColors()
     this._applyHighlights()
@@ -751,6 +956,7 @@ export class TestBenchScene {
     this.alarms.forEach(key => {
       if (this.alarmHalos[key]) return
       const halo = makeHalo(0xff3b3b)
+      this._glow(halo)
       this._placeHalo(halo, key)
       this.scene.add(halo)
       this.alarmHalos[key] = halo
@@ -818,8 +1024,9 @@ export class TestBenchScene {
     // 地面波纹
     this.ripples.forEach((ripple, i) => {
       const t = ((now / RIPPLE_PERIOD_MS) + i / RIPPLE_COUNT) % 1
-      ripple.scale.setScalar(this.rippleSpan * (0.18 + 0.4 * t))
-      ripple.material.opacity = 0.22 * (1 - t) * Math.min(1, t * 6)
+      const grow = t * this.footprint.d * 1.2 // 四边同时向外扩
+      ripple.scale.set(this.footprint.w + grow, this.footprint.d + grow, 1)
+      ripple.material.opacity = 0.35 * (1 - t) * Math.min(1, t * 6)
     })
 
     // 上升粒子
@@ -853,6 +1060,10 @@ export class TestBenchScene {
     this.labelRenderer.setSize(w, h)
     this.camera.aspect = w / h
     this.camera.updateProjectionMatrix()
+    if (this.bloomComposer) {
+      this.bloomComposer.setSize(w, h)
+      this.finalComposer.setSize(w, h)
+    }
     this.needsRender = true
   }
 
@@ -897,23 +1108,44 @@ export class TestBenchScene {
   }
 
   _applyHighlights() {
+    // 聚焦模式：选中部件后，其余部件（告警部件除外）变成半透明“幽灵”
+    const focus = this.selectedKey
     for (const comp of Object.values(this.components)) {
-      const mat = comp.material
-      const edge = comp.edgeMaterial
-      if (comp.displayColor) mat.color.copy(comp.displayColor)
-      if (comp.displayEdge) edge.color.copy(comp.displayEdge)
-      edge.opacity = comp.edgeOpacity
-      mat.emissive.copy(mat.color).multiplyScalar(comp.glow) // 关键部件微微自发光
-      mat.emissiveIntensity = 1
-      if (comp.key === this.selectedKey || comp.key === this.hoveredKey) {
-        const selected = comp.key === this.selectedKey
-        mat.emissive.copy(selected ? SELECT_EMISSIVE : HOVER_EMISSIVE)
-        mat.emissiveIntensity = selected ? 0.45 : 0.3
-        edge.color.copy(HIGHLIGHT_EDGE)
-        edge.opacity = Math.max(comp.edgeOpacity, selected ? 1 : 0.85)
-      }
+      const ghost = !!focus && comp.key !== focus && !this.alarms.has(comp.key)
+      this._matSets(comp).forEach((mats, i) => {
+        const mat = mats.material
+        const edge = mats.edgeMaterial
+        if (i === 0 && comp.displayColor) mat.color.copy(comp.displayColor)
+        else mat.color.copy(mats.baseColor)
+        edge.color.copy(i === 0 && comp.displayEdge ? comp.displayEdge : mats.baseEdge)
+        edge.opacity = mats.edgeOpacity
+        mat.emissive.copy(mat.color).multiplyScalar(mats.glow) // 关键部件微微自发光
+        mat.emissiveIntensity = 1
+        if (comp.key === this.selectedKey || comp.key === this.hoveredKey) {
+          const selected = comp.key === this.selectedKey
+          mat.emissive.copy(selected ? SELECT_EMISSIVE : HOVER_EMISSIVE)
+          mat.emissiveIntensity = selected ? 0.35 : 0.3
+          edge.color.copy(HIGHLIGHT_EDGE)
+          edge.opacity = Math.max(mats.edgeOpacity, selected ? 0.9 : 0.85)
+        }
+        this._setGhost(mats, ghost)
+      })
+      if (comp.label2d) comp.label2d.el.classList.toggle('is-ghost', ghost)
     }
+    if (this.defaultMaterials) this._setGhost(this.defaultMaterials, !!focus)
+    if (this.panelMaterial) this.panelMaterial.opacity = focus ? 0.05 : 0.22
     this._updateLabels()
+  }
+
+  _setGhost(mats, ghost) {
+    const mat = mats.material
+    if (mat.transparent !== ghost) {
+      mat.transparent = ghost
+      mat.depthWrite = !ghost
+      mat.needsUpdate = true
+    }
+    mat.opacity = ghost ? 0.12 : 1
+    if (ghost) mats.edgeMaterial.opacity = Math.min(mats.edgeOpacity, 0.12)
   }
 
   _updateLabels() {
@@ -1032,7 +1264,7 @@ export class TestBenchScene {
     // 按需渲染：画面没有变化时不重绘，降低 GPU 占用
     if (this.needsRender || animating || this.fly || this.alarms.size) {
       this.needsRender = false
-      this.renderer.render(this.scene, this.camera)
+      this._render()
       this.labelRenderer.render(this.scene, this.camera)
     }
   }
@@ -1059,6 +1291,13 @@ export class TestBenchScene {
       m.dispose()
     })
     if (this.envMap) this.envMap.dispose()
+    ;[this.bloomComposer, this.finalComposer].forEach(c => {
+      if (!c) return
+      c.renderTarget1.dispose()
+      c.renderTarget2.dispose()
+    })
+    if (this.bloomPass && this.bloomPass.dispose) this.bloomPass.dispose()
+    if (this.darkMaterial) this.darkMaterial.dispose()
     this.renderer.dispose()
     if (this.renderer.forceContextLoss) this.renderer.forceContextLoss()
     el.remove()

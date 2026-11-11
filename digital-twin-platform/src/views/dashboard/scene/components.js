@@ -8,6 +8,8 @@
  * - material  材质类别（见 STYLES.*.materials）
  * - fields    该部件相关的测点（来自试验数据列名），点击部件时显示
  * - colorBy   “温度/压力”着色模式下用于给该部件上色的测点（取均值）
+ * - flowFrom  管路的油液来源部件：管路上的流动光斑从该部件向外移动，表示流向
+ *             （供油：油箱 → 被试件；回油：被试件 → 流量计 → 油箱）
  *
  * 测点与部件的对应关系是按部件名称推断的，如与实际管路不符，直接修改这里即可。
  */
@@ -22,16 +24,18 @@ export const COMPONENTS = {
     material: 'testPiece',
     fields: ['电传实际转速', '电传扭矩', '振动传感器2-1', '振动传感器3-1']
   },
-  被试件2周边管路: { label: '被试件 2 周边管路', material: 'supplyPipe', fields: ['T5出口温度'] },
+  被试件2周边管路: { label: '被试件 2 周边管路', material: 'supplyPipe', flowFrom: '循环油箱', fields: ['T5出口温度'] },
   供油管路: {
     label: '供油管路',
     material: 'supplyPipe',
+    flowFrom: '循环油箱',
     fields: ['供油压力1-1', '供油压力1-2', '供油温度1-1', '供油温度1-2', '供油流量1-1', '供油流量1-2'],
     colorBy: { temperature: ['供油温度1-1', '供油温度1-2'], pressure: ['供油压力1-1', '供油压力1-2'] }
   },
   回油管路: {
     label: '回油管路',
     material: 'returnPipe',
+    flowFrom: '被试件1高低压双联泵',
     fields: ['回油压力1-1', '回油压力1-2', '回油压力2-1', '回油压力2-2', '回油温度1-1', '回油温度1-2'],
     colorBy: { temperature: ['回油温度1-1', '回油温度1-2'], pressure: ['回油压力1-1', '回油压力1-2'] }
   },
@@ -57,7 +61,7 @@ export const COMPONENTS = {
   温控系统_板式换热器: { label: '温控系统 · 板式换热器', material: 'equipment', fields: [] },
   离心泵_油路块: { label: '离心泵 · 油路块', material: 'equipment', fields: [] },
   循环油箱: { label: '循环油箱', material: 'tank', fields: [] },
-  循环油路: { label: '循环油路', material: 'loopPipe', fields: [] },
+  循环油路: { label: '循环油路', material: 'loopPipe', flowFrom: '循环油箱', fields: [] },
   底座支架: { label: '底座支架', material: 'frame', fields: [], selectable: false }
 }
 
@@ -81,14 +85,17 @@ export const DIAGNOSIS_TARGETS = {
 export const STYLES = {
   tech: {
     label: '科技',
-    exposure: 1.2,
-    envIntensity: 0.4,
+    exposure: 1.0,
+    envIntensity: 0.8,
     rim: 0.35,
     edges: true,
     fog: true,
     effects: true, // 扫描光带、波纹、粒子、自转
+    bloom: { strength: 0.9, radius: 0.45 }, // 只作用于轮廓线、管路、光圈、粒子
     materials: {
-      testPiece: { color: 0xe07a2e, metalness: 0.45, roughness: 0.4, glow: 0.15, edge: 0xffc48a, edgeOpacity: 0.35 },
+      testPiece: { color: 0xe07a2e, metalness: 0.55, roughness: 0.35, glow: 0.12, edge: 0xffc48a, edgeOpacity: 0.35 },
+      // 被试件上的大块底板、安装面板：中性色，避免整片橙色
+      testPieceBase: { color: 0x4b5668, metalness: 0.5, roughness: 0.55, glow: 0, edge: 0x8a97a8, edgeOpacity: 0.2 },
       supplyPipe: { color: 0x14b8d8, metalness: 0.4, roughness: 0.35, glow: 0.45, edge: 0x67e8f9, edgeOpacity: 0.8 },
       returnPipe: { color: 0x22c55e, metalness: 0.4, roughness: 0.35, glow: 0.45, edge: 0x86efac, edgeOpacity: 0.8 },
       loopPipe: { color: 0x8b5cf6, metalness: 0.4, roughness: 0.35, glow: 0.4, edge: 0xc4b5fd, edgeOpacity: 0.7 },
@@ -109,6 +116,7 @@ export const STYLES = {
     effects: false,
     materials: {
       testPiece: { color: 0x9aa3ad, metalness: 0.85, roughness: 0.35 },
+      testPieceBase: { color: 0x5d6875, metalness: 0.6, roughness: 0.45 },
       supplyPipe: { color: 0x8e959e, metalness: 0.9, roughness: 0.28 },
       returnPipe: { color: 0x8e959e, metalness: 0.9, roughness: 0.28 },
       loopPipe: { color: 0x8e959e, metalness: 0.9, roughness: 0.28 },

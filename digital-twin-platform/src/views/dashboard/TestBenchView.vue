@@ -26,7 +26,16 @@
       <div class="seg">
         <button :class="['seg-btn', { active: labelsVisible }]" @click="toggleLabels">标签</button>
       </div>
-      <div class="seg seg-right">
+      <div class="help">
+        <i class="el-icon-question" />
+        <div class="help-pop">
+          <p><b>左键拖动</b>旋转视角</p>
+          <p><b>右键拖动</b>平移</p>
+          <p><b>滚轮</b>缩放</p>
+          <p><b>点击部件</b>聚焦并查看测点，点击空白处退出</p>
+        </div>
+      </div>
+      <div class="seg">
         <button
           v-for="(style, key) in styles"
           :key="key"
@@ -49,7 +58,6 @@
         <i :style="{ background: item.color, boxShadow: '0 0 6px ' + item.color }" />{{ item.label }}
       </span>
     </div>
-    <div v-if="!loading && !selected" class="hint">拖动旋转 · 右键平移 · 滚轮缩放 · 点击部件查看测点</div>
 
     <!-- 悬停提示 -->
     <div v-if="hover" class="hover-tip" :style="{ left: hover.x + 14 + 'px', top: hover.y + 14 + 'px' }">
@@ -251,8 +259,35 @@ $glass: rgba(8, 18, 34, 0.72);
   pointer-events: auto;
   backdrop-filter: blur(6px);
 }
-.seg-right {
+.help {
+  position: relative;
   margin-left: auto;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  i {
+    font-size: 18px;
+    color: rgba(143, 166, 194, 0.75);
+    cursor: help;
+  }
+  &:hover i { color: #e6f6ff; }
+  &:hover .help-pop { display: block; }
+}
+.help-pop {
+  display: none;
+  position: absolute;
+  top: 26px;
+  right: 0;
+  width: 220px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: rgba(6, 14, 28, 0.94);
+  border: 1px solid $line;
+  color: #c7d2e0;
+  font-size: 12px;
+  line-height: 1.8;
+  p { margin: 0; }
+  b { color: #e6f6ff; font-weight: 500; margin-right: 4px; }
 }
 .seg-btn {
   border: none;
@@ -294,7 +329,7 @@ $glass: rgba(8, 18, 34, 0.72);
 }
 .category-legend {
   flex-wrap: wrap;
-  max-width: calc(100% - 320px);
+  max-width: calc(100% - 300px);
   gap: 6px 14px;
 }
 .legend-item {
@@ -307,15 +342,6 @@ $glass: rgba(8, 18, 34, 0.72);
     height: 10px;
     border-radius: 2px;
   }
-}
-.hint {
-  position: absolute;
-  right: 16px;
-  bottom: 18px;
-  font-size: 12px;
-  color: rgba(143, 166, 194, 0.7);
-  pointer-events: none;
-  z-index: 3;
 }
 .legend-bar {
   width: 140px;
@@ -432,12 +458,15 @@ $glass: rgba(8, 18, 34, 0.72);
 </style>
 
 <style lang="scss">
-/* 三维场景中的悬浮标签由 three.js 动态创建，不能用 scoped 样式 */
+/* 三维场景中的悬浮标签由 three.js 动态创建，不能用 scoped 样式。
+   外层元素中心对准部件锚点；标签整体上移“一半高度 + 引线长度(--lead)”，引线向下连到锚点。 */
 .test-bench-view .tb-label {
+  --lead: 40px;
   position: relative;
+  transform: translateY(calc(-50% - var(--lead)));
   padding: 3px 8px 4px;
   border-radius: 3px;
-  background: rgba(6, 16, 32, 0.8);
+  background: rgba(6, 16, 32, 0.82);
   border: 1px solid rgba(56, 189, 248, 0.45);
   border-left: 3px solid #38bdf8;
   color: #8fb8d8;
@@ -445,44 +474,50 @@ $glass: rgba(8, 18, 34, 0.72);
   line-height: 1.35;
   white-space: nowrap;
   box-shadow: 0 0 12px rgba(56, 189, 248, 0.15);
-  // 指向部件的引线
+  transition: opacity 0.2s;
+  // 引线
   &::after {
     content: '';
     position: absolute;
     left: 50%;
     top: 100%;
     width: 1px;
-    height: 14px;
-    background: linear-gradient(180deg, rgba(56, 189, 248, 0.8), rgba(56, 189, 248, 0));
+    height: var(--lead);
+    background: linear-gradient(180deg, rgba(56, 189, 248, 0.9), rgba(56, 189, 248, 0.35));
+  }
+  &.no-data {
+    padding: 2px 8px;
+    .tb-label__name { color: #cfe6f7; }
+    .tb-label__value { display: none; }
   }
   &.is-active {
     border-color: #e6f6ff;
     border-left-color: #e6f6ff;
+  }
+  &.is-ghost {
+    opacity: 0.25;
   }
   &.is-alarm {
     border-color: #ef4444;
     border-left-color: #ef4444;
     box-shadow: 0 0 14px rgba(239, 68, 68, 0.6);
     &::after {
-      background: linear-gradient(180deg, rgba(239, 68, 68, 0.9), rgba(239, 68, 68, 0));
+      background: linear-gradient(180deg, rgba(239, 68, 68, 0.95), rgba(239, 68, 68, 0.4));
     }
+    .tb-label__dot { background: #ef4444; box-shadow: 0 0 8px #ef4444; }
   }
 }
-.test-bench-view .tb-label {
-  &.side-up { transform: translateY(-70%); }
-  &.side-left {
-    transform: translate(-65%, -70%);
-    &::after { left: 85%; }
-  }
-  &.side-right {
-    transform: translate(65%, -70%);
-    &::after { left: 15%; }
-  }
-}
-.test-bench-view .tb-label.no-data {
-  padding: 2px 8px;
-  .tb-label__name { color: #cfe6f7; }
-  .tb-label__value { display: none; }
+// 锚点圆点
+.test-bench-view .tb-label__dot {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + var(--lead));
+  width: 7px;
+  height: 7px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: #38bdf8;
+  box-shadow: 0 0 8px #38bdf8;
 }
 .test-bench-view .tb-label__value {
   color: #e6f6ff;
