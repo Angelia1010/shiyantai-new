@@ -13,12 +13,11 @@ pump_test_bench/data/
 *.rdb
 operation.log
 
-# ---- 大文件：模型与试验数据放在仓库外，按 README 说明准备 ----
+# ---- 大文件：AMESim 模型、大模型权重、试验数据放在仓库外，按 README 说明准备 ----
+# （工作台三维模型 digital-twin-platform/public/model/ 和 .hdr 环境贴图需要提交）
 AMESim_server/model/
-digital-twin-platform/public/model/
 Qwen2.5-1.5B-Instruct-GGUF/
 *.gguf
-*.hdr
 # 试验数据只保留 pump_test_bench/samples 下的样例
 数据/
 
