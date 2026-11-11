@@ -56,7 +56,6 @@ const SCAN_PERIOD_MS = 7000 // 扫描光带周期
 const SCAN_SWEEP_MS = 2600 // 每次扫描用时
 const RIPPLE_PERIOD_MS = 3600 // 地面波纹周期
 const RIPPLE_COUNT = 3
-const PARTICLE_COUNT = 120
 const AUTO_ROTATE_IDLE_MS = 15000 // 无操作多久后开始缓慢自转
 
 // 注入到部件材质与轮廓线材质的着色代码：扫描光带 + 生成动画（revealY 以上的片元丢弃）
@@ -156,13 +155,13 @@ function footprintTexture(aspect, outlineOnly = false) {
     ctx.stroke()
   } else {
     const fill = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2)
-    fill.addColorStop(0, 'rgba(56,140,255,0.22)')
+    fill.addColorStop(0, 'rgba(56,140,255,0.12)')
     fill.addColorStop(1, 'rgba(20,60,130,0.04)')
     roundRect(m, m, w - 2 * m, h - 2 * m, r)
     ctx.fillStyle = fill
     ctx.fill()
     ctx.lineWidth = 5
-    ctx.strokeStyle = 'rgba(90,190,255,0.55)'
+    ctx.strokeStyle = 'rgba(90,190,255,0.4)'
     ctx.stroke()
     roundRect(m + 28, m + 28, w - 2 * m - 56, h - 2 * m - 56, r * 0.8)
     ctx.lineWidth = 2
@@ -170,7 +169,7 @@ function footprintTexture(aspect, outlineOnly = false) {
     ctx.stroke()
     // 四角折线
     ctx.lineWidth = 10
-    ctx.strokeStyle = 'rgba(125,211,252,0.9)'
+    ctx.strokeStyle = 'rgba(125,211,252,0.75)'
     const c = Math.min(h, w) * 0.22
     ;[[m, m, 1, 1], [w - m, m, -1, 1], [m, h - m, 1, -1], [w - m, h - m, -1, -1]].forEach(([x, y, dx, dy]) => {
       ctx.beginPath()
@@ -216,20 +215,6 @@ function backgroundTexture() {
   return tex
 }
 
-/** 发光圆点贴图（粒子用）。 */
-function dotTexture() {
-  const canvas = document.createElement('canvas')
-  canvas.width = canvas.height = 64
-  const ctx = canvas.getContext('2d')
-  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32)
-  g.addColorStop(0, 'rgba(255,255,255,1)')
-  g.addColorStop(0.25, 'rgba(160,220,255,0.8)')
-  g.addColorStop(1, 'rgba(56,189,248,0)')
-  ctx.fillStyle = g
-  ctx.fillRect(0, 0, 64, 64)
-  return new THREE.CanvasTexture(canvas)
-}
-
 /** 地面光圈：细圆环 + 淡色圆盘，单位半径，通过 scale 控制大小。 */
 function makeHalo(color) {
   const group = new THREE.Group()
@@ -258,7 +243,6 @@ export class TestBenchScene {
     this.cb = callbacks
     this.components = {} // key → { key, label, fields, colorBy, category, meshes, material, edgeMaterial, box, ... }
     this.pickables = []
-    this.edgeObjects = []
     this.styleName = 'tech'
     this.colorMode = 'none'
     this.featureMap = {}
@@ -320,7 +304,7 @@ export class TestBenchScene {
     this.container.appendChild(labelRenderer.domElement)
     this.labelRenderer = labelRenderer
 
-    this.camera = new THREE.PerspectiveCamera(35, w / Math.max(h, 1), 0.01, 500)
+    this.camera = new THREE.PerspectiveCamera(30, w / Math.max(h, 1), 0.01, 500)
     this.camera.position.set(8, 6, 10)
 
     const controls = new OrbitControls(this.camera, renderer.domElement)
@@ -358,11 +342,16 @@ export class TestBenchScene {
 
     // 地面：阴影 + 科技底座贴图 + 两层网格（远处由雾淡出）
     this.ground = new THREE.Group()
-    const shadowPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowMaterial({ opacity: 0.6 }))
-    shadowPlane.rotation.x = -Math.PI / 2
-    shadowPlane.receiveShadow = true
-    this.ground.add(shadowPlane)
-    this.shadowPlane = shadowPlane
+    // 实体深色地面：接收阴影，让设备“落地”；远处由雾融入背景
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshStandardMaterial({ color: srgb(0x0b1424), metalness: 0.2, roughness: 0.85 })
+    )
+    floor.rotation.x = -Math.PI / 2
+    floor.position.y = -0.001
+    floor.receiveShadow = true
+    this.ground.add(floor)
+    this.floor = floor
 
     const base = new THREE.Mesh(
       new THREE.PlaneGeometry(1, 1),
@@ -373,20 +362,16 @@ export class TestBenchScene {
     this.ground.add(base)
     this.basePlate = base
 
-    const fineGrid = new THREE.GridHelper(1, 80, 0x1d4f7d, 0x16304c)
-    fineGrid.material.transparent = true
-    fineGrid.material.opacity = 0.1
-    this.ground.add(fineGrid)
-    const coarseGrid = new THREE.GridHelper(1, 16, 0x2e78b8, 0x2e78b8)
-    coarseGrid.material.transparent = true
-    coarseGrid.material.opacity = 0.1
-    coarseGrid.position.y = 0.0005
-    this.ground.add(coarseGrid)
-    this.grids = [fineGrid, coarseGrid]
+    const grid = new THREE.GridHelper(1, 24, 0x1e4a78, 0x1e4a78)
+    grid.material.transparent = true
+    grid.material.opacity = 0.12
+    grid.position.y = 0.0005
+    this.ground.add(grid)
+    this.grids = [grid]
 
     scene.add(this.ground)
 
-    // 动态效果：地面波纹、上升粒子、选中/告警光圈（尺寸在模型加载后确定）
+    // 动态效果：地面波纹、选中/告警光圈（尺寸在模型加载后确定）
     this.fxGroup = new THREE.Group()
     this.ripples = []
     // 波纹：与底座同形状的圆角矩形边框，从底座边缘向外扩散
@@ -448,6 +433,10 @@ export class TestBenchScene {
       finalComposer.addPass(mix)
       finalComposer.addPass(new ShaderPass(GammaCorrectionShader))
 
+      // 传入自定义渲染目标时 EffectComposer 默认像素比为 1，高分屏下会以一半分辨率渲染导致发糊
+      const pixelRatio = renderer.getPixelRatio()
+      bloomComposer.setPixelRatio(pixelRatio)
+      finalComposer.setPixelRatio(pixelRatio)
       this.bloomComposer = bloomComposer
       this.finalComposer = finalComposer
       this.hiddenForBloom = []
@@ -500,37 +489,6 @@ export class TestBenchScene {
       this.bloomComposer = null
       this.renderer.render(this.scene, this.camera)
     }
-  }
-
-  /** 按模型尺寸生成上升粒子。 */
-  _createParticles(box, radius) {
-    const positions = new Float32Array(PARTICLE_COUNT * 3)
-    const speeds = new Float32Array(PARTICLE_COUNT)
-    const height = (box.max.y - box.min.y) * 1.6
-    for (let i = 0; i < PARTICLE_COUNT; i++) {
-      const a = Math.random() * Math.PI * 2
-      const r = radius * (0.25 + Math.random() * 0.95)
-      positions[i * 3] = Math.cos(a) * r
-      positions[i * 3 + 1] = Math.random() * height
-      positions[i * 3 + 2] = Math.sin(a) * r
-      speeds[i] = height * (0.02 + Math.random() * 0.05) // 每秒上升高度
-    }
-    const geometry = new THREE.BufferGeometry()
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    const material = new THREE.PointsMaterial({
-      size: radius * 0.007,
-      map: dotTexture(),
-      color: 0x7dd3fc,
-      transparent: true,
-      opacity: 0.5,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending
-    })
-    this.particles = new THREE.Points(geometry, material)
-    this.particles.raycast = () => {}
-    this.particles.userData = { speeds, height }
-    this.particles.layers.enable(BLOOM_LAYER)
-    this.fxGroup.add(this.particles)
   }
 
   _loadEnvironment() {
@@ -714,10 +672,11 @@ export class TestBenchScene {
         // 轮廓线作为子对象，跟随网格变换
         const edges = new THREE.LineSegments(new THREE.EdgesGeometry(obj.geometry, EDGE_THRESHOLD_DEG), mats.edgeMaterial)
         edges.raycast = () => {} // 不参与拾取
+        mats.edges = mats.edges || []
+        mats.edges.push(edges)
         // 只有管路轮廓线发光；管路本体和其他轮廓不发光，保持清晰
         if (/Pipe$/.test(mats.category)) edges.layers.enable(BLOOM_LAYER)
         obj.add(edges)
-        this.edgeObjects.push(edges)
         if (comp) {
           obj.userData.componentKey = key
           comp.meshes.push(obj)
@@ -764,7 +723,7 @@ export class TestBenchScene {
     this.controls.maxDistance = radius * 6
 
     const span = Math.max(size.x, size.z)
-    this.shadowPlane.scale.set(span * 4, span * 4, 1)
+    this.floor.scale.set(span * 12, span * 12, 1)
     // 底座贴合模型占地（x 方向 × z 方向），留出边距
     const pad = Math.min(size.x, size.z) * 0.35
     const footW = size.x + pad * 2
@@ -784,10 +743,9 @@ export class TestBenchScene {
       r.position.x = center.x
       r.position.z = center.z
     })
-    this.grids.forEach(g => g.scale.setScalar(span * 6))
+    this.grids.forEach(g => g.scale.setScalar(span * 3))
     this.fog = new THREE.Fog(FOG_COLOR, radius * 3.5, radius * 9)
     this.fx.scanWidth.value = size.y * 0.05
-    this._createParticles(box, radius)
 
     const key = this.keyLight
     key.position.set(radius * 1.2, radius * 2, radius * 0.9)
@@ -850,7 +808,7 @@ export class TestBenchScene {
     this.fx.rimStrength.value = style.rim
     this.scene.fog = style.fog && this.fog ? this.fog : null
     this.grids.forEach(g => { g.visible = style.fog })
-    this.edgeObjects.forEach(e => { e.visible = style.edges })
+    this.edgesOn = !!style.edges
     this.effects = !!style.effects
     this.fxGroup.visible = this.effects
     this.bloomEnabled = !!style.bloom
@@ -1049,21 +1007,8 @@ export class TestBenchScene {
       const t = ((now / RIPPLE_PERIOD_MS) + i / RIPPLE_COUNT) % 1
       const grow = t * this.footprint.d * 1.2 // 四边同时向外扩
       ripple.scale.set(this.footprint.w + grow, this.footprint.d + grow, 1)
-      ripple.material.opacity = 0.35 * (1 - t) * Math.min(1, t * 6)
+      ripple.material.opacity = 0.18 * (1 - t) * Math.min(1, t * 6)
     })
-
-    // 上升粒子
-    if (this.particles) {
-      const dt = Math.min(0.05, (now - (this.lastFrame || now)) / 1000)
-      const pos = this.particles.geometry.attributes.position
-      const { speeds, height } = this.particles.userData
-      for (let i = 0; i < speeds.length; i++) {
-        let y = pos.getY(i) + speeds[i] * dt
-        if (y > height) y -= height
-        pos.setY(i, y)
-      }
-      pos.needsUpdate = true
-    }
 
     // 光圈呼吸
     const breathe = 1 + 0.06 * Math.sin(now / 400)
@@ -1152,10 +1097,16 @@ export class TestBenchScene {
           edge.opacity = Math.max(mats.edgeOpacity, selected ? 0.9 : 0.85)
         }
         this._setGhost(mats, ghost)
+        // 轮廓线默认只画在少数类别上（细碎零件全画会糊成一片），选中/悬停时显示
+        const showEdges = this.edgesOn && edge.opacity > 0.01
+        ;(mats.edges || []).forEach(e => { e.visible = showEdges })
       })
       if (comp.label2d) comp.label2d.el.classList.toggle('is-ghost', ghost)
     }
-    if (this.defaultMaterials) this._setGhost(this.defaultMaterials, !!focus)
+    if (this.defaultMaterials) {
+      this._setGhost(this.defaultMaterials, !!focus)
+      ;(this.defaultMaterials.edges || []).forEach(e => { e.visible = this.edgesOn })
+    }
     if (this.panelMaterial) this.panelMaterial.opacity = focus ? 0.05 : 0.22
     this._updateLabels()
   }
@@ -1269,7 +1220,6 @@ export class TestBenchScene {
       if (t >= 1) this.fly = null
     }
     const animating = this._updateEffects(now)
-    this.lastFrame = now
     this.controls.update()
     this._processHover()
 

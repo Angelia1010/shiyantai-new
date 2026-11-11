@@ -80,7 +80,8 @@ export const DIAGNOSIS_TARGETS = {
  * 材质类别参数：
  *   color/metalness/roughness  本体（MeshStandardMaterial）
  *   glow         自发光强度（本体颜色 × glow），让细小的管路也清晰可见
- *   edge         轮廓线颜色；edgeOpacity 轮廓线不透明度（辅助部件调低，减少杂乱）
+ *   edge         轮廓线颜色；edgeOpacity 轮廓线不透明度，0 表示平时不画（选中/悬停时才显示），
+ *                避免零件很多的部件被细线糊成一片
  */
 export const STYLES = {
   tech: {
@@ -90,20 +91,20 @@ export const STYLES = {
     rim: 0.35,
     edges: true,
     fog: true,
-    effects: true, // 扫描光带、波纹、粒子、自转
-    bloom: { strength: 0.6, radius: 0.25 }, // 只作用于管路轮廓线、光圈、波纹、粒子
+    effects: true, // 扫描光带、波纹、流动光斑、自转
+    bloom: { strength: 0.6, radius: 0.25 }, // 只作用于管路轮廓线、光圈、波纹
     materials: {
-      testPiece: { color: 0xe07a2e, metalness: 0.55, roughness: 0.35, glow: 0.12, edge: 0xffc48a, edgeOpacity: 0.35 },
+      testPiece: { color: 0xe07a2e, metalness: 0.55, roughness: 0.35, glow: 0.12, edge: 0xffc48a, edgeOpacity: 0 },
       // 被试件上的大块底板、安装面板：中性色，避免整片橙色
-      testPieceBase: { color: 0x4b5668, metalness: 0.5, roughness: 0.55, glow: 0, edge: 0x8a97a8, edgeOpacity: 0.2 },
-      supplyPipe: { color: 0x14b8d8, metalness: 0.4, roughness: 0.35, glow: 0.45, edge: 0x67e8f9, edgeOpacity: 0.8 },
-      returnPipe: { color: 0x22c55e, metalness: 0.4, roughness: 0.35, glow: 0.45, edge: 0x86efac, edgeOpacity: 0.8 },
-      loopPipe: { color: 0x8b5cf6, metalness: 0.4, roughness: 0.35, glow: 0.4, edge: 0xc4b5fd, edgeOpacity: 0.7 },
-      tank: { color: 0x2f6fd6, metalness: 0.35, roughness: 0.4, glow: 0.12, edge: 0x93c5fd, edgeOpacity: 0.6 },
-      instrument: { color: 0xeab308, metalness: 0.4, roughness: 0.35, glow: 0.3, edge: 0xfde68a, edgeOpacity: 0.8 },
-      equipment: { color: 0x7d8ba0, metalness: 0.45, roughness: 0.5, glow: 0, edge: 0xa9bacd, edgeOpacity: 0.2 },
+      testPieceBase: { color: 0x5b6678, metalness: 0.5, roughness: 0.55, glow: 0, edge: 0x8a97a8, edgeOpacity: 0 },
+      supplyPipe: { color: 0x14b8d8, metalness: 0.4, roughness: 0.35, glow: 0.45, edge: 0x67e8f9, edgeOpacity: 0.6 },
+      returnPipe: { color: 0x22c55e, metalness: 0.4, roughness: 0.35, glow: 0.45, edge: 0x86efac, edgeOpacity: 0.6 },
+      loopPipe: { color: 0x8b5cf6, metalness: 0.4, roughness: 0.35, glow: 0.4, edge: 0xc4b5fd, edgeOpacity: 0.6 },
+      tank: { color: 0x2f6fd6, metalness: 0.35, roughness: 0.4, glow: 0.12, edge: 0x93c5fd, edgeOpacity: 0.35 },
+      instrument: { color: 0xeab308, metalness: 0.4, roughness: 0.35, glow: 0.3, edge: 0xfde68a, edgeOpacity: 0.35 },
+      equipment: { color: 0x8e9aab, metalness: 0.45, roughness: 0.5, glow: 0, edge: 0xa9bacd, edgeOpacity: 0 },
       frame: { color: 0x3a4658, metalness: 0.4, roughness: 0.7, glow: 0, edge: 0x5b6d85, edgeOpacity: 0.15 },
-      default: { color: 0x5b6879, metalness: 0.5, roughness: 0.5, glow: 0, edge: 0x8aa0b8, edgeOpacity: 0.15 }
+      default: { color: 0x5b6879, metalness: 0.5, roughness: 0.5, glow: 0, edge: 0x8aa0b8, edgeOpacity: 0 }
     }
   },
   real: {
@@ -145,9 +146,9 @@ export const LEGEND = [
  * focus 指定部件时，以该部件的包围盒为准。
  */
 export const VIEWS = {
-  overview: { label: '总览', direction: [1, 0.75, 1.15], distance: 1.08 },
-  front: { label: '正视', direction: [0, 0.28, 1], distance: 1.1 },
-  top: { label: '俯视', direction: [0.001, 1, 0.02], distance: 1.1 },
+  overview: { label: '总览', direction: [0.55, 0.6, 1], distance: 1.02 },
+  front: { label: '正视', direction: [0, 0.38, 1], distance: 1.02 },
+  top: { label: '俯视', direction: [0.001, 1, 0.02], distance: 1.04 },
   pump: { label: '被试件', direction: [1, 0.6, 1], distance: 1.6, focus: '被试件1高低压双联泵' },
   tank: { label: '油箱区', direction: [-1, 0.7, 1], distance: 1.8, focus: '循环油箱' }
 }
