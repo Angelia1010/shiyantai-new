@@ -20,7 +20,7 @@ $env:PYTHONIOENCODING = "utf-8"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 if (-not (Test-Path (Join-Path $repoRoot ".env"))) {
-    Write-Host "未找到 $repoRoot\.env，请先复制 .env.example 为 .env 并填写 SECRET_KEY、ADMIN_PASSWORD、DATA_ROOTS。" -ForegroundColor Red
+    Write-Host "未找到 $repoRoot\.env，请先复制 .env.example 为 .env 并填写 SECRET_KEY、ADMIN_PASSWORD。" -ForegroundColor Red
     exit 1
 }
 
