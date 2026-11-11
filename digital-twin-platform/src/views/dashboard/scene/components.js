@@ -5,7 +5,7 @@
  * 名称带 “.002” 之类的导出后缀，匹配时会去掉。
  *
  * - label     界面上显示的名称
- * - material  材质类别（见 MATERIALS）
+ * - material  材质类别（见 STYLES.*.materials）
  * - fields    该部件相关的测点（来自试验数据列名），点击部件时显示
  * - colorBy   “温度/压力”着色模式下用于给该部件上色的测点（取均值）
  *
@@ -67,15 +67,47 @@ export const DIAGNOSIS_TARGETS = {
   回路2流量计: '回油流量计2'
 }
 
-/** 工业材质预设（MeshStandardMaterial 参数）。 */
-export const MATERIALS = {
-  pump: { color: 0xc3c9d1, metalness: 0.85, roughness: 0.32 },
-  pipe: { color: 0xb4bac2, metalness: 0.95, roughness: 0.22 },
-  instrument: { color: 0xd9a640, metalness: 0.75, roughness: 0.3 },
-  equipment: { color: 0x7d8896, metalness: 0.6, roughness: 0.42 },
-  tank: { color: 0x3c6e91, metalness: 0.35, roughness: 0.5 },
-  frame: { color: 0x3a4049, metalness: 0.45, roughness: 0.7 },
-  default: { color: 0x9aa2ad, metalness: 0.7, roughness: 0.4 }
+/**
+ * 两套外观：
+ * - tech  科技风：深蓝半金属本体 + 发光轮廓线 + 边缘光
+ * - real  写实：工业材质
+ * 每个材质类别给出本体参数（MeshStandardMaterial）和轮廓线颜色。
+ */
+export const STYLES = {
+  tech: {
+    label: '科技',
+    exposure: 1.0,
+    envIntensity: 0.35,
+    rim: 0.85,
+    edges: true,
+    fog: true,
+    materials: {
+      pump: { color: 0x163a63, metalness: 0.55, roughness: 0.38, edge: 0x5cc8ff },
+      pipe: { color: 0x0f3550, metalness: 0.6, roughness: 0.35, edge: 0x38bdf8 },
+      instrument: { color: 0x4a3a12, metalness: 0.5, roughness: 0.4, edge: 0xfbbf24 },
+      equipment: { color: 0x14304e, metalness: 0.5, roughness: 0.42, edge: 0x60a5fa },
+      tank: { color: 0x11314f, metalness: 0.45, roughness: 0.45, edge: 0x22d3ee },
+      frame: { color: 0x0c1b2c, metalness: 0.4, roughness: 0.6, edge: 0x1e5a8a },
+      default: { color: 0x12304d, metalness: 0.5, roughness: 0.45, edge: 0x3b82f6 }
+    }
+  },
+  real: {
+    label: '写实',
+    exposure: 0.85,
+    envIntensity: 0.7,
+    rim: 0,
+    edges: false,
+    fog: false,
+    materials: {
+      pump: { color: 0x9aa3ad, metalness: 0.85, roughness: 0.35 },
+      pipe: { color: 0x8e959e, metalness: 0.9, roughness: 0.28 },
+      instrument: { color: 0xc08a2c, metalness: 0.7, roughness: 0.35 },
+      equipment: { color: 0x5d6875, metalness: 0.6, roughness: 0.45 },
+      tank: { color: 0x2f5876, metalness: 0.35, roughness: 0.5 },
+      frame: { color: 0x2c323b, metalness: 0.45, roughness: 0.7 },
+      default: { color: 0x7b838e, metalness: 0.7, roughness: 0.42 }
+    }
+  }
 }
 
 /**
@@ -92,7 +124,7 @@ export const VIEWS = {
 
 /** 着色模式。 */
 export const COLOR_MODES = {
-  none: { label: '材质' },
+  none: { label: '原色' },
   temperature: { label: '温度', unit: '°C' },
   pressure: { label: '压力', unit: 'MPa' }
 }

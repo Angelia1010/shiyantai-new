@@ -1,39 +1,38 @@
 <template>
   <div ref="root" class="dashboard">
-    <!-- 顶栏 -->
+    <!-- 状态栏 -->
     <header class="topbar">
-      <div class="brand">
-        <span class="brand-mark" />
-        <h1>标准试验台数字化校验系统</h1>
+      <span :class="['pill', statusClass]"><i class="dot" />{{ statusText }}</span>
+      <span class="status-msg" :title="statusMessage">
+        {{ liveMode ? statusMessage : '当前没有实时数据，在“自动诊断”中开启实时监控后，这里会同步显示数据与诊断结果' }}
+      </span>
+      <router-link v-if="!liveMode" to="/autoDiagnosis" class="link-btn">前往自动诊断 <i class="el-icon-right" /></router-link>
+      <div class="stats">
+        <div class="stat"><span>诊断记录</span><b>{{ records.length }}</b></div>
+        <div :class="['stat', { bad: abnormalCount }]"><span>异常</span><b>{{ abnormalCount }}</b></div>
+        <div :class="['stat', { bad: alarmComponents.length }]"><span>告警部件</span><b>{{ alarmComponents.length }}</b></div>
       </div>
-      <div class="status">
-        <span :class="['pill', statusClass]"><i class="dot" />{{ statusText }}</span>
-        <span class="status-msg" :title="statusMessage">{{ statusMessage }}</span>
-      </div>
-      <div class="topbar-right">
-        <span class="clock">{{ clock }}</span>
-        <button class="icon-btn" :title="isFullscreen ? '退出全屏' : '全屏'" @click="toggleFullscreen">
-          <i :class="isFullscreen ? 'el-icon-copy-document' : 'el-icon-full-screen'" />
-        </button>
-      </div>
+      <span class="clock">{{ clock }}</span>
+      <button class="icon-btn" :title="isFullscreen ? '退出大屏' : '大屏显示'" @click="toggleFullscreen">
+        <i :class="isFullscreen ? 'el-icon-copy-document' : 'el-icon-full-screen'" />
+      </button>
     </header>
 
     <!-- 左：关键测点 -->
     <aside class="panel metrics">
-      <div class="panel-title">关键测点</div>
+      <div class="panel-title">关键测点<span v-if="!hasData" class="counter">等待数据</span></div>
       <div class="metric-scroll">
         <div v-for="group in metricGroups" :key="group.title" class="metric-group">
           <div class="group-title">{{ group.title }}</div>
-          <div v-for="field in group.fields" :key="field" class="metric">
-            <div class="metric-top">
-              <span class="metric-name">{{ field }}</span>
-              <span class="metric-value">
-                {{ latest(field) }}<small>{{ unit(field) }}</small>
-              </span>
+          <div class="metric-grid">
+            <div v-for="field in group.fields" :key="field" :class="['metric', { empty: !featureMap[field] }]">
+              <div class="metric-name" :title="field">{{ field }}</div>
+              <div class="metric-value">{{ latest(field) }}<small>{{ unit(field) }}</small></div>
+              <svg class="spark" viewBox="0 0 100 24" preserveAspectRatio="none">
+                <polyline v-if="history[field].length > 1" :points="sparkline(field)" />
+                <line v-else x1="0" y1="20" x2="100" y2="20" />
+              </svg>
             </div>
-            <svg class="spark" viewBox="0 0 100 24" preserveAspectRatio="none">
-              <polyline :points="sparkline(field)" />
-            </svg>
           </div>
         </div>
       </div>
@@ -41,12 +40,13 @@
 
     <!-- 中：三维模型 -->
     <section class="stage">
-      <test-bench-view ref="bench" :feature-map="featureMap" :alarms="alarmComponents" />
-      <div v-if="!liveMode" class="idle-banner">
-        <i class="el-icon-info" />
-        当前没有实时数据。在“自动诊断”页面选择实时监控模式并开始后，这里会同步显示数据和诊断结果。
-        <router-link to="/autoDiagnosis">前往自动诊断</router-link>
-      </div>
+      <test-bench-view
+        ref="bench"
+        :feature-map="featureMap"
+        :alarms="alarmComponents"
+        @loaded="parts = $event"
+        @select="selectedPart = $event"
+      />
     </section>
 
     <!-- 右：诊断 -->
@@ -64,7 +64,11 @@
           <button class="text-btn" @click="openDetail(latestResult)">查看详情</button>
         </div>
       </div>
-      <div v-else class="empty">暂无诊断结果</div>
+      <div v-else class="empty-card">
+        <i class="el-icon-data-analysis" />
+        <div>暂无诊断结果</div>
+        <small>运行自动诊断后在此显示结论</small>
+      </div>
 
       <template v-if="meterDeviations.length">
         <div class="panel-title sub">流量计偏差（阈值 15%）</div>
@@ -79,6 +83,19 @@
           </div>
         </div>
       </template>
+
+      <div class="panel-title sub">设备部件<span class="counter">{{ parts.length }} 个</span></div>
+      <div class="parts">
+        <button
+          v-for="p in parts"
+          :key="p.key"
+          :class="['part', { active: selectedPart === p.key, bad: alarmComponents.includes(p.key) }]"
+          @click="$refs.bench.focus(p.key)"
+        >
+          <i class="part-dot" />{{ p.label }}
+        </button>
+        <div v-if="!parts.length" class="empty small">模型加载中...</div>
+      </div>
 
       <div class="panel-title sub">
         诊断记录
@@ -116,6 +133,9 @@
       </div>
       <div class="trend-body">
         <trend-chart :series="trendSeries" :unit="trendGroups[trendKey].unit" />
+        <div v-if="!trendSeries.length" class="trend-empty">
+          <i class="el-icon-s-data" />暂无{{ trendGroups[trendKey].label }}数据
+        </div>
       </div>
     </section>
 
@@ -214,6 +234,8 @@ export default {
       latestResult: null,
       alarmComponents: [],
       detail: null,
+      parts: [],
+      selectedPart: null,
       trendKey: 'pressure',
       clock: '',
       isFullscreen: false,
@@ -230,6 +252,9 @@ export default {
     statusClass() {
       if (!this.liveMode) return 'idle'
       return this.stopped ? 'stopped' : 'live'
+    },
+    hasData() {
+      return Object.keys(this.featureMap).length > 0
     },
     abnormalCount() {
       return this.records.filter(r => r.result === 'abnormal').length
@@ -385,13 +410,14 @@ export default {
 </script>
 
 <style lang="scss" scoped>
-$bg: #0b111c;
-$panel: #111a29;
-$border: rgba(120, 150, 190, 0.14);
+$bg: #070e1a;
+$panel: rgba(12, 24, 42, 0.86);
+$border: rgba(56, 189, 248, 0.16);
 $text: #c7d2e0;
-$muted: #7d8ba0;
-$bright: #eef3fa;
-$accent: #2f6bff;
+$muted: #7891ad;
+$bright: #eef6ff;
+$accent: #38bdf8;
+$blue: #2f6bff;
 $ok: #22c55e;
 $bad: #ef4444;
 $warn: #f59e0b;
@@ -400,70 +426,77 @@ $warn: #f59e0b;
   height: 100%;
   min-height: 600px;
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr) 300px;
-  grid-template-rows: 52px minmax(0, 1fr) 210px;
+  grid-template-columns: 300px minmax(0, 1fr) 300px;
+  grid-template-rows: 46px minmax(0, 1fr) 220px;
   grid-template-areas:
     'top top top'
     'metrics stage diagnosis'
     'metrics trend diagnosis';
   gap: 10px;
   padding: 10px;
-  background: $bg;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(37, 99, 235, 0.12), transparent 60%),
+    $bg;
   color: $text;
   font-size: 13px;
   overflow: hidden;
 }
 
-/* ---------- 顶栏 ---------- */
+/* ---------- 状态栏 ---------- */
 .topbar {
   grid-area: top;
   display: flex;
   align-items: center;
-  gap: 24px;
-  padding: 0 14px;
+  gap: 14px;
+  padding: 0 12px;
   background: $panel;
   border: 1px solid $border;
   border-radius: 8px;
 }
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  h1 {
-    margin: 0;
-    font-size: 17px;
-    font-weight: 600;
-    letter-spacing: 1px;
-    color: $bright;
-  }
-}
-.brand-mark {
-  width: 4px;
-  height: 18px;
-  border-radius: 2px;
-  background: $accent;
-}
-.status {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
 .status-msg {
+  min-width: 0;
   color: $muted;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.link-btn {
+  flex-shrink: 0;
+  color: $accent;
+  font-size: 12px;
+  padding: 3px 10px;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  border-radius: 4px;
+  &:hover { background: rgba(56, 189, 248, 0.12); }
+}
+.stats {
+  margin-left: auto;
+  display: flex;
+  gap: 18px;
+  flex-shrink: 0;
+}
+.stat {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  span { color: $muted; font-size: 12px; }
+  b {
+    color: $bright;
+    font-size: 16px;
+    font-variant-numeric: tabular-nums;
+  }
+  &.bad b { color: $bad; }
+}
 .pill {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 2px 10px;
   border-radius: 10px;
   font-size: 12px;
-  border: 1px solid $border;
+  color: $muted;
+  border: 1px solid rgba(120, 150, 190, 0.25);
   .dot {
     width: 7px;
     height: 7px;
@@ -475,6 +508,7 @@ $warn: #f59e0b;
     border-color: rgba(34, 197, 94, 0.35);
     .dot {
       background: $ok;
+      box-shadow: 0 0 6px $ok;
       animation: blink 1.6s ease-in-out infinite;
     }
   }
@@ -486,21 +520,20 @@ $warn: #f59e0b;
 @keyframes blink {
   50% { opacity: 0.3; }
 }
-.topbar-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
 .clock {
-  color: $muted;
+  flex-shrink: 0;
+  padding-left: 14px;
+  border-left: 1px solid $border;
+  color: $text;
   font-variant-numeric: tabular-nums;
 }
 .icon-btn {
+  flex-shrink: 0;
   border: 1px solid $border;
   background: transparent;
   color: $text;
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border-radius: 6px;
   cursor: pointer;
   &:hover { color: $bright; border-color: $accent; }
@@ -508,31 +541,71 @@ $warn: #f59e0b;
 
 /* ---------- 面板 ---------- */
 .panel {
+  position: relative;
   background: $panel;
   border: 1px solid $border;
   border-radius: 8px;
-  padding: 12px;
+  padding: 12px 14px;
   min-height: 0;
+  // 顶部高光线
+  &::before {
+    content: '';
+    position: absolute;
+    top: -1px;
+    left: 14px;
+    width: 64px;
+    height: 2px;
+    background: linear-gradient(90deg, $accent, transparent);
+  }
 }
 .panel-title {
-  font-size: 13px;
+  position: relative;
+  font-size: 14px;
   font-weight: 600;
   color: $bright;
   margin-bottom: 10px;
+  padding-left: 10px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  &.sub { margin-top: 16px; }
+  letter-spacing: 0.5px;
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 3px;
+    height: 12px;
+    margin-top: -6px;
+    border-radius: 2px;
+    background: $accent;
+    box-shadow: 0 0 6px $accent;
+  }
+  &.sub { margin-top: 18px; }
 }
 .counter {
   font-weight: normal;
   color: $muted;
   font-size: 12px;
+  letter-spacing: 0;
 }
 .empty {
   color: $muted;
   text-align: center;
   padding: 16px 0;
+  &.small { padding: 8px 0; font-size: 12px; }
+}
+.empty-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 18px 0;
+  border: 1px dashed $border;
+  border-radius: 8px;
+  color: $text;
+  i { font-size: 26px; color: rgba(56, 189, 248, 0.5); margin-bottom: 4px; }
+  small { color: $muted; font-size: 12px; }
 }
 
 /* ---------- 左：测点 ---------- */
@@ -543,36 +616,52 @@ $warn: #f59e0b;
 }
 .metric-scroll {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  margin-right: -6px;
-  padding-right: 6px;
+  margin-right: -8px;
+  padding-right: 8px;
 }
 .group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   color: $muted;
   font-size: 12px;
-  margin: 10px 0 6px;
+  margin: 8px 0 6px;
+  &::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, $border, transparent);
+  }
+}
+.metric-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
 }
 .metric {
-  padding: 8px 10px 6px;
-  margin-bottom: 6px;
+  padding: 7px 9px 4px;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid transparent;
-  &:hover { border-color: $border; }
-}
-.metric-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
+  background: linear-gradient(180deg, rgba(56, 189, 248, 0.06), rgba(56, 189, 248, 0.015));
+  border: 1px solid rgba(56, 189, 248, 0.1);
+  transition: border-color 0.15s;
+  &:hover { border-color: rgba(56, 189, 248, 0.35); }
+  &.empty .metric-value { color: #4d6380; }
 }
 .metric-name {
   color: $muted;
   font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .metric-value {
+  margin-top: 2px;
   color: $bright;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
+  line-height: 1.2;
   font-variant-numeric: tabular-nums;
   small {
     margin-left: 3px;
@@ -582,13 +671,19 @@ $warn: #f59e0b;
   }
 }
 .spark {
+  display: block;
   width: 100%;
-  height: 22px;
+  height: 16px;
   margin-top: 2px;
   polyline {
     fill: none;
     stroke: $accent;
     stroke-width: 1.4;
+    vector-effect: non-scaling-stroke;
+  }
+  line {
+    stroke: rgba(56, 189, 248, 0.15);
+    stroke-dasharray: 3 3;
     vector-effect: non-scaling-stroke;
   }
 }
@@ -600,24 +695,48 @@ $warn: #f59e0b;
   min-height: 0;
   border: 1px solid $border;
   border-radius: 8px;
+  box-shadow: inset 0 0 40px rgba(56, 189, 248, 0.06);
 }
-.idle-banner {
-  position: absolute;
-  left: 50%;
-  top: 56px;
-  transform: translateX(-50%);
-  max-width: 80%;
-  padding: 8px 14px;
-  border-radius: 6px;
-  background: rgba(13, 20, 33, 0.85);
-  border: 1px solid $border;
+
+/* ---------- 设备部件 ---------- */
+.parts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.part {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 9px;
+  border-radius: 4px;
+  border: 1px solid rgba(56, 189, 248, 0.15);
+  background: rgba(56, 189, 248, 0.04);
   color: $text;
   font-size: 12px;
-  z-index: 3;
-  a {
-    color: #6ea2ff;
-    margin-left: 8px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  &:hover { border-color: rgba(56, 189, 248, 0.45); color: $bright; }
+  &.active {
+    border-color: $accent;
+    color: $bright;
+    background: rgba(56, 189, 248, 0.16);
   }
+  &.bad {
+    border-color: rgba(239, 68, 68, 0.6);
+    color: #ffb4b4;
+    .part-dot { background: $bad; box-shadow: 0 0 6px $bad; }
+  }
+}
+.part-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(56, 189, 248, 0.6);
 }
 
 /* ---------- 右：诊断 ---------- */
@@ -631,8 +750,8 @@ $warn: #f59e0b;
   border-radius: 8px;
   border: 1px solid $border;
   background: rgba(255, 255, 255, 0.025);
-  &.normal { border-left: 3px solid $ok; }
-  &.abnormal { border-left: 3px solid $bad; background: rgba(239, 68, 68, 0.06); }
+  &.normal { border-left: 3px solid $ok; background: rgba(34, 197, 94, 0.05); }
+  &.abnormal { border-left: 3px solid $bad; background: rgba(239, 68, 68, 0.08); }
   &.inconclusive { border-left: 3px solid $warn; }
 }
 .verdict-head {
@@ -672,7 +791,7 @@ $warn: #f59e0b;
   border: none;
   background: none;
   padding: 0;
-  color: #6ea2ff;
+  color: $accent;
   cursor: pointer;
   font-size: 12px;
   &.danger { color: #ff7a7a; }
@@ -720,7 +839,7 @@ $warn: #f59e0b;
   padding: 8px;
   border-radius: 6px;
   cursor: pointer;
-  &:hover { background: rgba(255, 255, 255, 0.04); }
+  &:hover { background: rgba(56, 189, 248, 0.06); }
 }
 .record-dot {
   flex-shrink: 0;
@@ -761,7 +880,8 @@ $warn: #f59e0b;
 .tabs {
   display: inline-flex;
   gap: 2px;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(56, 189, 248, 0.05);
+  border: 1px solid $border;
   border-radius: 6px;
   padding: 2px;
 }
@@ -773,11 +893,30 @@ $warn: #f59e0b;
   padding: 3px 10px;
   border-radius: 4px;
   cursor: pointer;
-  &.active { background: $accent; color: #fff; }
+  &.active {
+    color: $bright;
+    background: rgba(56, 189, 248, 0.22);
+    box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.55);
+  }
 }
 .trend-body {
+  position: relative;
   flex: 1;
   min-height: 0;
+}
+.trend-empty {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: $muted;
+  pointer-events: none;
+  i { font-size: 20px; color: rgba(56, 189, 248, 0.45); }
 }
 
 /* ---------- 详情弹窗 ---------- */
@@ -798,7 +937,7 @@ $warn: #f59e0b;
   max-height: 86vh;
   display: flex;
   flex-direction: column;
-  background: $panel;
+  background: #0c1828;
   border: 1px solid $border;
   border-radius: 10px;
   color: $text;
@@ -869,7 +1008,7 @@ $warn: #f59e0b;
 @media (max-width: 1280px) {
   .dashboard {
     grid-template-columns: minmax(0, 1fr) 280px;
-    grid-template-rows: 52px minmax(420px, 1fr) 210px auto;
+    grid-template-rows: 46px minmax(420px, 1fr) 220px auto;
     grid-template-areas:
       'top top'
       'stage diagnosis'
@@ -877,6 +1016,7 @@ $warn: #f59e0b;
       'metrics metrics';
     overflow-y: auto;
   }
-  .metrics { max-height: 320px; }
+  .metrics { max-height: 360px; }
+  .stats { display: none; }
 }
 </style>

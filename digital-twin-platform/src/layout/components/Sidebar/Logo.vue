@@ -46,8 +46,8 @@ export default {
   width: 100%;
   height: 50px;
   line-height: 50px;
-  background: #0d1522;
-  border-bottom: 1px solid rgba(120, 150, 190, 0.12);
+  background: #091424;
+  border-bottom: 1px solid rgba(56, 189, 248, 0.14);
   text-align: center;
   overflow: hidden;
 

@@ -1,8 +1,11 @@
 <template>
-  <div class="test-bench-view">
+  <div :class="['test-bench-view', 'style-' + styleName]">
     <div ref="canvasHost" class="canvas-host" />
 
-    <!-- 工具栏：视角 / 着色 / 标签 -->
+    <!-- 四角 HUD 装饰 -->
+    <span class="hud hud-tl" /><span class="hud hud-tr" /><span class="hud hud-bl" /><span class="hud hud-br" />
+
+    <!-- 工具栏：视角 / 着色 / 标签 / 外观 -->
     <div class="toolbar">
       <div class="seg">
         <button
@@ -20,7 +23,17 @@
           @click="changeColorMode(key)"
         >{{ mode.label }}</button>
       </div>
-      <button :class="['seg-btn', 'single', { active: labelsVisible }]" @click="toggleLabels">标签</button>
+      <div class="seg">
+        <button :class="['seg-btn', { active: labelsVisible }]" @click="toggleLabels">标签</button>
+      </div>
+      <div class="seg seg-right">
+        <button
+          v-for="(style, key) in styles"
+          :key="key"
+          :class="['seg-btn', { active: styleName === key }]"
+          @click="changeStyle(key)"
+        >{{ style.label }}</button>
+      </div>
     </div>
 
     <!-- 色标 -->
@@ -30,6 +43,8 @@
       <span class="legend-bar" :style="{ background: gradient }" />
       <span class="legend-value">{{ format(legend.max) }}</span>
     </div>
+    <div v-else-if="colorMode !== 'none' && !loading" class="legend muted">暂无{{ colorModes[colorMode].label }}数据，部件以灰色显示</div>
+    <div v-else-if="!loading" class="hint">拖动旋转 · 右键平移 · 滚轮缩放 · 点击部件查看测点</div>
 
     <!-- 悬停提示 -->
     <div v-if="hover" class="hover-tip" :style="{ left: hover.x + 14 + 'px', top: hover.y + 14 + 'px' }">
@@ -66,7 +81,7 @@
 </template>
 
 <script>
-import { COLOR_MODES, VIEWS } from './scene/components'
+import { COLOR_MODES, STYLES, VIEWS } from './scene/components'
 import { COLOR_STOPS, TestBenchScene } from './scene/TestBenchScene'
 import { fieldUnit, formatValue } from '@/utils/features'
 
@@ -82,8 +97,10 @@ export default {
     return {
       views: VIEWS,
       colorModes: COLOR_MODES,
+      styles: STYLES,
       activeView: 'overview',
       colorMode: 'none',
+      styleName: 'tech',
       labelsVisible: true,
       loading: true,
       progress: 0,
@@ -117,10 +134,14 @@ export default {
         this.loading = false
         this.scene.updateData(this.featureMap)
         this.scene.setAlarms(this.alarms)
+        this.$emit('loaded', list)
       },
       onError: message => { this.error = message },
       onHover: info => { this.hover = info },
-      onSelect: key => { this.selectedKey = key },
+      onSelect: key => {
+        this.selectedKey = key
+        this.$emit('select', key)
+      },
       onLegend: legend => { this.legend = legend }
     })
   },
@@ -137,6 +158,10 @@ export default {
       this.colorMode = key
       this.scene.setColorMode(key)
     },
+    changeStyle(key) {
+      this.styleName = key
+      this.scene.setStyle(key)
+    },
     toggleLabels() {
       this.labelsVisible = !this.labelsVisible
       this.scene.setLabelsVisible(this.labelsVisible)
@@ -146,6 +171,7 @@ export default {
     },
     /** 供父组件调用：定位到某个部件（如诊断异常的流量计）。 */
     focus(key) {
+      if (!this.scene) return
       this.activeView = ''
       this.scene.focusComponent(key)
     },
@@ -159,13 +185,34 @@ export default {
 </script>
 
 <style lang="scss" scoped>
+$cyan: #38bdf8;
+$line: rgba(56, 189, 248, 0.22);
+$glass: rgba(8, 18, 34, 0.72);
+
 .test-bench-view {
   position: relative;
   width: 100%;
   height: 100%;
   overflow: hidden;
   border-radius: 8px;
-  background: radial-gradient(ellipse at 50% 35%, #1b2a40 0%, #111a29 55%, #0b111c 100%);
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 58%, rgba(30, 90, 170, 0.35) 0%, rgba(10, 24, 44, 0) 70%),
+    linear-gradient(180deg, #0a1424 0%, #0b1a30 55%, #0a1424 100%);
+  &.style-real {
+    background: radial-gradient(ellipse at 50% 35%, #2a3646 0%, #18212e 55%, #10161f 100%);
+  }
+  // 细扫描线，增加屏幕质感
+  &.style-tech::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(120, 200, 255, 0.025) 0 1px, transparent 1px 3px);
+    z-index: 1;
+  }
 }
 .canvas-host {
   position: absolute;
@@ -174,65 +221,87 @@ export default {
   right: 0;
   bottom: 0;
 }
+.hud {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-color: $cyan;
+  border-style: solid;
+  border-width: 0;
+  opacity: 0.7;
+  pointer-events: none;
+  z-index: 2;
+}
+.hud-tl { top: 6px; left: 6px; border-top-width: 2px; border-left-width: 2px; }
+.hud-tr { top: 6px; right: 6px; border-top-width: 2px; border-right-width: 2px; }
+.hud-bl { bottom: 6px; left: 6px; border-bottom-width: 2px; border-left-width: 2px; }
+.hud-br { bottom: 6px; right: 6px; border-bottom-width: 2px; border-right-width: 2px; }
+
 .toolbar {
   position: absolute;
-  top: 12px;
-  left: 12px;
-  right: 12px;
+  top: 14px;
+  left: 16px;
+  right: 16px;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   pointer-events: none;
-  z-index: 2;
+  z-index: 3;
 }
 .seg {
   display: inline-flex;
-  background: rgba(13, 20, 33, 0.72);
-  border: 1px solid rgba(120, 150, 190, 0.18);
+  background: $glass;
+  border: 1px solid $line;
   border-radius: 6px;
   padding: 2px;
   pointer-events: auto;
   backdrop-filter: blur(6px);
 }
+.seg-right {
+  margin-left: auto;
+}
 .seg-btn {
   border: none;
   background: transparent;
-  color: #9fb0c6;
+  color: #8fa6c2;
   font-size: 12px;
-  padding: 5px 10px;
+  padding: 4px 10px;
   border-radius: 4px;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
   &:hover {
-    color: #e6edf6;
+    color: #e6f6ff;
   }
   &.active {
-    background: #2f6bff;
-    color: #fff;
-  }
-  &.single {
-    pointer-events: auto;
-    background: rgba(13, 20, 33, 0.72);
-    border: 1px solid rgba(120, 150, 190, 0.18);
-    &.active {
-      background: #2f6bff;
-    }
+    color: #e6f6ff;
+    background: linear-gradient(180deg, rgba(56, 189, 248, 0.35), rgba(37, 99, 235, 0.35));
+    box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.6);
   }
 }
-.legend {
+.legend,
+.hint {
   position: absolute;
-  left: 12px;
-  bottom: 12px;
+  left: 16px;
+  bottom: 14px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
+  padding: 5px 10px;
   border-radius: 6px;
-  background: rgba(13, 20, 33, 0.72);
-  border: 1px solid rgba(120, 150, 190, 0.18);
-  color: #c7d2e0;
   font-size: 12px;
-  z-index: 2;
+  z-index: 3;
+}
+.legend {
+  background: $glass;
+  border: 1px solid $line;
+  color: #c7d2e0;
+  &.muted {
+    color: #8fa6c2;
+  }
+}
+.hint {
+  color: rgba(143, 166, 194, 0.7);
+  pointer-events: none;
 }
 .legend-bar {
   width: 140px;
@@ -245,29 +314,31 @@ export default {
 }
 .hover-tip {
   position: absolute;
-  z-index: 3;
+  z-index: 4;
   padding: 4px 8px;
   border-radius: 4px;
-  background: rgba(8, 13, 22, 0.9);
-  color: #e6edf6;
+  background: rgba(6, 14, 28, 0.92);
+  border: 1px solid $line;
+  color: #e6f6ff;
   font-size: 12px;
   pointer-events: none;
   white-space: nowrap;
 }
 .info-card {
   position: absolute;
-  right: 12px;
-  bottom: 12px;
+  right: 16px;
+  bottom: 14px;
   width: 260px;
   max-height: 60%;
   overflow-y: auto;
   padding: 10px 12px;
   border-radius: 8px;
-  background: rgba(13, 20, 33, 0.85);
-  border: 1px solid rgba(47, 107, 255, 0.45);
+  background: rgba(6, 14, 28, 0.86);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  box-shadow: 0 0 24px rgba(56, 189, 248, 0.12);
   color: #c7d2e0;
   font-size: 12px;
-  z-index: 2;
+  z-index: 3;
   backdrop-filter: blur(6px);
 }
 .info-head {
@@ -278,20 +349,27 @@ export default {
   font-weight: 600;
   color: #fff;
   margin-bottom: 8px;
+  padding-left: 8px;
+  border-left: 3px solid $cyan;
   i {
     cursor: pointer;
-    color: #9fb0c6;
+    color: #8fa6c2;
   }
 }
 .info-row {
   display: flex;
   justify-content: space-between;
-  padding: 4px 0;
-  border-top: 1px solid rgba(120, 150, 190, 0.12);
+  gap: 12px;
+  padding: 5px 0;
+  border-top: 1px dashed rgba(56, 189, 248, 0.14);
+}
+.info-name {
+  color: #8fa6c2;
 }
 .info-value {
-  color: #e6edf6;
+  color: #e6f6ff;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .info-empty {
   color: #7d8ba0;
@@ -307,10 +385,10 @@ export default {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  color: #9fb0c6;
+  color: #8fa6c2;
   font-size: 13px;
-  background: rgba(11, 17, 28, 0.6);
-  z-index: 4;
+  background: rgba(8, 16, 30, 0.6);
+  z-index: 5;
   i {
     font-size: 32px;
     color: #f59e0b;
@@ -318,14 +396,15 @@ export default {
 }
 .progress {
   width: 240px;
-  height: 4px;
+  height: 3px;
   border-radius: 2px;
-  background: rgba(120, 150, 190, 0.2);
+  background: rgba(56, 189, 248, 0.15);
   overflow: hidden;
 }
 .progress-bar {
   height: 100%;
-  background: #2f6bff;
+  background: linear-gradient(90deg, #2563eb, $cyan);
+  box-shadow: 0 0 8px $cyan;
   transition: width 0.2s;
 }
 .fade-enter-active,
@@ -341,23 +420,49 @@ export default {
 <style lang="scss">
 /* 三维场景中的悬浮标签由 three.js 动态创建，不能用 scoped 样式 */
 .test-bench-view .tb-label {
-  padding: 4px 8px;
-  border-radius: 4px;
-  background: rgba(10, 16, 27, 0.78);
-  border: 1px solid rgba(120, 150, 190, 0.3);
-  color: #c7d2e0;
+  position: relative;
+  padding: 3px 8px 4px;
+  border-radius: 3px;
+  background: rgba(6, 16, 32, 0.8);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  border-left: 3px solid #38bdf8;
+  color: #8fb8d8;
   font-size: 11px;
-  line-height: 1.4;
+  line-height: 1.35;
   white-space: nowrap;
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.15);
+  // 指向部件的引线
+  &::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 100%;
+    width: 1px;
+    height: 14px;
+    background: linear-gradient(180deg, rgba(56, 189, 248, 0.8), rgba(56, 189, 248, 0));
+  }
+  &.is-active {
+    border-color: #e6f6ff;
+    border-left-color: #e6f6ff;
+  }
   &.is-alarm {
     border-color: #ef4444;
-    box-shadow: 0 0 10px rgba(239, 68, 68, 0.6);
+    border-left-color: #ef4444;
+    box-shadow: 0 0 14px rgba(239, 68, 68, 0.6);
+    &::after {
+      background: linear-gradient(180deg, rgba(239, 68, 68, 0.9), rgba(239, 68, 68, 0));
+    }
   }
 }
 .test-bench-view .tb-label__value {
-  color: #fff;
+  color: #e6f6ff;
   font-size: 13px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+.test-bench-view.style-real .tb-label {
+  border-color: rgba(200, 210, 225, 0.35);
+  border-left-color: #9fb0c6;
+  box-shadow: none;
 }
 </style>
