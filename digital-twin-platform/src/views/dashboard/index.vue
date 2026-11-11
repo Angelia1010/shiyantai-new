@@ -191,7 +191,7 @@
           
           <div class="diagnosis-list">
             <div 
-              v-for="(result, index) in diagnosisResults" 
+              v-for="result in diagnosisResults" 
               :key="result.taskId" 
               class="diagnosis-item"
               :class="{ abnormal: result.result === 'abnormal' }"
