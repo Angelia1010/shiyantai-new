@@ -12,10 +12,14 @@
 <script>
 import pathToRegexp from 'path-to-regexp'
 
+/**
+ * 面包屑：显示当前路由匹配链上带 meta.title 的各级（meta.breadcrumb === false 的除外）。
+ * 最后一级和 redirect 为 noRedirect 的一级不可点击。
+ */
 export default {
   data() {
     return {
-      levelList: null
+      levelList: []
     }
   },
   watch: {
@@ -28,36 +32,15 @@ export default {
   },
   methods: {
     getBreadcrumb() {
-      // only show routes with meta.title
-      let matched = this.$route.matched.filter(item => item.meta && item.meta.title)
-      const first = matched[0]
-
-      // if (!this.isDashboard(first)) {
-      //   matched = [{ path: '/', meta: { title: '首页' }}].concat(matched)
-      // }
-
-      this.levelList = matched.filter(item => item.meta && item.meta.title && item.meta.breadcrumb !== false)
-    },
-    isDashboard(route) {
-      const name = route && route.name
-      if (!name) {
-        return false
-      }
-      return name.trim().toLocaleLowerCase() === 'Dashboard'.toLocaleLowerCase()
+      this.levelList = this.$route.matched.filter(item => item.meta && item.meta.title && item.meta.breadcrumb !== false)
     },
     pathCompile(path) {
-      // To solve this problem https://github.com/PanJiaChen/vue-element-admin/issues/561
-      const { params } = this.$route
-      var toPath = pathToRegexp.compile(path)
-      return toPath(params)
+      // 解决带参数路由的跳转，参见 https://github.com/PanJiaChen/vue-element-admin/issues/561
+      return pathToRegexp.compile(path)(this.$route.params)
     },
     handleLink(item) {
       const { redirect, path } = item
-      if (redirect) {
-        this.$router.push(redirect)
-        return
-      }
-      this.$router.push(this.pathCompile(path))
+      this.$router.push(redirect || this.pathCompile(path))
     }
   }
 }
