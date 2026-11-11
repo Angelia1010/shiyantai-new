@@ -23,7 +23,7 @@ STATUS_CREATED = "Created"
 STATUS_COMPLETED = "Completed"
 STATUS_FAILED = "Failed"
 STATUSES = (STATUS_CREATED, STATUS_COMPLETED, STATUS_FAILED)
-MODES = ("realtime", "file")
+MODES = ("realtime", "file", "auto")  # auto：文件写完后由文件服务自动诊断
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS diagnosis_tasks (
@@ -171,6 +171,7 @@ def list_tasks(
     status: Optional[str] = None,
     start_time: Optional[int] = None,
     end_time: Optional[int] = None,
+    mode: Optional[str] = None,
 ) -> Dict:
     if page < 1:
         raise ValueError("page 从 1 开始")
@@ -185,6 +186,9 @@ def list_tasks(
             raise ValueError(f"status 只能是 {', '.join(STATUSES)}")
         where.append("status = ?")
         params.append(status)
+    if mode:
+        where.append("mode = ?")
+        params.append(mode)
     if start_time is not None:
         where.append("created_at >= ?")
         params.append(start_time)

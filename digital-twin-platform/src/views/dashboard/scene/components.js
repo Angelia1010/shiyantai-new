@@ -78,11 +78,7 @@ export const COMPONENTS = {
   底座支架: { label: '底座支架', material: 'frame', fields: [], selectable: false, explode: false }
 }
 
-/** 诊断报告中的流量计名称 → 模型部件，用于异常定位。 */
-export const DIAGNOSIS_TARGETS = {
-  回路1流量计: '回油流量计1',
-  回路2流量计: '回油流量计2'
-}
+// 诊断结果中需要告警的部件由后端诊断配置 pump_test_bench/config/bench.json 的 component 字段指定
 
 /**
  * 两套外观：

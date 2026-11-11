@@ -1,4 +1,5 @@
 import sqlite3
+import time
 
 import pytest
 
@@ -49,7 +50,8 @@ def test_task_lifecycle(task_client, sample_dir, token):
 
     diag = task_client.post(f"/tasks/{task_id}/diagnose", headers=auth(token), json={"density": 850})
     assert diag.status_code == 200, diag.get_json()
-    assert diag.get_json()["result"] in ("normal", "abnormal", "inconclusive")
+    assert diag.get_json()["result"] in ("normal", "warning", "abnormal", "inconclusive")
+    assert diag.get_json()["algorithm"]["version"] == "2.0"
 
     task = task_client.get(f"/tasks/{task_id}", headers=auth(token)).get_json()
     assert task["status"] == "Completed" and task["result"] == diag.get_json()["result"]
@@ -65,15 +67,22 @@ def test_task_lifecycle(task_client, sample_dir, token):
     assert deleted.get_json() == {"deleted": 1}
 
 
-def test_preliminary_normal_stores_report(task_client, sample_dir, token):
+def _write_healthy(path, **kwargs):
+    from pump_test_bench.tests.test_diagnosis import healthy_frame
+    healthy_frame(**kwargs).to_csv(path, index=False)
+    return path
+
+
+def test_simulation_comparison_is_attached_to_report(task_client, sample_dir, token):
+    _write_healthy(sample_dir / "ok.csv")
     task_id = task_client.post("/tasks", headers=auth(token),
-                               json={"path": str(sample_dir), "file_name": SAMPLE_XLSX}).get_json()["task_id"]
+                               json={"path": str(sample_dir), "file_name": "ok.csv"}).get_json()["task_id"]
     resp = task_client.post(f"/tasks/{task_id}/preliminary", headers=auth(token), json={
         "experiment_data": {"v": [1.0, 1.0]}, "simulation_data": {"v": [1.02]}})
     assert resp.status_code == 200
     body = resp.get_json()
     assert body["preliminary"]["is_abnormal"] is False
-    assert body["report"]["is_preliminary"] is True
+    assert body["report"]["simulation"]["total_compared"] == 1
     assert task_client.get(f"/tasks/{task_id}", headers=auth(token)).get_json()["result"] == "normal"
 
 
@@ -85,7 +94,7 @@ def test_failed_diagnosis_marks_task(task_client, sample_dir, token):
     resp = task_client.post(f"/tasks/{task_id}/diagnose", headers=auth(token), json={})
     assert resp.status_code == 400
     task = task_client.get(f"/tasks/{task_id}", headers=auth(token)).get_json()
-    assert task["status"] == "Failed" and "回油质量流量1" in task["error"]
+    assert task["status"] == "Failed" and "流量计列" in task["error"]
 
 
 def test_paths_outside_data_roots_are_rejected(task_client, file_client, tmp_path, token):
@@ -113,7 +122,10 @@ def test_live_monitor_endpoints(file_client, sample_dir, token, monkeypatch):
     watch_dir = sample_dir / "live"
     sub = watch_dir / "36-38摄氏度"
     sub.mkdir(parents=True)
+    from pump_test_bench.app.db import tasks as repo
+    repo.init_db()
     resp = file_client.post("/watch", headers=auth(token), json={"path": str(watch_dir)}).get_json()
+    assert resp["auto_diagnose"] is True
     assert resp["path"] == str(watch_dir) and resp["state"] == "waiting"
     monitor = fs.get_monitor()
     monitor.stop()  # 测试中手动调用 scan，避免与后台线程交错
@@ -138,6 +150,16 @@ def test_live_monitor_endpoints(file_client, sample_dir, token, monkeypatch):
     assert [f["time"] for f in later["frames"]] == ["10:00:01", "10:00:02"]
     events = file_client.get("/watch/events?since=0", headers=auth(token)).get_json()["events"]
     assert [(e["type"], e["file_name"]) for e in events] == [("created", "36-38摄氏度/run.txt")]
+
+    # 写完后自动诊断：后台建任务（mode=auto）。只有一只流量计，无法互校 → 无法判定
+    from pump_test_bench.app.db import tasks as repo
+    fs.auto_diagnoser.drain()
+    for _ in range(50):
+        auto = repo.list_tasks(mode="auto")["items"]
+        if auto and auto[0]["status"] != "Created":
+            break
+        time.sleep(0.1)
+    assert auto[0]["file_name"] == "36-38摄氏度/run.txt" and auto[0]["result"] == "inconclusive"
 
     # 子目录中的文件可以直接分页读取
     page = file_client.get("/files/page", headers=auth(token),

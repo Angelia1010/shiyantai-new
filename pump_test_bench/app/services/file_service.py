@@ -9,22 +9,29 @@
     GET  /files?path=&recursive=1             列出目录（及子目录）下的数据文件，返回相对路径
     GET  /files/page?path=&file_name=&page=&page_size=   分页读取文件内容（file_name 可带子目录）
     GET  /watch                               当前监控目录及状态
-    POST /watch {path}                        切换监控目录（自动登记该目录；会保存，服务重启后自动恢复）
+    POST /watch {path, auto_diagnose?}        切换监控目录（自动登记该目录；会保存，服务重启后自动恢复）
+    POST /watch/auto-diagnose {enabled}       开关“文件写完后自动诊断”
     GET  /watch/events?since=<seq>            序号 since 之后的“文件写完”事件（自动诊断用）
     GET  /live/status                         实时监控状态：目录、当前文件、是否有数据在写入
     GET  /live/frames?since=<seq>&limit=      序号 since 之后的实时特征帧（工作台用）
 
-监控逻辑见 pump_test_bench.app.core.live_monitor。
+监控逻辑见 pump_test_bench.app.core.live_monitor。开启自动诊断时，文件写完后由本服务的后台线程
+创建诊断任务（mode=auto）并保存报告，与是否有人打开页面无关。
 
 启动：在仓库根目录执行 ``python -m pump_test_bench.app.services.file_service``
 """
 import logging
 import os
+import queue
+import threading
+from pathlib import Path
 
 from flask import jsonify, request
 
 from pump_test_bench.app.core.data_reader import TABLE_SUFFIXES, TDMS_SUFFIXES, read_page
 from pump_test_bench.app.core.live_monitor import LiveMonitor
+from pump_test_bench.app.db import tasks as repo
+from pump_test_bench.app.diagnosis.runner import run_task_diagnosis
 from shared.config import get_settings
 from shared.flask_app import create_app, json_body
 from shared.logging_setup import setup_logging
@@ -39,6 +46,48 @@ app = create_app(SERVICE_NAME)
 _monitor = None
 
 
+class AutoDiagnoser:
+    """文件写完后的自动诊断：排队，由一个后台线程逐个处理。"""
+
+    OPERATOR = "自动诊断"
+
+    def __init__(self) -> None:
+        self._queue: "queue.Queue[tuple]" = queue.Queue()
+        self._thread: threading.Thread = None
+
+    def submit(self, rel: str, directory: Path) -> None:
+        self._queue.put((rel, directory))
+        if self._thread is None or not self._thread.is_alive():
+            self._thread = threading.Thread(target=self._run, name="auto-diagnosis", daemon=True)
+            self._thread.start()
+
+    def _run(self) -> None:
+        while True:
+            self.process_one(self._queue.get())
+
+    def drain(self) -> None:
+        """在当前线程处理完队列中的任务（测试用）。"""
+        while True:
+            try:
+                item = self._queue.get_nowait()
+            except queue.Empty:
+                return
+            self.process_one(item)
+
+    def process_one(self, item) -> None:
+        rel, directory = item
+        try:
+            path = resolve_data_file(str(directory), rel, TABLE_SUFFIXES)
+            task = repo.create_task(str(directory), rel, "auto")
+            report = run_task_diagnosis(task, path, self.OPERATOR)
+            logger.info("自动诊断完成：%s → %s", rel, report["result"])
+        except Exception as exc:  # 单个文件失败不影响后续
+            logger.warning("自动诊断失败：%s（%s）", rel, exc)
+
+
+auto_diagnoser = AutoDiagnoser()
+
+
 def get_monitor() -> LiveMonitor:
     """按配置创建监控器（首次调用时创建，便于测试替换配置）。"""
     global _monitor
@@ -48,6 +97,7 @@ def get_monitor() -> LiveMonitor:
             scan_interval=settings.live_scan_seconds,
             settle_seconds=settings.live_settle_seconds,
             state_file=settings.db_path.parent / "live_monitor.json",
+            on_complete=auto_diagnoser.submit,
         )
     return _monitor
 
@@ -109,10 +159,19 @@ def get_watch():
 
 @app.post("/watch")
 def set_watch():
-    directory = register_data_dir(json_body().get("path"))
+    data = json_body()
+    directory = register_data_dir(data.get("path"))
     monitor = get_monitor()
-    monitor.watch(directory)
+    auto = data.get("auto_diagnose")
+    monitor.watch(directory, auto_diagnose=None if auto is None else bool(auto))
     return jsonify({**monitor.status(), "latest_event_seq": monitor.events_since(0)["latest_seq"]})
+
+
+@app.post("/watch/auto-diagnose")
+def set_auto_diagnose():
+    monitor = get_monitor()
+    monitor.set_auto_diagnose(bool(json_body().get("enabled")))
+    return jsonify(monitor.status())
 
 
 @app.get("/watch/events")
@@ -136,6 +195,7 @@ def main() -> None:
     setup_logging(SERVICE_NAME)
     logger.info("文件服务启动：http://%s:%s，数据目录：%s", settings.bind_host, settings.file_service_port,
                 ", ".join(str(p) for p in settings.data_roots))
+    repo.init_db()  # 自动诊断要写任务表
     monitor = get_monitor()
     monitor.restore(resolve_data_dir)
     try:

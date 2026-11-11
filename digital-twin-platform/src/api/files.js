@@ -31,8 +31,14 @@ export function readFilePage(path, fileName, page, pageSize) {
  * 设置监控目录（后端保存，服务重启后自动恢复）→ 实时监控状态 + latest_event_seq。
  * silent 为 true 时出错不弹全局提示（由调用方自己显示）。
  */
-export function setWatchPath(path, silent = false) {
-  return request({ url: `${BASE}/watch`, method: 'post', data: { path }, silent })
+export function setWatchPath(path, silent = false, autoDiagnose) {
+  const data = autoDiagnose === undefined ? { path } : { path, auto_diagnose: autoDiagnose }
+  return request({ url: `${BASE}/watch`, method: 'post', data, silent })
+}
+
+/** 开关“文件写完后自动诊断”（后端执行）→ 实时监控状态 */
+export function setAutoDiagnose(enabled) {
+  return request({ url: `${BASE}/watch/auto-diagnose`, method: 'post', data: { enabled } })
 }
 
 /** 序号 since 之后的“文件写完”事件 → { latest_seq, directory, events: [{seq, type, file_name}] } */

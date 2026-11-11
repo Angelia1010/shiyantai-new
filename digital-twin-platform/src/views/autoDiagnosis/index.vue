@@ -69,15 +69,15 @@ import FileSelectStep from './components/FileSelectStep.vue'
 import DiagnosisExecStep from './components/DiagnosisExecStep.vue'
 import ResultDisplayStep from './components/ResultDisplayStep.vue'
 import { Cancelled, DiagnosisPipeline } from './pipeline'
-import { addDataDir, getWatchEvents, setWatchPath } from '@/api/files'
-import { downloadReport } from '@/api/tasks'
+import { addDataDir, setAutoDiagnose, setWatchPath } from '@/api/files'
+import { downloadReport, getReport, listTasks } from '@/api/tasks'
 import { errorMessage } from '@/utils/request'
 import { createTicker } from '@/utils/backgroundTicker'
 import { MessageType, openChannel } from '@/utils/broadcastChannel'
 import { createRemoteLogger } from '@/utils/remoteLogger'
 import { summarizeReport } from '@/utils/report'
 
-const POLL_INTERVAL_MS = 5000
+const POLL_INTERVAL_MS = 3000
 const MAX_LOGS = 300
 
 export default {
@@ -96,7 +96,7 @@ export default {
         autoDiagnosis: true,
         enableSimulation: false,
         electricalSpeed: null,
-        mediumDensity: 850,
+        mediumDensity: null, // 留空：后端按油温计算密度
         groupSize: 5
       },
       // 试验变量 ↔ AMESim 仿真结果文件
@@ -125,13 +125,14 @@ export default {
     this.pipeline = null
     this.channel = null
     this.ticker = null
-    this.fileQueue = []
-    this.processing = false
     this.polling = false
-    this.lastEventSeq = 0
+    this.realtimeSince = 0
+    this.handledTasks = new Set()
+    this.announcedTasks = new Set()
   },
   beforeDestroy() {
-    if (this.isRunning) this.stopDiagnosis()
+    // 实时模式的诊断在后端进行，离开页面不关闭它，只停止本页的结果轮询
+    if (this.isRunning) this.stopDiagnosis({ keepBackend: true })
     if (this.channel) this.channel.close()
     this.remoteLogger.close()
   },
@@ -233,15 +234,20 @@ export default {
       }
     },
 
-    stopDiagnosis() {
+    stopDiagnosis({ keepBackend = false } = {}) {
+      const wasRealtime = this.isRunning && this.config.diagnosisMode === 'realtime'
       this.isRunning = false
-      this.fileQueue = []
       if (this.ticker) {
         this.ticker.stop()
         this.ticker = null
       }
       if (this.pipeline) {
         this.pipeline.close()
+      }
+      if (wasRealtime && !keepBackend) {
+        setAutoDiagnose(false)
+          .then(() => this.addLog('已关闭后端自动诊断（工作台的实时数据显示不受影响）', 'warn'))
+          .catch(() => {})
       }
       this.currentProcessStep = 0
       this.setStatus('已停止')
@@ -263,51 +269,64 @@ export default {
       this.currentStep = 3
     },
 
+    /** 实时模式：由后端在每个文件写完后自动诊断，本页只负责开启并展示结果。 */
     async startRealtimeMode() {
       this.channel = this.channel || openChannel()
-      // 工作台直接从后端取实时数据；这里顺便打开它（只打开一次，可能被浏览器拦截弹窗）
       if (!this.dashboardWindow || this.dashboardWindow.closed) {
         this.dashboardWindow = window.open(`${window.location.pathname}#/`, 'shiyantai_dashboard')
       }
-      const { latest_event_seq: latestSeq, path } = await setWatchPath(this.config.dataPath)
-      this.lastEventSeq = latestSeq
+      const { path } = await setWatchPath(this.config.dataPath, false, true)
+      if (this.config.enableSimulation) this.addLog('实时模式下不运行 AMESim 仿真，只做流量计与传感器诊断', 'warn')
       this.addLog(`开始监控目录（含子目录）：${path}`, 'success')
-      this.setStatus('监控中，等待新文件...')
-      this.ticker = createTicker(POLL_INTERVAL_MS, this.pollWatchEvents)
+      this.addLog('后端将在每个数据文件写完后自动诊断，离开本页也会继续；点“停止”可关闭自动诊断', 'info')
+      this.realtimeSince = Date.now() - 1000
+      this.handledTasks = new Set()
+      this.announcedTasks = new Set()
+      this.currentProcessStep = 2
+      this.setStatus('监控中，等待文件写完...')
+      this.ticker = createTicker(POLL_INTERVAL_MS, this.pollAutoTasks)
     },
 
-    async pollWatchEvents() {
+    /** 查询本次开启以来后端自动诊断产生的任务，展示新完成的结果。 */
+    async pollAutoTasks() {
       if (!this.isRunning || this.polling) return
       this.polling = true
       try {
-        const { latest_seq: latestSeq, events } = await getWatchEvents(this.lastEventSeq)
-        this.lastEventSeq = latestSeq
-        for (const event of events) {
-          if (!this.fileQueue.includes(event.file_name)) {
-            this.fileQueue.push(event.file_name)
-            this.addLog(`${event.type === 'created' ? '新文件已写完' : '文件有更新'}：${event.file_name}`, 'info')
+        const { items } = await listTasks({ mode: 'auto', start_time: this.realtimeSince, page_size: 50 })
+        for (const task of items.slice().reverse()) {
+          if (this.handledTasks.has(task.task_id)) continue
+          if (task.status === 'Created') {
+            if (!this.announcedTasks.has(task.task_id)) {
+              this.announcedTasks.add(task.task_id)
+              this.addLog(`文件已写完，正在诊断：${task.file_name}`, 'info')
+              this.setStatus(`正在诊断: ${task.file_name}`)
+            }
+            continue
           }
+          this.handledTasks.add(task.task_id)
+          if (task.status === 'Failed') {
+            this.addLog(`诊断 ${task.file_name} 失败：${task.error || '未知原因'}`, 'error')
+            continue
+          }
+          const report = await getReport(task.task_id)
+          this.showResult(summarizeReport(task.task_id, task.file_name, report))
+          this.setStatus('监控中，等待文件写完...')
         }
       } catch (error) {
-        this.addLog(`查询文件变化失败：${errorMessage(error)}`, 'error')
+        this.addLog(`查询诊断结果失败：${errorMessage(error)}`, 'error')
       } finally {
         this.polling = false
       }
-      this.drainQueue()
     },
 
-    // 文件逐个处理，前一个处理完之前不会开始下一个
-    async drainQueue() {
-      if (this.processing) return
-      this.processing = true
-      try {
-        while (this.isRunning && this.fileQueue.length) {
-          await this.processFile(this.fileQueue.shift())
-        }
-      } finally {
-        this.processing = false
+    showResult(summary) {
+      this.diagnosisResult = summary
+      this.broadcast(MessageType.DIAGNOSIS_RESULT, summary)
+      const level = { abnormal: 'warn', warning: 'warn', inconclusive: 'info' }[summary.result] || 'success'
+      this.addLog(`诊断完成：${summary.fileName} → ${summary.statusText}${summary.summary ? '（' + summary.summary + '）' : ''}`, level)
+      if (summary.result === 'abnormal') {
+        this.$notify({ title: '异常警告', message: `${summary.fileName}：${summary.summary}`, type: 'warning', duration: 0 })
       }
-      if (this.isRunning) this.setStatus('监控中，等待新文件...')
     },
 
     async processFile(fileName) {
@@ -320,13 +339,7 @@ export default {
           this.addLog(`${fileName} 已展示（未开启自动诊断）`, 'success')
           return
         }
-        const summary = summarizeReport(taskId, fileName, report)
-        this.diagnosisResult = summary
-        this.broadcast(MessageType.DIAGNOSIS_RESULT, summary)
-        this.addLog(`诊断完成：${fileName} → ${summary.statusText}`, summary.result === 'abnormal' ? 'warn' : 'success')
-        if (summary.result === 'abnormal') {
-          this.$notify({ title: '异常警告', message: `文件 ${fileName} 检测到异常，请查看诊断结果`, type: 'warning', duration: 0 })
-        }
+        this.showResult(summarizeReport(taskId, fileName, report))
       } catch (error) {
         if (error instanceof Cancelled) {
           this.addLog(`已停止处理 ${fileName}`, 'warn')

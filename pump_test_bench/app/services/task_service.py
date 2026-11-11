@@ -5,12 +5,12 @@
 接口一览：
     POST   /auth/login                  登录，返回令牌
     GET    /auth/me                     当前用户
-    GET    /tasks                       任务列表（分页、筛选）
+    GET    /tasks                       任务列表（分页；按关键字、状态、时间、mode 筛选）
     POST   /tasks                       创建任务 {path, file_name, mode}
     POST   /tasks/delete                批量删除 {task_ids: [...]}
     GET    /tasks/<id>                  任务详情
-    POST   /tasks/<id>/diagnose         精确诊断 {density?}
-    POST   /tasks/<id>/preliminary      初步诊断 {experiment_data, simulation_data, threshold?, exceeded_limit?, density?}
+    POST   /tasks/<id>/diagnose         诊断 {density?}（不填密度时按油温计算）
+    POST   /tasks/<id>/preliminary      诊断 + AMESim 仿真对比 {experiment_data, simulation_data, threshold?, exceeded_limit?, density?}
     GET    /tasks/<id>/report           报告（JSON）
     GET    /tasks/<id>/report.docx      报告（Word）
     POST   /logs                        前端日志 {source, logs: [{level, message}]}
@@ -25,9 +25,8 @@ from flask import g, jsonify, request, send_file
 
 from pump_test_bench.app.core import preliminary as prelim
 from pump_test_bench.app.core.data_reader import TABLE_SUFFIXES
-from pump_test_bench.app.core.flow_meter import diagnose_flow_meters
-from pump_test_bench.app.core.report import build_report, render_docx
 from pump_test_bench.app.db import tasks as repo
+from pump_test_bench.app.diagnosis.runner import run_task_diagnosis
 from shared.auth import check_credentials, issue_token
 from shared.config import get_settings
 from shared.flask_app import ApiError, create_app, json_body
@@ -83,6 +82,7 @@ def list_tasks():
         status=request.args.get("status", "").strip() or None,
         start_time=_optional_int("start_time"),
         end_time=_optional_int("end_time"),
+        mode=request.args.get("mode", "").strip() or None,
     ))
 
 
@@ -91,7 +91,8 @@ def create_task():
     data = json_body()
     directory = resolve_data_dir(data.get("path"))
     file_path = resolve_data_file(str(directory), data.get("file_name"), TABLE_SUFFIXES)
-    task = repo.create_task(str(directory), file_path.name, str(data.get("mode", "file")))
+    rel = file_path.relative_to(directory).as_posix()  # 可以是子目录中的文件
+    task = repo.create_task(str(directory), rel, str(data.get("mode", "file")))
     return jsonify(task), 201
 
 
@@ -121,21 +122,6 @@ def _density(data: Dict) -> Optional[float]:
     return density
 
 
-def _run_and_store(task: Dict, build_body, preliminary: Optional[Dict] = None) -> Dict:
-    """执行诊断并保存报告；失败时把任务标记为 Failed 再抛出。"""
-    try:
-        body = build_body()
-        report = build_report(task, body, operator=g.user, preliminary=preliminary)
-        repo.save_report(task["task_id"], report, render_docx(report))
-        return report
-    except ValueError as exc:
-        repo.mark_failed(task["task_id"], str(exc))
-        raise
-    except Exception:
-        repo.mark_failed(task["task_id"], "诊断过程出现内部错误，请查看服务日志")
-        raise
-
-
 def _task_file(task: Dict):
     return resolve_data_file(task["path"], task["file_name"], TABLE_SUFFIXES)
 
@@ -144,12 +130,12 @@ def _task_file(task: Dict):
 def diagnose(task_id: str):
     task = _require_task(task_id)
     density = _density(request.get_json(silent=True) or {})
-    report = _run_and_store(task, lambda: diagnose_flow_meters(_task_file(task), density))
-    return jsonify(report)
+    return jsonify(run_task_diagnosis(task, _task_file(task), g.user, density=density))
 
 
 @app.post("/tasks/<task_id>/preliminary")
 def preliminary(task_id: str):
+    """仿真对比作为辅助证据并入诊断报告（不再决定是否做精确诊断）。"""
     task = _require_task(task_id)
     data = json_body()
     result = prelim.compare(
@@ -160,11 +146,7 @@ def preliminary(task_id: str):
     )
     if result["total_compared"] == 0:
         raise ValueError("试验数据与仿真数据没有可对比的同名变量")
-    if result["is_abnormal"]:
-        density = _density(data)
-        report = _run_and_store(task, lambda: diagnose_flow_meters(_task_file(task), density), preliminary=result)
-    else:
-        report = _run_and_store(task, lambda: prelim.normal_report_body(result), preliminary=result)
+    report = run_task_diagnosis(task, _task_file(task), g.user, density=_density(data), simulation=result)
     return jsonify({"preliminary": result, "report": report})
 
 

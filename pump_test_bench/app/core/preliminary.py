@@ -1,12 +1,21 @@
-"""初步诊断：比较试验数据与 AMESim 仿真数据。
+"""仿真对比：比较试验数据与 AMESim 仿真数据（作为诊断的辅助证据）。
 
-对两边都有的每个变量，比较均值的相对偏差；超过阈值的变量数大于“超限数量”时
-判定为异常，此时需要进一步做流量计精确诊断。
+对两边都有的每个变量比较均值：
+- 一般变量看相对偏差，超过阈值 threshold（默认 15%）为超限；
+- 接近 0 的变量（如回油压力约 0.05 MPa）相对偏差没有意义，改看绝对偏差是否超过该类变量的容差；
+超限变量数大于 exceeded_limit 时认为与仿真偏差较大。
 """
 from typing import Dict, Iterable, List, Mapping, Optional
 
 DEFAULT_THRESHOLD = 0.15
 DEFAULT_EXCEEDED_LIMIT = 3
+# 变量类型 → (接近 0 的判断界限, 绝对容差, 单位)
+ABS_TOLERANCE = {
+    "压力": (0.1, 0.02, "MPa"),
+    "流量": (10.0, 5.0, "L/h"),
+    "温度": (5.0, 2.0, "℃"),
+    "转速": (50.0, 20.0, "rpm"),
+}
 
 
 def _mean(values: Iterable) -> Optional[float]:
@@ -17,6 +26,13 @@ def _mean(values: Iterable) -> Optional[float]:
         if isinstance(v, (int, float)) and v == v:  # 排除 NaN
             nums.append(float(v))
     return sum(nums) / len(nums) if nums else None
+
+
+def _tolerance(name: str):
+    for key, tol in ABS_TOLERANCE.items():
+        if key in name:
+            return tol
+    return None
 
 
 def compare(
@@ -39,22 +55,28 @@ def compare(
         sim_avg = _mean(simulation.get(name))
         if exp_avg is None or sim_avg is None:
             continue
-        base = abs(exp_avg)
-        deviation = abs(sim_avg - exp_avg) / base if base > 1e-9 else abs(sim_avg - exp_avg)
+        diff = abs(sim_avg - exp_avg)
+        tol = _tolerance(name)
+        if tol and abs(exp_avg) < tol[0]:
+            exceeded, deviation, text = diff > tol[1], diff, f"{diff:.4g} {tol[2]}（绝对，容差 {tol[1]}）"
+        else:
+            deviation = diff / abs(exp_avg) if abs(exp_avg) > 1e-9 else diff
+            exceeded, text = deviation > thr, f"{deviation * 100:.1f}%"
         details.append({
             "variable": name,
             "experiment_avg": round(exp_avg, 6),
             "simulation_avg": round(sim_avg, 6),
             "deviation": round(deviation, 6),
-            "exceeded": deviation > thr,
+            "deviation_text": text,
+            "exceeded": exceeded,
         })
 
     exceeded = sum(1 for d in details if d["exceeded"])
     abnormal = exceeded > limit
     conclusion = (
-        f"共对比 {len(details)} 个变量，{exceeded} 个偏差超过阈值 {thr * 100:.1f}%"
-        f"（允许超限 {limit} 个）。"
-        + ("系统存在异常，需要执行精确诊断。" if abnormal else "系统状态正常。")
+        f"与 AMESim 仿真对比 {len(details)} 个变量，{exceeded} 个超限"
+        f"（相对阈值 {thr * 100:.0f}%，接近 0 的变量按绝对容差；允许超限 {limit} 个）"
+        + ("，偏差较大。" if abnormal else "，与仿真基本一致。")
     )
     return {
         "is_abnormal": abnormal,
@@ -64,38 +86,4 @@ def compare(
         "threshold": thr,
         "details": details,
         "conclusion": conclusion,
-    }
-
-
-def normal_report_body(prelim: Dict) -> Dict:
-    """初步诊断正常时生成的报告主体，格式与精确诊断一致。"""
-    indicators = [
-        {
-            "name": f"{d['variable']}（偏差）",
-            "reference": f"阈值 ±{prelim['threshold'] * 100:.1f}%",
-            "value": f"{d['deviation'] * 100:.2f}%",
-            "abnormal": d["exceeded"],
-        }
-        for d in prelim["details"]
-    ]
-    indicators.append({
-        "name": "超限变量数",
-        "reference": f"≤{prelim['exceeded_limit']}",
-        "value": str(prelim["exceeded_count"]),
-    })
-    lines = [
-        f"{'⚠' if d['exceeded'] else '✓'} {d['variable']}：试验均值={d['experiment_avg']:.4f}，"
-        f"仿真均值={d['simulation_avg']:.4f}，偏差={d['deviation'] * 100:.2f}%"
-        for d in prelim["details"]
-    ]
-    return {
-        "result": "normal",
-        "indicators": indicators,
-        "diagnosis": {
-            "fault_name": "初步诊断正常",
-            "location": f"超限变量 {prelim['exceeded_count']}/{prelim['total_compared']}",
-            "analysis": prelim["conclusion"],
-        },
-        "repair_advice": "【初步诊断结果】\n" + prelim["conclusion"] + "\n\n" + "\n".join(lines)
-                         + "\n\n无需进一步精确诊断。",
     }

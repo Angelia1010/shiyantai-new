@@ -41,7 +41,22 @@
               <el-descriptions-item label="任务ID">
                 {{ diagnosisResult.taskId }}
               </el-descriptions-item>
+              <el-descriptions-item v-if="diagnosisResult.condition && diagnosisResult.condition.label" label="试验工况">
+                {{ diagnosisResult.condition.label }}
+              </el-descriptions-item>
+              <el-descriptions-item v-if="diagnosisResult.summary" label="结论">
+                {{ diagnosisResult.summary }}
+              </el-descriptions-item>
             </el-descriptions>
+
+            <div v-if="shownFindings.length" class="diagnosis-section">
+              <h4>诊断发现</h4>
+              <div v-for="(f, i) in shownFindings" :key="i" :class="['finding', f.severity]">
+                <el-tag :type="SEVERITY_TAG[f.severity]" size="mini">{{ SEVERITY_LABELS[f.severity] }}</el-tag>
+                <span class="finding-title">{{ f.title }}</span>
+                <div class="finding-detail">{{ f.detail }}</div>
+              </div>
+            </div>
 
             <div v-if="diagnosisResult.diagnosis" class="diagnosis-section">
               <h4>诊断结论</h4>
@@ -59,7 +74,7 @@
             </div>
 
             <div v-if="diagnosisResult.repairAdvice" class="repair-section">
-              <h4>维修建议</h4>
+              <h4>处理建议</h4>
               <el-card shadow="never" class="advice-card">
                 {{ diagnosisResult.repairAdvice }}
               </el-card>
@@ -119,11 +134,11 @@
         </el-card>
 
         <el-card shadow="never" class="indicators-card" v-if="diagnosisResult && diagnosisResult.indicators.length">
-          <div slot="header">诊断指标</div>
+          <div slot="header">检测明细</div>
           <el-table :data="diagnosisResult.indicators" border size="small" max-height="200">
-            <el-table-column prop="name" label="指标名称" min-width="150" />
-            <el-table-column prop="reference" label="类型" width="120" />
-            <el-table-column prop="value" label="指标值" width="120">
+            <el-table-column prop="name" label="项目" min-width="150" />
+            <el-table-column prop="reference" label="判定标准 / 来源" width="150" />
+            <el-table-column prop="value" label="结果" min-width="140">
               <template slot-scope="scope">
                 <span :class="{'abnormal-value': scope.row.abnormal}">
                   {{ scope.row.value }}
@@ -146,8 +161,9 @@
 
 <script>
 import * as echarts from 'echarts'
+import { RESULT_TAG, SEVERITY_LABELS } from '@/utils/report'
 
-const STATUS_TAG = { normal: 'success', abnormal: 'danger', inconclusive: 'warning' }
+const SEVERITY_TAG = { info: 'info', notice: 'info', warning: 'warning', abnormal: 'danger' }
 
 export default {
   name: 'ResultDisplayStep',
@@ -162,7 +178,9 @@ export default {
   data() {
     return {
       selectedField: '',
-      chartMode: 'experiment'
+      chartMode: 'experiment',
+      SEVERITY_TAG,
+      SEVERITY_LABELS
     }
   },
   computed: {
@@ -172,8 +190,12 @@ export default {
     hasSimulation() {
       return Object.keys(this.simulationData).length > 0
     },
+    /** 需要展示的发现（不含“提示”级别） */
+    shownFindings() {
+      return ((this.diagnosisResult && this.diagnosisResult.findings) || []).filter(f => f.severity !== 'info')
+    },
     statusTagType() {
-      return (this.diagnosisResult && STATUS_TAG[this.diagnosisResult.result]) || 'info'
+      return (this.diagnosisResult && RESULT_TAG[this.diagnosisResult.result]) || 'info'
     }
   },
   watch: {
@@ -256,6 +278,21 @@ export default {
 
 .result-info-card,
 .chart-card,
+.finding {
+  padding: 6px 0;
+  border-bottom: 1px dashed #ebeef5;
+  font-size: 13px;
+}
+.finding-title {
+  margin-left: 6px;
+  font-weight: 600;
+}
+.finding-detail {
+  margin-top: 2px;
+  color: #606266;
+  font-size: 12px;
+  line-height: 1.6;
+}
 .indicators-card {
   margin-bottom: 15px;
 }

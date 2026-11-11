@@ -39,7 +39,10 @@
           <span class="verdict-time">{{ latestResult.timestamp }}</span>
         </div>
         <div class="verdict-file" :title="latestResult.fileName">{{ latestResult.fileName }}</div>
-        <div class="verdict-fault">{{ latestResult.diagnosis.fault_name || '—' }}</div>
+        <div class="verdict-fault">{{ latestResult.summary || latestResult.diagnosis.fault_name || '—' }}</div>
+        <div v-if="latestResult.condition && latestResult.condition.label" class="verdict-cond">
+          {{ latestResult.condition.label }}
+        </div>
         <div class="verdict-actions">
           <button v-if="alarmComponents.length" class="text-btn danger" @click="locateAlarm">定位异常部件</button>
           <button class="text-btn" @click="openDetail(latestResult)">查看详情</button>
@@ -52,15 +55,18 @@
       </div>
 
       <template v-if="meterDeviations.length">
-        <div class="panel-title sub">流量计偏差（阈值 15%）</div>
+        <div class="panel-title sub">流量计互校偏差<span class="counter">相对其余表中位数</span></div>
         <div v-for="m in meterDeviations" :key="m.name" class="deviation">
           <div class="deviation-top">
             <span>{{ m.name }}</span>
-            <span :class="{ bad: m.abnormal }">{{ m.text }}</span>
+            <span :class="m.severity">{{ m.text }}</span>
           </div>
+          <!-- 中间为 0，左右满格为异常阈值的 1.5 倍；两条竖线为异常阈值 -->
           <div class="deviation-track">
-            <div class="deviation-bar" :class="{ bad: m.abnormal }" :style="{ width: m.width + '%' }" />
-            <div class="deviation-limit" :style="{ left: limitPosition + '%' }" />
+            <div class="deviation-zero" />
+            <div :class="['deviation-bar', m.severity]" :style="m.barStyle" />
+            <div class="deviation-limit" :style="{ left: m.limitLeft + '%' }" />
+            <div class="deviation-limit" :style="{ left: (100 - m.limitLeft) + '%' }" />
           </div>
         </div>
       </template>
@@ -158,9 +164,19 @@
           <div v-else class="modal-body">
             <div class="kv"><span>诊断结果</span><b :class="detail.result">{{ detail.statusText }}</b></div>
             <div class="kv"><span>诊断时间</span><b>{{ detail.timestamp }}</b></div>
-            <div class="kv"><span>故障类型</span><b>{{ detail.diagnosis.fault_name || '—' }}</b></div>
-            <div class="kv"><span>故障定位</span><b>{{ detail.diagnosis.location || '—' }}</b></div>
-            <div class="section-title">指标</div>
+            <div class="kv"><span>问题类型</span><b>{{ detail.diagnosis.fault_name || '—' }}</b></div>
+            <div class="kv"><span>问题位置</span><b>{{ detail.diagnosis.location || '—' }}</b></div>
+            <div v-if="detail.condition && detail.condition.label" class="kv">
+              <span>试验工况</span><b>{{ detail.condition.label }}</b>
+            </div>
+            <template v-if="detailFindings.length">
+              <div class="section-title">诊断发现</div>
+              <div v-for="(f, i) in detailFindings" :key="i" :class="['finding', f.severity]">
+                <span class="finding-level">{{ SEVERITY_LABELS[f.severity] }}</span>
+                <b>{{ f.title }}</b> · {{ f.detail }}
+              </div>
+            </template>
+            <div class="section-title">检测明细</div>
             <table class="indicators">
               <tr v-for="(item, i) in detail.indicators" :key="i" :class="{ bad: item.abnormal }">
                 <td>{{ item.name }}</td>
@@ -168,7 +184,7 @@
                 <td>{{ item.value }}</td>
               </tr>
             </table>
-            <div class="section-title">分析与建议</div>
+            <div class="section-title">处理建议</div>
             <pre class="advice">{{ detail.repairAdvice }}</pre>
           </div>
           <div class="modal-foot">
@@ -197,6 +213,10 @@
               @keyup.enter="savePath"
             >
             <p v-if="pathDialog.error" class="path-error">{{ pathDialog.error }}</p>
+            <label class="auto-toggle">
+              <input v-model="pathDialog.autoDiagnose" type="checkbox">
+              文件写完后自动诊断（在服务器上进行，不需要打开任何页面）
+            </label>
             <template v-if="pathDialog.dirs.length">
               <div class="dir-title">已登记的数据目录（点击选用）</div>
               <div v-for="dir in pathDialog.dirs" :key="dir.path" class="dir-item">
@@ -229,13 +249,12 @@
  * 诊断结果：“自动诊断”运行时通过 BroadcastChannel 推送；没有推送时显示最近的诊断任务。
  */
 import screenfull from 'screenfull'
-import { getDataDirs, getLiveFrames, removeDataDir, setWatchPath } from '@/api/files'
+import { getDataDirs, getLiveFrames, removeDataDir, setAutoDiagnose, setWatchPath } from '@/api/files'
 import { downloadReport, getReport, listTasks } from '@/api/tasks'
 import { errorMessage } from '@/utils/request'
 import { MessageType, openChannel } from '@/utils/broadcastChannel'
 import { fieldUnit, formatValue } from '@/utils/features'
-import { resultLabel, summarizeReport } from '@/utils/report'
-import { DIAGNOSIS_TARGETS } from './scene/components'
+import { SEVERITY_LABELS, resultLabel, summarizeReport } from '@/utils/report'
 import TestBenchView from './TestBenchView.vue'
 import TrendChart from './TrendChart.vue'
 
@@ -243,8 +262,7 @@ const POLL_INTERVAL_MS = 1000
 const HISTORY_LENGTH = 90 // 迷你曲线和趋势图保留的帧数（每帧 1 秒）
 const LIVE_STATE_TEXT = { off: '未配置', waiting: '等待数据', live: '采集中' }
 const MAX_RECORDS = 100
-const DEVIATION_LIMIT = 15 // %
-const DEVIATION_SCALE = 30 // 偏差条满格对应的百分比
+const RECORDS_POLL_MS = 5000 // 诊断记录刷新间隔
 
 const METRIC_GROUPS = [
   { key: 'pump', title: '被试件', fields: ['燃油泵实际转速', '电传实际转速', '电传扭矩'] },
@@ -277,8 +295,8 @@ export default {
     return {
       featureMap: {},
       history: Object.fromEntries(TRACKED_FIELDS.map(f => [f, []])),
-      live: { state: 'off', path: null, file: null, frameTime: '' },
-      pathDialog: { visible: false, value: '', saving: false, error: '', dirs: [] },
+      live: { state: 'off', path: null, file: null, frameTime: '', autoDiagnose: true },
+      pathDialog: { visible: false, value: '', saving: false, error: '', dirs: [], autoDiagnose: true },
       diagnosisStatus: '',
       records: [],
       latestResult: null,
@@ -291,7 +309,7 @@ export default {
       isFullscreen: false,
       metricGroups: METRIC_GROUPS,
       trendGroups: TREND_GROUPS,
-      limitPosition: (DEVIATION_LIMIT / DEVIATION_SCALE) * 100
+      SEVERITY_LABELS
     }
   },
   computed: {
@@ -316,20 +334,25 @@ export default {
         .filter(f => this.history[f].length)
         .map(f => ({ name: f, data: this.history[f] }))
     },
-    // 从最新报告里取两个回路流量计的偏差
+    // 最新报告中主油路各流量计的互校偏差（已扣除固有偏差）
     meterDeviations() {
-      if (!this.latestResult) return []
-      return this.latestResult.indicators
-        .filter(i => i.name.endsWith('流量偏差'))
-        .map(i => {
-          const pct = parseFloat(i.value)
-          return {
-            name: i.name.replace(' 流量偏差', ''),
-            text: i.value,
-            abnormal: !!i.abnormal,
-            width: Number.isNaN(pct) ? 0 : Math.min(100, (pct / DEVIATION_SCALE) * 100)
-          }
-        })
+      const loop = this.latestResult && this.latestResult.loops.find(l => l.active)
+      if (!loop) return []
+      return loop.meters.filter(m => typeof m.corrected === 'number').map(m => {
+        const pct = m.corrected * 100
+        const scale = m.alarm * 100 * 1.5 // 半边满格对应的百分比
+        const half = Math.min(50, (Math.abs(pct) / scale) * 50)
+        return {
+          name: m.label,
+          text: `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`,
+          severity: m.severity,
+          limitLeft: 50 - (m.alarm * 100 / scale) * 50,
+          barStyle: pct >= 0 ? { left: '50%', width: `${half}%` } : { left: `${50 - half}%`, width: `${half}%` }
+        }
+      })
+    },
+    detailFindings() {
+      return ((this.detail && this.detail.findings) || []).filter(f => f.severity !== 'info')
     }
   },
   created() {
@@ -340,11 +363,12 @@ export default {
     this.tick()
     this.clockTimer = setInterval(this.tick, 1000)
     if (screenfull.enabled) screenfull.on('change', this.onFullscreenChange)
-    this.loadRecentTasks()
+    this.pollRecords()
   },
   beforeDestroy() {
     this.destroyed = true
     clearTimeout(this.pollTimer)
+    clearTimeout(this.recordsTimer)
     clearInterval(this.clockTimer)
     this.channel.close()
     if (screenfull.enabled) screenfull.off('change', this.onFullscreenChange)
@@ -372,7 +396,7 @@ export default {
           data.frames.forEach(this.applyFrame)
           this.lastSeq = data.latest_seq
         }
-        this.live = { ...this.live, state: data.state, file: data.file, path: data.path }
+        this.live = { ...this.live, state: data.state, file: data.file, path: data.path, autoDiagnose: data.auto_diagnose }
       } catch (e) {
         this.live = { ...this.live, state: 'off' }
       } finally {
@@ -399,7 +423,9 @@ export default {
       for (const field of TRACKED_FIELDS) this.history[field] = []
     },
     openPathDialog() {
-      this.pathDialog = { visible: true, value: this.live.path || '', saving: false, error: '', dirs: [] }
+      this.pathDialog = {
+        visible: true, value: this.live.path || '', saving: false, error: '', dirs: [], autoDiagnose: this.live.autoDiagnose
+      }
       this.loadDirs()
     },
     async loadDirs() {
@@ -427,8 +453,11 @@ export default {
       this.pathDialog.saving = true
       this.pathDialog.error = ''
       try {
-        const status = await setWatchPath(this.pathDialog.value, true)
-        this.live = { ...this.live, state: status.state, path: status.path, file: status.file }
+        const status = this.pathDialog.value === this.live.path
+          ? await setAutoDiagnose(this.pathDialog.autoDiagnose) // 目录没变：只改自动诊断开关，不重置监控
+          : await setWatchPath(this.pathDialog.value, true, this.pathDialog.autoDiagnose)
+        this.live = { ...this.live, state: status.state, path: status.path, file: status.file,
+          autoDiagnose: status.auto_diagnose }
         this.pathDialog.visible = false
         this.$message.success(`开始监控：${status.path}`)
       } catch (e) {
@@ -438,34 +467,33 @@ export default {
       }
     },
     addResult(summary) {
-      this.records = [summary, ...this.records.filter(r => r.taskId !== summary.taskId)].slice(0, MAX_RECORDS)
+      const record = { taskId: summary.taskId, fileName: summary.fileName, result: summary.result,
+        statusText: summary.statusText, timestamp: summary.timestamp }
+      this.records = [record, ...this.records.filter(r => r.taskId !== summary.taskId)].slice(0, MAX_RECORDS)
       this.latestResult = summary
-      this.alarmComponents = summary.result === 'abnormal' ? this.alarmTargets(summary) : []
+      this.alarmComponents = summary.alarmComponents || []
     },
-    alarmTargets(summary) {
-      const keys = new Set()
-      for (const item of summary.indicators) {
-        if (!item.abnormal) continue
-        for (const [meter, component] of Object.entries(DIAGNOSIS_TARGETS)) {
-          if (item.name.startsWith(meter)) keys.add(component)
-        }
-      }
-      return [...keys]
-    },
-    async loadRecentTasks() {
+
+    /** 定时从后端取诊断记录（包括后端自动诊断的结果），有新的完成记录时加载其报告。 */
+    async pollRecords() {
       try {
-        const { items } = await listTasks({ page: 1, page_size: 10, status: 'Completed' })
-        if (this.records.length) return // 已收到实时结果
+        const { items } = await listTasks({ page: 1, page_size: MAX_RECORDS, status: 'Completed' })
         this.records = items.map(t => ({
           taskId: t.task_id,
           fileName: t.file_name,
           result: t.result,
           statusText: resultLabel(t.result),
-          timestamp: formatTime(t.created_at),
-          fromHistory: true
+          timestamp: formatTime(t.updated_at || t.created_at)
         }))
+        const newest = items[0]
+        if (newest && (!this.latestResult || this.latestResult.taskId !== newest.task_id)) {
+          const report = await getReport(newest.task_id)
+          this.addResult(summarizeReport(newest.task_id, newest.file_name, report))
+        }
       } catch (e) {
-        // 提示已由请求拦截器显示
+        // 网络错误等：下一轮再试
+      } finally {
+        if (!this.destroyed) this.recordsTimer = setTimeout(this.pollRecords, RECORDS_POLL_MS)
       }
     },
 
@@ -504,8 +532,8 @@ export default {
       if (this.alarmComponents.length) this.$refs.bench.focus(this.alarmComponents[0])
     },
     async openDetail(record) {
-      if (!record.fromHistory) {
-        this.detail = record
+      if (this.latestResult && record.taskId === this.latestResult.taskId) {
+        this.detail = this.latestResult
         return
       }
       this.detail = { ...record, loading: true }
@@ -887,8 +915,9 @@ $return: #fbbf24;
   border: 1px solid $border;
   background: rgba(255, 255, 255, 0.025);
   &.normal { border-left: 3px solid $ok; background: rgba(34, 197, 94, 0.05); }
+  &.warning { border-left: 3px solid $warn; background: rgba(245, 158, 11, 0.07); }
   &.abnormal { border-left: 3px solid $bad; background: rgba(239, 68, 68, 0.08); }
-  &.inconclusive { border-left: 3px solid $warn; }
+  &.inconclusive { border-left: 3px solid $muted; }
 }
 .verdict-head {
   display: flex;
@@ -900,8 +929,9 @@ $return: #fbbf24;
   font-weight: 700;
   color: $bright;
   .normal & { color: $ok; }
+  .warning & { color: $warn; }
   .abnormal & { color: $bad; }
-  .inconclusive & { color: $warn; }
+  .inconclusive & { color: $muted; }
 }
 .verdict-time,
 .verdict-file {
@@ -917,6 +947,12 @@ $return: #fbbf24;
 .verdict-fault {
   margin-top: 4px;
   color: $bright;
+  line-height: 1.5;
+}
+.verdict-cond {
+  margin-top: 2px;
+  color: $muted;
+  font-size: 12px;
 }
 .verdict-actions {
   margin-top: 10px;
@@ -942,7 +978,8 @@ $return: #fbbf24;
   font-size: 12px;
   margin-bottom: 4px;
   font-variant-numeric: tabular-nums;
-  .bad { color: $bad; }
+  .warning { color: $warn; }
+  .abnormal { color: $bad; }
 }
 .deviation-track {
   position: relative;
@@ -950,18 +987,30 @@ $return: #fbbf24;
   border-radius: 3px;
   background: rgba(120, 150, 190, 0.15);
 }
+.deviation-zero {
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  width: 1px;
+  height: 10px;
+  background: rgba(199, 210, 224, 0.5);
+}
 .deviation-bar {
+  position: absolute;
+  top: 0;
   height: 100%;
   border-radius: 3px;
   background: $ok;
-  &.bad { background: $bad; }
+  &.warning { background: $warn; }
+  &.abnormal { background: $bad; }
 }
 .deviation-limit {
   position: absolute;
   top: -3px;
   width: 2px;
+  margin-left: -1px;
   height: 12px;
-  background: $warn;
+  background: rgba(239, 68, 68, 0.7);
 }
 .records {
   flex: 1;
@@ -984,8 +1033,9 @@ $return: #fbbf24;
   border-radius: 50%;
   background: $muted;
   .normal & { background: $ok; }
+  .warning & { background: $warn; }
   .abnormal & { background: $bad; }
-  .inconclusive & { background: $warn; }
+  .inconclusive & { background: $muted; }
 }
 .record-body {
   min-width: 0;
@@ -1149,6 +1199,31 @@ $return: #fbbf24;
   cursor: pointer;
   &:hover { color: $bad; }
 }
+.auto-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: $text;
+  font-size: 13px;
+  cursor: pointer;
+}
+.finding {
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  background: rgba(255, 255, 255, 0.03);
+  border-left: 3px solid $muted;
+  &.warning { border-left-color: $warn; }
+  &.abnormal { border-left-color: $bad; }
+  b { color: $bright; font-weight: 600; }
+}
+.finding-level {
+  margin-right: 6px;
+  color: $muted;
+}
 .path-error {
   margin: 8px 0 0;
   color: $bad;
@@ -1182,8 +1257,9 @@ $return: #fbbf24;
   span { width: 72px; color: $muted; }
   b { font-weight: 500; color: $bright; }
   b.normal { color: $ok; }
+  b.warning { color: $warn; }
   b.abnormal { color: $bad; }
-  b.inconclusive { color: $warn; }
+  b.inconclusive { color: $muted; }
 }
 .section-title {
   margin: 14px 0 8px;

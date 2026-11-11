@@ -43,7 +43,7 @@
             <el-form-item label="介质密度">
               <el-input 
                 v-model.number="localConfig.mediumDensity" 
-                placeholder="如: 820"
+                placeholder="留空则按油温自动计算"
                 type="number"
                 clearable
               >
@@ -116,7 +116,8 @@
             <el-form-item label="电传转速">
               <el-select 
                 v-model="localConfig.electricalSpeed" 
-                placeholder="请选择电传转速"
+                placeholder="自动（按实测电传转速）"
+                clearable
                 style="width: 100%;"
               >
                 <el-option 
@@ -208,12 +209,14 @@ export default {
   },
   data() {
     return {
+      // 与 pipeline.js 的 ORDIAM_BY_SPEED_LEVEL 对应；括号内为文件名中常见的工况编号
       electricalSpeedOptions: [
-        { value: 1295, label: '1295 rpm' },
-        { value: 2999, label: '2999 rpm' },
-        { value: 4975, label: '4975 rpm' },
-        { value: 7958, label: '7958 rpm' },
-        { value: 9990, label: '9990 rpm' }
+        { value: null, label: '自动（按实测电传转速）' },
+        { value: 1000, label: '约 1000 rpm（S1295）' },
+        { value: 1500, label: '约 1500 rpm（S2990）' },
+        { value: 2000, label: '约 2000 rpm（S4975）' },
+        { value: 2500, label: '约 2500 rpm（S7700）' },
+        { value: 3000, label: '约 3000 rpm（S9980）' }
       ]
     }
   },

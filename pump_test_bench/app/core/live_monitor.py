@@ -8,8 +8,9 @@
 - 最近在变化的那个文件就是“当前文件”，用 TailReader 只读新增的完整行，
   按时间列每 window 秒聚合成一帧 {t, time, rows, stats: {列名: {avg, min, max}}}，
   放进环形缓冲区，前端按序号增量取；
-- 文件停止变化 settle_seconds 秒后视为写完，发布一条“文件完成”事件（自动诊断用）；
-- 监控目录写入状态文件，服务重启后自动恢复。
+- 文件停止变化 settle_seconds 秒后视为写完，发布一条“文件完成”事件；开启自动诊断时
+  同时调用 on_complete(相对路径, 目录)，由文件服务排队诊断；
+- 监控目录与自动诊断开关写入状态文件，服务重启后自动恢复。
 
 帧和事件都带递增序号，多个页面各自记住读到的序号，互不影响。
 """
@@ -120,6 +121,8 @@ class LiveMonitor:
     max_events: int = 1000
     state_file: Optional[Path] = None
     suffixes: Tuple[str, ...] = TEXT_SUFFIXES
+    auto_diagnose: bool = True
+    on_complete: Optional[Callable[[str, Path], None]] = None
 
     directory: Optional[Path] = field(default=None, init=False)
     _lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
@@ -140,9 +143,11 @@ class LiveMonitor:
         self._events = deque(maxlen=self.max_events)
 
     # ------------------------------------------------------------------ 控制
-    def watch(self, directory: Path, start_thread: bool = True) -> None:
+    def watch(self, directory: Path, start_thread: bool = True, auto_diagnose: Optional[bool] = None) -> None:
         """切换监控目录。已有文件只记录为基线，正在写入的文件（最近有修改）立即开始读取。"""
         with self._lock:
+            if auto_diagnose is not None:
+                self.auto_diagnose = bool(auto_diagnose)
             self.directory = directory
             self._snapshot = self._list_files()
             self._baseline = set(self._snapshot)
@@ -166,11 +171,16 @@ class LiveMonitor:
         if not self.state_file or not self.state_file.is_file():
             return
         try:
-            path = json.loads(self.state_file.read_text(encoding="utf-8")).get("path")
-            if path:
-                self.watch(resolve(path))
+            state = json.loads(self.state_file.read_text(encoding="utf-8"))
+            if state.get("path"):
+                self.watch(resolve(state["path"]), auto_diagnose=state.get("auto_diagnose", True))
         except Exception as exc:  # 目录被删除、不再允许访问等
             logger.warning("无法恢复监控目录：%s", exc)
+
+    def set_auto_diagnose(self, enabled: bool) -> None:
+        with self._lock:
+            self.auto_diagnose = bool(enabled)
+            self._save_state()
 
     def stop(self) -> None:
         self._stop.set()
@@ -200,7 +210,8 @@ class LiveMonitor:
             return
         try:
             self.state_file.parent.mkdir(parents=True, exist_ok=True)
-            self.state_file.write_text(json.dumps({"path": str(self.directory)}, ensure_ascii=False), encoding="utf-8")
+            self.state_file.write_text(json.dumps({"path": str(self.directory), "auto_diagnose": self.auto_diagnose},
+                                                  ensure_ascii=False), encoding="utf-8")
         except OSError:
             logger.warning("保存监控目录失败：%s", self.state_file)
 
@@ -305,6 +316,11 @@ class LiveMonitor:
                 "time": int(time.time() * 1000),
             })
             self._baseline.add(rel)
+            if self.auto_diagnose and self.on_complete:
+                try:
+                    self.on_complete(rel, self.directory)
+                except Exception:
+                    logger.exception("提交自动诊断失败：%s", rel)
 
     # ------------------------------------------------------------------ 查询
     def status(self) -> Dict:
@@ -322,6 +338,7 @@ class LiveMonitor:
                 "skipped_rows": (cur.reader.stats.short_rows + cur.reader.stats.bad_rows) if cur else 0,
                 "updated_at": int(cur.last_row_wall * 1000) if cur and cur.last_row_wall else None,
                 "latest_seq": self._frame_seq,
+                "auto_diagnose": self.auto_diagnose,
                 "error": self._last_error or None,
             }
 
@@ -333,7 +350,7 @@ class LiveMonitor:
                 frames = frames[-limit:]
             status = self.status()
             return {"latest_seq": self._frame_seq, "state": status["state"], "file": status["file"],
-                    "path": status["path"], "frames": frames}
+                    "path": status["path"], "auto_diagnose": status["auto_diagnose"], "frames": frames}
 
     def events_since(self, since: int) -> Dict:
         with self._lock:

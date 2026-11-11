@@ -1,0 +1,76 @@
+{
+  "_说明": "试验台诊断配置。管路与测点的对应关系是根据 2026-11 实测数据推断的，请对照管路图核对后修改。修改后无需重启，下一次诊断即生效。",
+
+  "loops": [
+    {
+      "name": "主油路",
+      "description": "供油 → 被试件 → 回油流量计 → 回油，同一路油上串联多个流量计，可互相校核",
+      "meters": [
+        {"column": "回油流量1-1", "label": "回油流量计1-1", "group": "回油", "component": "回油流量计1"},
+        {"column": "回油流量1-2", "label": "回油流量计1-2", "group": "回油", "component": "回油流量计2"},
+        {"column": "供油流量1-1", "label": "供油流量计1-1", "group": "供油", "component": "供油管路"},
+        {"column": "供油流量1-2", "label": "供油流量计1-2", "group": "供油", "component": "供油管路"},
+        {"column": "齿轮流量计", "label": "齿轮流量计", "group": "供油", "component": "离心泵_油路块"}
+      ],
+      "mass_meter": {"column": "回油质量流量2", "label": "回油质量流量计2", "group": "回油"},
+      "temperature_column": "供油温度1-1"
+    },
+    {
+      "name": "回油支路2",
+      "description": "第二路回油（2026-11 数据中没有流量）",
+      "meters": [
+        {"column": "回油流量2-1", "label": "回油流量计2-1", "group": "回油", "component": "回油管路"},
+        {"column": "回油流量2-2", "label": "回油流量计2-2", "group": "回油", "component": "回油管路"}
+      ],
+      "mass_meter": {"column": "回油质量流量1", "label": "回油质量流量计1"},
+      "temperature_column": "回油温度2-1"
+    }
+  ],
+
+  "fuel": {
+    "_说明": "没有健康基准时用的密度模型 ρ = rho15 + slope·(T − 15)，系数由 2026-11 数据拟合（残差约 2 kg/m³）",
+    "rho15": 792.5,
+    "slope": -0.54
+  },
+
+  "condition": {
+    "speed_columns": {"电传": "电传实际转速", "燃油泵": "燃油泵实际转速"},
+    "speed_step": {"电传": 500, "燃油泵": 50}
+  },
+
+  "steady": {
+    "_说明": "稳定段：每 window_s 秒取均值，连续若干窗口的流量相对变化不超过 max_level_change、窗口内波动不超过 max_cv",
+    "window_s": 1.0,
+    "max_cv": 0.02,
+    "max_level_change": 0.02,
+    "min_duration_s": 5
+  },
+
+  "thresholds": {
+    "loop_active_flow": 10.0,
+    "redundancy": {
+      "_说明": "单个流量计相对其余流量计中位数的偏差。有健康基准时扣除该表的固有偏差，阈值取 max(下限, 倍数×基准标准差)",
+      "warn": 0.02, "alarm": 0.04,
+      "baseline_warn_floor": 0.015, "baseline_alarm_floor": 0.025,
+      "baseline_warn_sigma": 4, "baseline_alarm_sigma": 8
+    },
+    "balance": {"_说明": "供油组与回油组中位数之差（泄漏或分流）", "warn": 0.015, "alarm": 0.03},
+    "mass_volume": {"_说明": "质量流量÷密度 与 体积流量共识值的偏差", "warn": 0.015, "alarm": 0.03},
+    "zero": {"_说明": "无流量的管路上，流量计读数的允许零点", "volume": 2.0, "mass": 15.0},
+    "noise": {"_说明": "流量计波动（变异系数）超过基准的倍数", "ratio": 5.0, "floor": 0.02},
+    "spike": {"_说明": "鲁棒 z 分数超过 z 的点占比超过 ratio 视为毛刺", "z": 8.0, "ratio": 0.005}
+  },
+
+  "sensor_ranges": [
+    {"match": "温度", "min": -40, "max": 120},
+    {"match": "压力", "min": -0.5, "max": 40},
+    {"match": "质量流量", "min": -50, "max": 20000},
+    {"match": "流量", "min": -5, "max": 20000},
+    {"match": "转速", "min": -10, "max": 30000}
+  ],
+
+  "legacy_model": {
+    "_说明": "原经验公式（质量流量→涡轮转速→频率→理论流量），只作参考，不参与判定",
+    "enabled": true
+  }
+}

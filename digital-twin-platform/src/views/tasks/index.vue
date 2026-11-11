@@ -55,7 +55,7 @@
           <template slot-scope="{ row }">{{ formatTime(row.created_at) }}</template>
         </el-table-column>
         <el-table-column label="方式" width="90">
-          <template slot-scope="{ row }">{{ row.mode === 'realtime' ? '实时监控' : '选择文件' }}</template>
+          <template slot-scope="{ row }">{{ MODE_LABELS[row.mode] || row.mode }}</template>
         </el-table-column>
         <el-table-column prop="file_name" label="文件名" min-width="200" show-overflow-tooltip />
         <el-table-column prop="path" label="目录" min-width="160" show-overflow-tooltip />
@@ -105,15 +105,32 @@
           <el-descriptions-item label="数据文件">{{ reportDialog.report.product_info.file_name }}</el-descriptions-item>
           <el-descriptions-item label="诊断日期">{{ reportDialog.report.product_info.diag_date }}</el-descriptions-item>
           <el-descriptions-item label="操作员">{{ reportDialog.report.product_info.operator }}</el-descriptions-item>
-          <el-descriptions-item label="诊断结果">{{ resultLabel(reportDialog.report.result) }}</el-descriptions-item>
-          <el-descriptions-item label="诊断类型">{{ reportDialog.report.is_preliminary ? '初步诊断' : '精确诊断' }}</el-descriptions-item>
+          <el-descriptions-item label="诊断结果">
+            <el-tag :type="RESULT_TAG[reportDialog.report.result]" size="small">{{ resultLabel(reportDialog.report.result) }}</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="试验工况">{{ (reportDialog.report.condition || {}).label || '—' }}</el-descriptions-item>
+          <el-descriptions-item label="结论" :span="3">{{ reportDialog.report.summary || '—' }}</el-descriptions-item>
         </el-descriptions>
 
-        <div class="section-title">诊断指标</div>
+        <template v-if="shownFindings.length">
+          <div class="section-title">诊断发现</div>
+          <el-table :data="shownFindings" border size="small" style="margin-bottom: 20px">
+            <el-table-column label="级别" width="70">
+              <template slot-scope="{ row }">
+                <el-tag :type="SEVERITY_TAG[row.severity]" size="mini">{{ SEVERITY_LABELS[row.severity] }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="title" label="问题" width="160" />
+            <el-table-column prop="label" label="对象" width="140" />
+            <el-table-column prop="detail" label="说明" />
+          </el-table>
+        </template>
+
+        <div class="section-title">检测明细</div>
         <el-table :data="reportDialog.report.indicators" border size="small" style="margin-bottom: 20px">
-          <el-table-column prop="name" label="指标名称" />
-          <el-table-column prop="reference" label="参考" />
-          <el-table-column label="指标值">
+          <el-table-column prop="name" label="项目" />
+          <el-table-column prop="reference" label="判定标准 / 来源" />
+          <el-table-column label="结果">
             <template slot-scope="{ row }">
               <span :class="{ 'abnormal-value': row.abnormal }">{{ row.value }}</span>
             </template>
@@ -129,8 +146,12 @@
           </el-descriptions-item>
         </el-descriptions>
 
-        <div class="section-title">维修建议</div>
+        <div class="section-title">处理建议</div>
         <el-card shadow="never" class="advice">{{ reportDialog.report.repair_advice }}</el-card>
+        <div v-if="reportDialog.report.algorithm" class="algo-note">
+          诊断算法 {{ reportDialog.report.algorithm.version }}，
+          {{ reportDialog.report.algorithm.baseline ? `健康基准：${reportDialog.report.algorithm.baseline.source}` : '未使用健康基准' }}
+        </div>
       </div>
       <div v-else class="loading-text">加载中...</div>
       <span slot="footer">
@@ -143,10 +164,11 @@
 
 <script>
 import { deleteTasks, downloadReport, getReport, listTasks } from '@/api/tasks'
-import { resultLabel } from '@/utils/report'
+import { RESULT_TAG, SEVERITY_LABELS, resultLabel } from '@/utils/report'
 
 const STATUS_LABELS = { Created: '待诊断', Completed: '已完成', Failed: '失败' }
-const RESULT_TAG = { normal: 'success', abnormal: 'danger', inconclusive: 'warning' }
+const MODE_LABELS = { auto: '自动诊断', realtime: '实时监控', file: '选择文件' }
+const SEVERITY_TAG = { info: 'info', notice: 'info', warning: 'warning', abnormal: 'danger' }
 const REFRESH_INTERVAL_MS = 10000
 const DAY_MS = 24 * 3600 * 1000
 
@@ -155,7 +177,10 @@ export default {
   data() {
     return {
       STATUS_LABELS,
+      MODE_LABELS,
       RESULT_TAG,
+      SEVERITY_LABELS,
+      SEVERITY_TAG,
       filters: { keyword: '', status: '', dateRange: null },
       tasks: [],
       total: 0,
@@ -164,6 +189,13 @@ export default {
       loading: false,
       selected: [],
       reportDialog: { visible: false, report: null, row: null }
+    }
+  },
+  computed: {
+    /** 报告中需要展示的发现（不含“提示”级别） */
+    shownFindings() {
+      const report = this.reportDialog.report
+      return ((report && report.findings) || []).filter(f => f.severity !== 'info')
     }
   },
   created() {
@@ -277,6 +309,11 @@ export default {
   white-space: pre-wrap;
   font-size: 13px;
   line-height: 1.8;
+}
+.algo-note {
+  margin-top: 10px;
+  color: #909399;
+  font-size: 12px;
 }
 .abnormal-value {
   color: #f56c6c;

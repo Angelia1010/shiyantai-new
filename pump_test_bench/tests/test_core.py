@@ -1,6 +1,5 @@
 import math
 
-import pandas as pd
 import pytest
 
 from pump_test_bench.app.core import flow_meter, preliminary
@@ -28,53 +27,6 @@ def test_read_txt_and_excel_pages(sample_dir):
     assert page0["columns"]["燃油泵实际转速"][0] is None
 
 
-def test_flow_meter_diagnosis_on_sample(sample_dir):
-    body = flow_meter.diagnose_flow_meters(sample_dir / SAMPLE_XLSX, density=850)
-    assert body["result"] in (flow_meter.RESULT_NORMAL, flow_meter.RESULT_ABNORMAL)
-    names = [i["name"] for i in body["indicators"]]
-    assert "回路1流量计 理论流量" in names and "回路2流量计 理论流量" in names
-
-
-def _write_xlsx(path, columns):
-    pd.DataFrame(columns).to_excel(path, index=False)
-    return path
-
-
-def test_each_loop_uses_its_own_mass_flow_column(env):
-    # 只有质量流量1：只诊断回路1，不会再因为读不到质量流量2而崩溃
-    path = _write_xlsx(env / "only1.xlsx", {"回油质量流量1": [180.0, 180.0], "回油流量1-1": [50.0, 52.0]})
-    body = flow_meter.diagnose_flow_meters(path, density=820)
-    names = [i["name"] for i in body["indicators"]]
-    assert any(n.startswith("回路1流量计") for n in names)
-    assert not any(n.startswith("回路2流量计") for n in names)
-
-
-def test_flow_meter_abnormal_and_inconclusive(env):
-    q = flow_meter.theoretical_flow(flow_meter.simulated_speed(180 / 3600, 820))
-    ok = _write_xlsx(env / "ok.xlsx", {"回油质量流量1": [180.0], "回油流量1-1": [q]})
-    assert flow_meter.diagnose_flow_meters(ok, 820)["result"] == "normal"
-
-    bad = _write_xlsx(env / "bad.xlsx", {"回油质量流量1": [180.0], "回油流量1-1": [q * 2]})
-    body = flow_meter.diagnose_flow_meters(bad, 820)
-    assert body["result"] == "abnormal"
-    assert body["diagnosis"]["location"] == "回路1流量计"
-
-    missing = _write_xlsx(env / "missing.xlsx", {"回油质量流量1": [180.0]})
-    assert flow_meter.diagnose_flow_meters(missing, 820)["result"] == "inconclusive"
-
-
-def test_flow_meter_without_mass_flow_columns_is_a_clear_error(env):
-    path = _write_xlsx(env / "none.xlsx", {"压力": [1.0]})
-    with pytest.raises(ValueError, match="回油质量流量1"):
-        flow_meter.diagnose_flow_meters(path)
-
-
-def test_density_falls_back_to_file_column(env):
-    path = _write_xlsx(env / "d.xlsx", {"回油质量流量1": [180.0], "回油流量1-1": [50.0], "介质密度": [800.0]})
-    body = flow_meter.diagnose_flow_meters(path)
-    assert body["indicators"][0] == {"name": "介质密度", "reference": "文件", "value": "800.0 kg/m³"}
-
-
 def test_preliminary_compare():
     exp = {"a": [1.0, 1.0], "b": [10.0], "c": [5.0], "d": [2.0], "e": [3.0]}
     sim = {"a": [1.0], "b": [20.0], "c": [10.0], "d": [4.0], "e": [6.0], "only_sim": [1.0]}
@@ -87,9 +39,19 @@ def test_preliminary_compare():
         preliminary.compare([], sim)
 
 
+def test_preliminary_near_zero_variables_use_absolute_tolerance():
+    # 回油压力约 0.05 MPa：相对偏差 30% 但绝对只差 0.015 MPa，不算超限
+    r = preliminary.compare({"回油压力1-1": [0.05]}, {"回油压力1-1": [0.065]})
+    assert r["details"][0]["exceeded"] is False and "绝对" in r["details"][0]["deviation_text"]
+    r = preliminary.compare({"回油压力1-1": [0.05]}, {"回油压力1-1": [0.09]})
+    assert r["details"][0]["exceeded"] is True
+
+
 def test_report_docx_renders(env):
-    task = {"task_id": "t1", "file_name": "x.xlsx"}
-    body = preliminary.normal_report_body(preliminary.compare({"a": [1.0]}, {"a": [1.0]}))
-    report = build_report(task, body, operator="admin")
+    from pump_test_bench.tests.test_diagnosis import healthy_frame
+    from pump_test_bench.app.diagnosis.engine import diagnose_frame
+    task = {"task_id": "t1", "file_name": "x.txt"}
+    report = build_report(task, diagnose_frame(healthy_frame()), operator="admin")
+    assert report["result"] == "normal" and report["product_info"]["serial"] == "t1"
     content = render_docx(report)
     assert content[:2] == b"PK"  # docx 是 zip 文件

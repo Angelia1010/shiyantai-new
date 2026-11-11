@@ -3,12 +3,12 @@ import { downloadWithAuth } from '@/utils/download'
 
 const BASE = '/api/task'
 
-/** 任务列表：{ page, page_size, keyword, status, start_time, end_time } → { items, total } */
+/** 任务列表：{ page, page_size, keyword, status, start_time, end_time, mode } → { items, total } */
 export function listTasks(params) {
   return request({ url: `${BASE}/tasks`, method: 'get', params })
 }
 
-/** 为一个数据文件创建诊断任务。mode: realtime | file */
+/** 为一个数据文件创建诊断任务。mode: file | realtime（auto 由后端自动诊断创建） */
 export function createTask(path, fileName, mode) {
   return request({ url: `${BASE}/tasks`, method: 'post', data: { path, file_name: fileName, mode } })
 }
@@ -21,13 +21,13 @@ export function deleteTasks(taskIds) {
   return request({ url: `${BASE}/tasks/delete`, method: 'post', data: { task_ids: taskIds } })
 }
 
-/** 流量计精确诊断，返回报告。 */
+/** 诊断（流量计互校、质量-体积校核、传感器自检），返回报告。density 留空时按油温计算 */
 export function diagnoseTask(taskId, density) {
   return request({ url: `${BASE}/tasks/${encodeURIComponent(taskId)}/diagnose`, method: 'post', data: { density } })
 }
 
 /**
- * 初步诊断（试验数据 vs 仿真数据）。异常时后端会接着做精确诊断。
+ * 诊断并附上与 AMESim 仿真数据的对比（对比结果作为辅助证据写入报告）。
  * data: { experiment_data: {变量: [数值]}, simulation_data: {变量: [数值]}, threshold?, exceeded_limit?, density? }
  * 返回 { preliminary, report }
  */
