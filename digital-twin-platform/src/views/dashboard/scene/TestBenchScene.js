@@ -65,6 +65,11 @@ uniform float scanStrength;
 uniform float revealY;
 varying vec3 vFxWorld;
 `
+// 管路“流动”光斑：沿世界坐标的斜向条纹随时间移动，用本体颜色提亮
+const FX_FLOW_DECL = 'uniform float fxTime;\nuniform float flowStrength;\n'
+const FX_FLOW_BODY = `float flowPhase = fract((vFxWorld.x * 0.9 + vFxWorld.y * 0.4 + vFxWorld.z * 0.6) * 2.2 - fxTime * 0.7);
+gl_FragColor.rgb += diffuseColor.rgb * smoothstep(0.82, 1.0, flowPhase) * 2.2 * flowStrength;
+`
 const FX_FRAGMENT_BODY = `if (vFxWorld.y > revealY) discard;
 float fxBand = scanStrength * (1.0 - smoothstep(0.0, scanWidth, abs(vFxWorld.y - scanY)));
 float fxEdge = 1.0 - smoothstep(0.0, scanWidth * 0.6, abs(vFxWorld.y - revealY));
@@ -216,7 +221,9 @@ export class TestBenchScene {
       scanWidth: { value: 0.1 },
       scanColor: { value: srgb(0x7dd3fc) },
       scanStrength: { value: 0 },
-      revealY: { value: 1e5 }
+      revealY: { value: 1e5 },
+      fxTime: { value: 0 },
+      flowStrength: { value: 1 }
     }
     this.effects = true // 科技风动态效果开关（写实风关闭）
     this.alarmHalos = {}
@@ -457,7 +464,7 @@ export class TestBenchScene {
    * - 扫描光带 / 生成动画（所有材质）
    * - 菲涅尔边缘光（rim=true 的实体材质）：视线越掠过表面越亮，营造“全息”质感
    */
-  _enhance(material, { rim = false, gain = 1 } = {}) {
+  _enhance(material, { rim = false, gain = 1, flow = false } = {}) {
     const fx = this.fx
     material.onBeforeCompile = shader => {
       Object.assign(shader.uniforms, {
@@ -467,8 +474,13 @@ export class TestBenchScene {
       shader.vertexShader = FX_VERTEX_DECL + shader.vertexShader.replace('#include <project_vertex>', FX_VERTEX_BODY)
       let frag = FX_FRAGMENT_DECL + shader.fragmentShader.replace(
         '#include <tonemapping_fragment>',
-        FX_FRAGMENT_BODY.replace('FX_GAIN', gain.toFixed(2))
+        (flow ? FX_FLOW_BODY : '') + FX_FRAGMENT_BODY.replace('FX_GAIN', gain.toFixed(2))
       )
+      if (flow) {
+        shader.uniforms.fxTime = fx.fxTime
+        shader.uniforms.flowStrength = fx.flowStrength
+        frag = FX_FLOW_DECL + frag
+      }
       if (rim) {
         shader.uniforms.rimColor = fx.rimColor
         shader.uniforms.rimStrength = fx.rimStrength
@@ -482,12 +494,12 @@ export class TestBenchScene {
       shader.fragmentShader = frag
     }
     // 不同注入参数要编译成不同的着色器程序
-    material.customProgramCacheKey = () => `fx-${rim}-${gain}`
+    material.customProgramCacheKey = () => `fx-${rim}-${gain}-${flow}`
   }
 
   _makeComponentMaterials(category) {
     const material = new THREE.MeshStandardMaterial({ color: 0xffffff })
-    this._enhance(material, { rim: true, gain: 0.6 })
+    this._enhance(material, { rim: true, gain: 0.6, flow: /Pipe$/.test(category) })
     const edgeMaterial = new THREE.LineBasicMaterial({
       color: 0x38bdf8,
       transparent: true,
@@ -501,11 +513,13 @@ export class TestBenchScene {
 
   _assignComponents(assembly) {
     const replaced = new Set() // CAD 自带的材质，替换后释放
-    const glass = new THREE.MeshStandardMaterial({
-      color: 0x9fb3c8, metalness: 0, roughness: 0.1, transparent: true, opacity: 0.05, depthWrite: false
+    // CAD 导出时给大部分零件套了一个 60% 不透明的默认材质（并不是真的玻璃），
+    // 除机架外一律按实体显示；机架的这些面板做成淡淡的半透明，避免挡住里面的流量计
+    const panel = new THREE.MeshStandardMaterial({
+      color: 0x3a4a60, metalness: 0.2, roughness: 0.6, transparent: true, opacity: 0.22, depthWrite: false
     })
-    this._enhance(glass, { gain: 0.8 })
-    this.glassMaterial = glass
+    this._enhance(panel, { gain: 0.8 })
+    this.panelMaterial = panel
     this.defaultMaterials = this._makeComponentMaterials('default')
 
     assembly.children.forEach(child => {
@@ -529,9 +543,10 @@ export class TestBenchScene {
       child.traverse(obj => { if (obj.isMesh) meshes.push(obj) })
       meshes.forEach(obj => {
         const wasTransparent = obj.material && obj.material.transparent && obj.material.opacity < 0.95
+        const asPanel = wasTransparent && mats.category === 'frame'
         if (obj.material) replaced.add(obj.material)
-        obj.material = wasTransparent ? glass : mats.material
-        obj.castShadow = !wasTransparent
+        obj.material = asPanel ? panel : mats.material
+        obj.castShadow = !asPanel
         obj.receiveShadow = true
         // 轮廓线作为子对象，跟随网格变换
         const edges = new THREE.LineSegments(new THREE.EdgesGeometry(obj.geometry, EDGE_THRESHOLD_DEG), mats.edgeMaterial)
@@ -565,7 +580,8 @@ export class TestBenchScene {
 
     const span = Math.max(size.x, size.z)
     this.shadowPlane.scale.set(span * 4, span * 4, 1)
-    this.basePlate.scale.set(span * 1.45, span * 1.45, 1)
+    this.basePlate.scale.set(span * 1.05, span * 1.05, 1)
+    this.basePlate.material.opacity = 0.55
     this.grids.forEach(g => g.scale.setScalar(span * 6))
     this.fog = new THREE.Fog(FOG_COLOR, radius * 3.5, radius * 9)
     this.fx.scanWidth.value = size.y * 0.05
@@ -616,6 +632,7 @@ export class TestBenchScene {
     this.edgeObjects.forEach(e => { e.visible = style.edges })
     this.effects = !!style.effects
     this.fxGroup.visible = this.effects
+    this.fx.flowStrength.value = this.effects ? 1 : 0
     if (!this.effects) {
       this.fx.scanStrength.value = 0
       this.controls.autoRotate = false
@@ -783,6 +800,7 @@ export class TestBenchScene {
       active = true
     }
     if (!this.effects || !this.modelBox) return active
+    this.fx.fxTime.value = now / 1000
 
     // 周期扫描光带
     if (!this.intro) {
@@ -800,8 +818,8 @@ export class TestBenchScene {
     // 地面波纹
     this.ripples.forEach((ripple, i) => {
       const t = ((now / RIPPLE_PERIOD_MS) + i / RIPPLE_COUNT) % 1
-      ripple.scale.setScalar(this.rippleSpan * (0.2 + 0.55 * t))
-      ripple.material.opacity = 0.45 * (1 - t) * Math.min(1, t * 6)
+      ripple.scale.setScalar(this.rippleSpan * (0.18 + 0.4 * t))
+      ripple.material.opacity = 0.22 * (1 - t) * Math.min(1, t * 6)
     })
 
     // 上升粒子
@@ -905,7 +923,8 @@ export class TestBenchScene {
       const candidates = (this.colorMode !== 'none' && comp.colorBy[this.colorMode]) || comp.fields
       const field = candidates.find(f => this.featureMap[f]) || candidates[0]
       const stat = field && this.featureMap[field]
-      comp.label2d.valueEl.textContent = stat ? `${formatValue(stat.avg)} ${fieldUnit(field)}`.trim() : '--'
+      comp.label2d.valueEl.textContent = stat ? `${formatValue(stat.avg)} ${fieldUnit(field)}`.trim() : ''
+      comp.label2d.el.classList.toggle('no-data', !stat) // 没有数据时只显示名称，标签更小
       comp.label2d.el.title = field || ''
       comp.label2d.el.classList.toggle('is-alarm', this.alarms.has(comp.key))
       comp.label2d.el.classList.toggle('is-active', comp.key === this.selectedKey)

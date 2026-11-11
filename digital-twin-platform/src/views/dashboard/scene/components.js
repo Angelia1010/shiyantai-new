@@ -88,7 +88,7 @@ export const STYLES = {
     fog: true,
     effects: true, // 扫描光带、波纹、粒子、自转
     materials: {
-      testPiece: { color: 0xe07a2e, metalness: 0.45, roughness: 0.4, glow: 0.18, edge: 0xffb070, edgeOpacity: 0.7 },
+      testPiece: { color: 0xe07a2e, metalness: 0.45, roughness: 0.4, glow: 0.15, edge: 0xffc48a, edgeOpacity: 0.35 },
       supplyPipe: { color: 0x14b8d8, metalness: 0.4, roughness: 0.35, glow: 0.45, edge: 0x67e8f9, edgeOpacity: 0.8 },
       returnPipe: { color: 0x22c55e, metalness: 0.4, roughness: 0.35, glow: 0.45, edge: 0x86efac, edgeOpacity: 0.8 },
       loopPipe: { color: 0x8b5cf6, metalness: 0.4, roughness: 0.35, glow: 0.4, edge: 0xc4b5fd, edgeOpacity: 0.7 },
@@ -137,9 +137,9 @@ export const LEGEND = [
  * focus 指定部件时，以该部件的包围盒为准。
  */
 export const VIEWS = {
-  overview: { label: '总览', direction: [1, 0.75, 1.15], distance: 1.25 },
-  front: { label: '正视', direction: [0, 0.18, 1], distance: 1.35 },
-  top: { label: '俯视', direction: [0.001, 1, 0.02], distance: 1.3 },
+  overview: { label: '总览', direction: [1, 0.75, 1.15], distance: 1.08 },
+  front: { label: '正视', direction: [0, 0.28, 1], distance: 1.1 },
+  top: { label: '俯视', direction: [0.001, 1, 0.02], distance: 1.1 },
   pump: { label: '被试件', direction: [1, 0.6, 1], distance: 1.6, focus: '被试件1高低压双联泵' },
   tank: { label: '油箱区', direction: [-1, 0.7, 1], distance: 1.8, focus: '循环油箱' }
 }

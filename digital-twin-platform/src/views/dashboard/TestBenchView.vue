@@ -479,6 +479,11 @@ $glass: rgba(8, 18, 34, 0.72);
     &::after { left: 15%; }
   }
 }
+.test-bench-view .tb-label.no-data {
+  padding: 2px 8px;
+  .tb-label__name { color: #cfe6f7; }
+  .tb-label__value { display: none; }
+}
 .test-bench-view .tb-label__value {
   color: #e6f6ff;
   font-size: 13px;
