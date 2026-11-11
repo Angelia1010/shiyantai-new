@@ -14,14 +14,16 @@
 
 - 开发时由 `vue.config.js` 的代理转发 `/api/*`，生产环境由 Nginx 转发（`deploy/nginx.conf`）。
 - 所有后端默认只监听 `127.0.0.1`；除 `/health` 与登录接口外都要求请求头 `X-Token`。令牌由任务服务签发，各服务用同一个 `SECRET_KEY` 校验。
-- 前端提交的数据目录必须位于 `DATA_ROOTS` 配置的目录内；文件名可以带子目录，但不能跳出该目录。
+- 数据目录在前端填写（工作台“数据目录”、自动诊断配置页），后端校验后登记到 `pump_test_bench/data/data_dirs.json`，
+  所有服务共用；`.env` 的 `DATA_ROOTS` 只是可选的预置目录。接口只能访问预置或登记过的目录，
+  登记时要求目录存在且不是磁盘根目录或系统目录；文件名可以带子目录，但不能跳出该目录。
 
 ### 实时监控（`pump_test_bench/app/core/live_monitor.py`）
 
 试验台通过文件共享把数据写到一个目录，系统这样对接：
 
-1. 在工作台右上角“数据目录”里设置该目录（也可在“自动诊断”实时模式中设置）。目录会保存到
-   `pump_test_bench/data/live_monitor.json`，文件服务重启后自动恢复。
+1. 在工作台右上角“数据目录”里填写该目录的完整路径（也可在“自动诊断”实时模式中填写），
+   目录会自动登记并保存到 `pump_test_bench/data/live_monitor.json`，文件服务重启后自动恢复。
 2. 文件服务每 `LIVE_SCAN_SECONDS` 秒扫描一次目录（含子目录）。用定时扫描而不用文件系统通知，
    是因为网络共享（SMB）上的变化通知不可靠。
 3. 正在变大的文件只读新增的完整行（没写完的半行留到下次），按时间列每 1 秒聚合成一帧（max/min/avg）。
@@ -31,7 +33,7 @@
 没有试验台时可以用回放工具模拟“边测边写”：
 
 ```bash
-# 目标目录要在 DATA_ROOTS 内，并在工作台里把数据目录设为它
+# 然后在工作台“数据目录”里填写目标目录的完整路径
 python -m pump_test_bench.tools.replay_data pump_test_bench/samples/标准台样例 --to 数据/实时 --speed 1 --loop
 ```
 
@@ -69,7 +71,7 @@ X1 = 质量流量均值 / 3600（kg/s），X2 = 介质密度；仿真转速 Y = 
 
 ## 快速开始（Windows）
 
-1. **配置**：复制 `.env.example` 为 `.env`，至少填写 `SECRET_KEY`、`ADMIN_PASSWORD`，并把 `DATA_ROOTS` 设为试验数据所在目录。
+1. **配置**：复制 `.env.example` 为 `.env`，至少填写 `SECRET_KEY`、`ADMIN_PASSWORD`。数据目录在前端填写，不需要改 `.env`。
 2. **后端**：
    ```powershell
    conda env create -f pump_test_bench/environment.yml   # 首次

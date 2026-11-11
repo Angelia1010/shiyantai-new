@@ -2,6 +2,21 @@ import request from '@/utils/request'
 
 const BASE = '/api/file'
 
+/** 允许访问的数据目录 → { preset: [.env 预置], registered: [前端登记] } */
+export function getDataDirs() {
+  return request({ url: `${BASE}/data-dirs`, method: 'get', silent: true })
+}
+
+/** 登记数据目录（必须是已存在的完整路径）→ { path }。silent 为 true 时出错不弹全局提示 */
+export function addDataDir(path, silent = false) {
+  return request({ url: `${BASE}/data-dirs`, method: 'post', data: { path }, silent })
+}
+
+/** 取消登记数据目录 */
+export function removeDataDir(path) {
+  return request({ url: `${BASE}/data-dirs`, method: 'delete', params: { path } })
+}
+
 /** 目录下的数据文件 → { path, files: [相对路径] }。recursive 为 true 时包含子目录。 */
 export function listFiles(path, recursive = false) {
   return request({ url: `${BASE}/files`, method: 'get', params: { path, recursive: recursive ? 1 : 0 } })

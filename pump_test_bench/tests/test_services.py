@@ -147,6 +147,26 @@ def test_live_monitor_endpoints(file_client, sample_dir, token, monkeypatch):
     assert "36-38摄氏度/run.txt" in listed
 
 
+def test_data_dirs_registered_from_frontend(file_client, env, tmp_path, token):
+    outside = tmp_path / "bench_share"  # 不在 DATA_ROOTS 内
+    outside.mkdir()
+    (outside / "a.txt").write_text("时间\t值\n10:00:00\t1\n", encoding="utf-8")
+    h = auth(token)
+    assert file_client.get(f"/files?path={outside}", headers=h).status_code == 400  # 未登记
+
+    for bad, reason in (("/", "根目录"), ("/etc", "系统目录"), (str(tmp_path / "nope"), "不存在"), ("rel/dir", "完整路径")):
+        resp = file_client.post("/data-dirs", headers=h, json={"path": bad})
+        assert resp.status_code == 400 and reason in resp.get_json()["error"], bad
+
+    assert file_client.post("/data-dirs", headers=h, json={"path": str(outside)}).status_code == 200
+    dirs = file_client.get("/data-dirs", headers=h).get_json()
+    assert dirs["registered"] == [str(outside)] and dirs["preset"] == [str(env)]
+    assert file_client.get(f"/files?path={outside}", headers=h).get_json()["files"] == ["a.txt"]
+
+    assert file_client.delete(f"/data-dirs?path={outside}", headers=h).status_code == 200
+    assert file_client.get(f"/files?path={outside}", headers=h).status_code == 400
+
+
 def test_file_names_cannot_escape_data_dir(file_client, sample_dir, token):
     for bad in ("../x.txt", "..\\x.txt", "/etc/passwd.txt", "C:/x.txt", "a/../../x.txt"):
         resp = file_client.get("/files/page", headers=auth(token),

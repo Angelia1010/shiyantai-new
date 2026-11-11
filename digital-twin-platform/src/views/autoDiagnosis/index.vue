@@ -69,7 +69,7 @@ import FileSelectStep from './components/FileSelectStep.vue'
 import DiagnosisExecStep from './components/DiagnosisExecStep.vue'
 import ResultDisplayStep from './components/ResultDisplayStep.vue'
 import { Cancelled, DiagnosisPipeline } from './pipeline'
-import { getWatchEvents, setWatchPath } from '@/api/files'
+import { addDataDir, getWatchEvents, setWatchPath } from '@/api/files'
 import { downloadReport } from '@/api/tasks'
 import { errorMessage } from '@/utils/request'
 import { createTicker } from '@/utils/backgroundTicker'
@@ -160,9 +160,17 @@ export default {
     removeVariable(index) {
       if (this.variableConfigs.length > 1) this.variableConfigs.splice(index, 1)
     },
-    handleConfigNext() {
+    async handleConfigNext() {
       if (!this.config.dataPath.trim()) {
         this.$message.warning('请输入试验数据路径')
+        return
+      }
+      // 前端填写的目录先登记到后端（已登记的直接通过），之后读文件、监控都用它
+      try {
+        const { path } = await addDataDir(this.config.dataPath.trim(), true)
+        this.config.dataPath = path
+      } catch (error) {
+        this.$message.error(errorMessage(error))
         return
       }
       if (this.config.diagnosisMode === 'file') {

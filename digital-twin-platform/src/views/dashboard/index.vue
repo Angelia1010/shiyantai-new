@@ -187,8 +187,8 @@
           </div>
           <div class="modal-body">
             <p class="path-hint">
-              填写试验台写入数据文件的目录（共享目录的映射盘符或网络路径均可），其下各级子目录会一起监控。
-              目录必须在服务器配置项 DATA_ROOTS 允许的范围内。设置后会保存，服务重启后自动恢复。
+              填写试验台写入数据文件的目录（服务器上能访问到的完整路径，共享目录的映射盘符或网络路径均可），
+              其下各级子目录会一起监控。设置后会保存，服务重启后自动恢复。
             </p>
             <input
               v-model.trim="pathDialog.value"
@@ -197,6 +197,16 @@
               @keyup.enter="savePath"
             >
             <p v-if="pathDialog.error" class="path-error">{{ pathDialog.error }}</p>
+            <template v-if="pathDialog.dirs.length">
+              <div class="dir-title">已登记的数据目录（点击选用）</div>
+              <div v-for="dir in pathDialog.dirs" :key="dir.path" class="dir-item">
+                <span class="dir-path" :title="dir.path" @click="pathDialog.value = dir.path">
+                  <i class="el-icon-folder" />{{ dir.path }}
+                </span>
+                <span v-if="dir.preset" class="dir-tag">预置</span>
+                <i v-else class="el-icon-delete dir-remove" title="取消登记" @click="removeDir(dir.path)" />
+              </div>
+            </template>
           </div>
           <div class="modal-foot">
             <button class="text-btn" @click="pathDialog.visible = false">取消</button>
@@ -219,7 +229,7 @@
  * 诊断结果：“自动诊断”运行时通过 BroadcastChannel 推送；没有推送时显示最近的诊断任务。
  */
 import screenfull from 'screenfull'
-import { getLiveFrames, setWatchPath } from '@/api/files'
+import { getDataDirs, getLiveFrames, removeDataDir, setWatchPath } from '@/api/files'
 import { downloadReport, getReport, listTasks } from '@/api/tasks'
 import { errorMessage } from '@/utils/request'
 import { MessageType, openChannel } from '@/utils/broadcastChannel'
@@ -268,7 +278,7 @@ export default {
       featureMap: {},
       history: Object.fromEntries(TRACKED_FIELDS.map(f => [f, []])),
       live: { state: 'off', path: null, file: null, frameTime: '' },
-      pathDialog: { visible: false, value: '', saving: false, error: '' },
+      pathDialog: { visible: false, value: '', saving: false, error: '', dirs: [] },
       diagnosisStatus: '',
       records: [],
       latestResult: null,
@@ -389,7 +399,28 @@ export default {
       for (const field of TRACKED_FIELDS) this.history[field] = []
     },
     openPathDialog() {
-      this.pathDialog = { visible: true, value: this.live.path || '', saving: false, error: '' }
+      this.pathDialog = { visible: true, value: this.live.path || '', saving: false, error: '', dirs: [] }
+      this.loadDirs()
+    },
+    async loadDirs() {
+      try {
+        const { preset, registered } = await getDataDirs()
+        this.pathDialog.dirs = [
+          ...registered.map(path => ({ path, preset: false })),
+          ...preset.map(path => ({ path, preset: true }))
+        ]
+      } catch (e) {
+        this.pathDialog.dirs = []
+      }
+    },
+    async removeDir(path) {
+      try {
+        await this.$confirm(`取消登记后将不能再访问该目录：${path}`, '取消登记', { type: 'warning' })
+      } catch (e) {
+        return // 用户取消
+      }
+      await removeDataDir(path)
+      this.loadDirs()
     },
     async savePath() {
       if (!this.pathDialog.value || this.pathDialog.saving) return
@@ -1081,6 +1112,42 @@ $return: #fbbf24;
   font-size: 13px;
   outline: none;
   &:focus { border-color: $accent; }
+}
+.dir-title {
+  margin: 16px 0 6px;
+  color: $muted;
+  font-size: 12px;
+}
+.dir-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  &:hover { background: rgba(56, 189, 248, 0.06); }
+}
+.dir-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: $text;
+  cursor: pointer;
+  i { margin-right: 6px; color: $accent; }
+  &:hover { color: $bright; }
+}
+.dir-tag {
+  font-size: 11px;
+  color: $muted;
+  border: 1px solid $border;
+  border-radius: 3px;
+  padding: 0 5px;
+}
+.dir-remove {
+  color: $muted;
+  cursor: pointer;
+  &:hover { color: $bad; }
 }
 .path-error {
   margin: 8px 0 0;

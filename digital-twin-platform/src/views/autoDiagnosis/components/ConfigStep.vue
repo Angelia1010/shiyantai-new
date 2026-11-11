@@ -10,15 +10,17 @@
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="试验数据路径" required>
-              <el-input 
-                v-model="localConfig.dataPath" 
-                placeholder="请输入试验数据文件夹路径"
+              <el-autocomplete
+                v-model="localConfig.dataPath"
+                :fetch-suggestions="suggestDirs"
+                placeholder="完整路径，如 D:/试验数据 或 //主机名/共享名（首次使用会自动登记）"
                 clearable
+                style="width: 100%"
               >
                 <template #prepend>
                   <i class="el-icon-folder"></i>
                 </template>
-              </el-input>
+              </el-autocomplete>
             </el-form-item>
           </el-col>
           <el-col :span="6">
@@ -190,6 +192,8 @@
 </template>
 
 <script>
+import { getDataDirs } from '@/api/files'
+
 export default {
   name: 'ConfigStep',
   props: {
@@ -224,6 +228,18 @@ export default {
     }
   },
   methods: {
+    /** 输入框下拉：已登记 / 预置的数据目录 */
+    async suggestDirs(query, callback) {
+      try {
+        const { preset, registered } = await getDataDirs()
+        const keyword = (query || '').toLowerCase()
+        callback([...registered, ...preset]
+          .filter(dir => !keyword || dir.toLowerCase().includes(keyword))
+          .map(value => ({ value })))
+      } catch (e) {
+        callback([])
+      }
+    },
     handleNext() {
       this.$emit('next')
     }

@@ -3,10 +3,13 @@
 负责列出数据目录中的文件、分页读取试验数据，以及实时监控试验台正在写入的数据文件。
 
 接口一览：
+    GET  /data-dirs                           允许访问的数据目录（.env 预置 + 前端登记）
+    POST /data-dirs {path}                    登记数据目录（必须存在，不能是磁盘根目录或系统目录）
+    DELETE /data-dirs?path=                   取消登记
     GET  /files?path=&recursive=1             列出目录（及子目录）下的数据文件，返回相对路径
     GET  /files/page?path=&file_name=&page=&page_size=   分页读取文件内容（file_name 可带子目录）
     GET  /watch                               当前监控目录及状态
-    POST /watch {path}                        切换监控目录（会保存，服务重启后自动恢复）
+    POST /watch {path}                        切换监控目录（自动登记该目录；会保存，服务重启后自动恢复）
     GET  /watch/events?since=<seq>            序号 since 之后的“文件写完”事件（自动诊断用）
     GET  /live/status                         实时监控状态：目录、当前文件、是否有数据在写入
     GET  /live/frames?since=<seq>&limit=      序号 since 之后的实时特征帧（工作台用）
@@ -25,7 +28,7 @@ from pump_test_bench.app.core.live_monitor import LiveMonitor
 from shared.config import get_settings
 from shared.flask_app import create_app, json_body
 from shared.logging_setup import setup_logging
-from shared.paths import resolve_data_dir, resolve_data_file
+from shared.paths import register_data_dir, registered_dirs, resolve_data_dir, resolve_data_file, unregister_data_dir
 
 SERVICE_NAME = "file_service"
 logger = logging.getLogger(SERVICE_NAME)
@@ -59,6 +62,25 @@ def _int_arg(name: str, default: int) -> int:
         raise ValueError(f"参数 {name} 必须是整数") from None
 
 
+@app.get("/data-dirs")
+def get_data_dirs():
+    preset = [str(p) for p in get_settings().data_roots]
+    return jsonify({"preset": preset, "registered": [str(p) for p in registered_dirs()]})
+
+
+@app.post("/data-dirs")
+def add_data_dir():
+    path = register_data_dir(json_body().get("path"))
+    logger.info("登记数据目录：%s", path)
+    return jsonify({"path": str(path)})
+
+
+@app.delete("/data-dirs")
+def remove_data_dir():
+    unregister_data_dir(request.args.get("path"))
+    return jsonify({"ok": True})
+
+
 @app.get("/files")
 def list_files():
     directory = resolve_data_dir(request.args.get("path"))
@@ -87,7 +109,7 @@ def get_watch():
 
 @app.post("/watch")
 def set_watch():
-    directory = resolve_data_dir(json_body().get("path"))
+    directory = register_data_dir(json_body().get("path"))
     monitor = get_monitor()
     monitor.watch(directory)
     return jsonify({**monitor.status(), "latest_event_seq": monitor.events_since(0)["latest_seq"]})
