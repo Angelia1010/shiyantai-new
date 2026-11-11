@@ -39,7 +39,8 @@ const NEUTRAL_EDGE = new THREE.Color(0x29435f)
 export const COLOR_STOPS = ['#2563eb', '#06b6d4', '#22c55e', '#facc15', '#ef4444']
 const STOP_COLORS = COLOR_STOPS.map(c => new THREE.Color(c))
 // 显示悬浮数值标签的部件
-const LABELED = ['被试件1高低压双联泵', '供油管路', '回油管路', '回油流量计1', '回油流量计2']
+// （管路贯穿整台设备，标签位置没有意义，不加）
+const LABELED = ['被试件1高低压双联泵', '回油流量计1', '回油流量计2']
 
 // 科技风动态效果
 const INTRO_MS = 2600 // 加载后：镜头推进 + 模型自下而上“生成”
@@ -602,7 +603,7 @@ export class TestBenchScene {
     this.styleName = STYLES[name] ? name : 'tech'
     const style = STYLES[this.styleName]
     this.renderer.toneMappingExposure = style.exposure
-    this.rimUniforms.rimStrength.value = style.rim
+    this.fx.rimStrength.value = style.rim
     this.scene.fog = style.fog && this.fog ? this.fog : null
     this.grids.forEach(g => { g.visible = style.fog })
     this.edgeObjects.forEach(e => { e.visible = style.edges })
