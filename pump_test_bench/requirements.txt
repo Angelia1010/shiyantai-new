@@ -1,0 +1,17 @@
+# 后端服务依赖（Python 3.11）。安装：pip install -r pump_test_bench/requirements.txt
+flask>=2.3,<4
+itsdangerous>=2.1
+pandas>=2.0
+openpyxl>=3.1
+xlrd>=2.0          # 读取旧版 .xls
+watchdog>=3.0
+python-docx>=1.0
+numpy>=1.24
+requests>=2.31
+# 大模型分析服务
+fastapi>=0.100
+uvicorn>=0.23
+npTDMS>=1.7        # 读取 TDMS 文件
+# redis>=5.0       # 可选：配置 REDIS_URL 时需要
+# 测试
+pytest>=7

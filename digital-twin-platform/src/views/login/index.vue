@@ -19,7 +19,7 @@
         <el-input
           ref="username"
           v-model="loginForm.username"
-          placeholder="Username"
+          placeholder="用户名"
           name="username"
           type="text"
           tabindex="1"
@@ -36,7 +36,7 @@
           ref="password"
           v-model="loginForm.password"
           :type="passwordType"
-          placeholder="Password"
+          placeholder="密码"
           name="password"
           tabindex="2"
           auto-complete="on"
@@ -56,47 +56,22 @@
         @click.native.prevent="handleLogin"
         >登录</el-button
       >
-
-      <!-- <div class="tips">
-        <span style="margin-right:20px;">username: admin</span>
-        <span> password: any</span>
-      </div> -->
     </el-form>
   </div>
 </template>
 
 <script>
-import { validUsername } from "@/utils/validate";
-
 export default {
   name: "Login",
   data() {
-    const validateUsername = (rule, value, callback) => {
-      if (!validUsername(value)) {
-        callback(new Error("Please enter the correct user name"));
-      } else {
-        callback();
-      }
-    };
-    const validatePassword = (rule, value, callback) => {
-      if (value.length < 6) {
-        callback(new Error("The password can not be less than 6 digits"));
-      } else {
-        callback();
-      }
-    };
     return {
       loginForm: {
-        username: "admin",
-        password: "111111",
+        username: "",
+        password: "",
       },
       loginRules: {
-        username: [
-          { required: true, trigger: "blur", validator: validateUsername },
-        ],
-        password: [
-          { required: true, trigger: "blur", validator: validatePassword },
-        ],
+        username: [{ required: true, trigger: "blur", message: "请输入用户名" }],
+        password: [{ required: true, trigger: "blur", message: "请输入密码" }],
       },
       loading: false,
       passwordType: "password",
@@ -105,7 +80,7 @@ export default {
   },
   watch: {
     $route: {
-      handler: function (route) {
+      handler(route) {
         this.redirect = route.query && route.query.redirect;
       },
       immediate: true,
@@ -113,31 +88,22 @@ export default {
   },
   methods: {
     showPwd() {
-      if (this.passwordType === "password") {
-        this.passwordType = "";
-      } else {
-        this.passwordType = "password";
-      }
+      this.passwordType = this.passwordType === "password" ? "" : "password";
       this.$nextTick(() => {
         this.$refs.password.focus();
       });
     },
     handleLogin() {
-      this.$refs.loginForm.validate((valid) => {
-        if (valid) {
-          this.loading = true;
-          this.$store
-            .dispatch("user/login", this.loginForm)
-            .then(() => {
-              this.$router.push({ path: this.redirect || "/home" });
-              this.loading = false;
-            })
-            .catch(() => {
-              this.loading = false;
-            });
-        } else {
-          console.log("error submit!!");
-          return false;
+      this.$refs.loginForm.validate(async (valid) => {
+        if (!valid) return;
+        this.loading = true;
+        try {
+          await this.$store.dispatch("user/login", this.loginForm);
+          this.$router.push({ path: this.redirect || "/" });
+        } catch (e) {
+          // 错误提示已由请求拦截器显示
+        } finally {
+          this.loading = false;
         }
       });
     },

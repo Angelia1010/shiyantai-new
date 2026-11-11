@@ -320,9 +320,6 @@ export default {
           this.scene.add(this.model);
 
           this.animate();
-
-          window.parent.postMessage({ type: "hideLoading" }, "*");
-          window.parent.hideLoading();
         });
       });
     },

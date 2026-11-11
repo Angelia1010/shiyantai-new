@@ -95,7 +95,10 @@
 </template>
 
 <script>
-import { fileListAPI } from '@/api/home'
+import { listFiles } from '@/api/files'
+
+const escapeHtml = text => text.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
+const escapeRegExp = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 export default {
   name: 'FileSelectStep',
@@ -145,10 +148,9 @@ export default {
       
       this.loading = true
       try {
-        const response = await fileListAPI(this.config.dataPath)
+        const response = await listFiles(this.config.dataPath)
         this.files = response.files || []
       } catch (error) {
-        this.$message.error('加载文件列表失败: ' + (error.message || error))
         this.files = []
       } finally {
         this.loading = false
@@ -162,13 +164,13 @@ export default {
         this.localSelectedFile = ''
       }
     },
+    // 文件名和关键字都先转义再高亮，避免 v-html 注入和正则语法错误
     highlightText(text) {
-      if (!this.searchKeyword.trim()) {
-        return text
-      }
+      const safe = escapeHtml(text)
       const keyword = this.searchKeyword.trim()
-      const regex = new RegExp(`(${keyword})`, 'gi')
-      return text.replace(regex, '<span class="highlight-text">$1</span>')
+      if (!keyword) return safe
+      const regex = new RegExp(`(${escapeRegExp(escapeHtml(keyword))})`, 'gi')
+      return safe.replace(regex, '<span class="highlight-text">$1</span>')
     }
   }
 }

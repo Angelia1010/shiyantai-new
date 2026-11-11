@@ -1,313 +1,69 @@
-# AMESim Server
+# AMESim 仿真服务
 
-## 项目简介
+把 Simcenter Amesim 2021.1 的 Python API（`ame_apy`）封装成 HTTP 接口，供平台的“自动诊断”流程设置参数、运行仿真并读取结果。
 
-本项目使用 AMESim 2021.1 版本 API 进行二次开发，通过 Flask REST API 将 AMESim 的接口函数封装为 HTTP 服务，使得任何支持 HTTP 请求的语言（Python、Java、JavaScript 等）都可以轻松调用 AMESim 的仿真功能。
+- 默认地址 `http://127.0.0.1:5003`，前端经代理以 `/api/amesim` 访问；
+- 所有接口（`/health` 除外）都要求请求头 `X-Token` 携带登录令牌，令牌由任务服务 `POST /auth/login` 签发；
+- 模型文件（`.ame`）和仿真数据文件（`.data`）只能放在模型目录 `AMESIM_MODEL_DIR`（默认 `AMESim_server/model/`）中，接口只接受纯文件名；
+- AMESim API 不是线程安全的，服务单线程运行，请求依次执行。多人同时使用会共用同一个已打开的模型。
 
-## 主要功能
+## 启动
 
-- ✅ **模型管理**：打开、关闭 AMESim 模型文件
-- ✅ **参数管理**：读取和设置模型的运行参数、全局参数、部件参数
-- ✅ **仿真控制**：运行仿真实验
-- ✅ **结果获取**：获取仿真变量的结果数据，支持自定义格式输出（JSON）
-- ✅ **RESTful API**：标准的 HTTP REST 接口，易于集成
-- ✅ **跨域支持**：支持前端页面直接调用
+1. 设置环境变量 `AME` 指向 AMESim 安装目录；
+2. 在仓库根目录准备好 `.env`（参考 `.env.example`）；
+3. 双击 `startAmeServer.bat`，或在仓库根目录执行：
 
-## 技术栈
-
-- **开发语言**：Python
-- **Web框架**：Flask 2.3.3
-- **仿真平台**：Simcenter Amesim 2021.1
-- **通信协议**：HTTP/HTTPS (端口 5003)
-- **数据格式**：JSON
-- **跨域支持**：Flask-CORS
-
-## 快速开始
-
-### 环境要求
-
-- Windows 操作系统
-- Simcenter Amesim 2021.1
-- 设置 `AME` 环境变量指向 AMESim 安装目录
-
-### 安装依赖
-
-```bash
-# 使用AMESim自带的Python环境安装Flask
-cmd:"%AME%\sys\python\win64\python.exe" -m pip install -r requirements.txt
-powershell:"$env:AME\sys\python\win64\python.exe" -m pip install -r requirements.txt
+```bat
+"%AME%\sys\python\win64\python.exe" -m pip install -r AMESim_server\requirements.txt
+"%AME%\sys\python\win64\python.exe" -m AMESim_server.src.AmeSimuSessionServer
 ```
 
-### 启动服务器
+如果 `ame_apy` 导入失败，服务会直接退出并在日志里说明原因。
 
-```batch
-# Windows
-startAmeServer.bat
-```
+## 接口
 
-服务器将在 `http://0.0.0.0:5003` 启动
+成功响应为 `{"success": true, ...}`，失败响应为 `{"error": "原因"}` 加相应的 HTTP 状态码。
 
-### Python客户端调用示例
+| 方法 | 路径 | 请求 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/health` | — | 健康检查，无需令牌 |
+| POST | `/api/init` | — | 初始化 AMESim API |
+| POST | `/api/close` | — | 关闭 AMESim API |
+| POST | `/api/model/open` | `{"filePath": "pump.ame"}` | 打开模型目录下的模型 |
+| POST | `/api/model/close` | — | 关闭模型（不保存） |
+| GET | `/api/model/parameters` | — | 运行参数、全局参数、部件参数 |
+| PUT | `/api/model/parameters/run` | `{"parameter", "value"}` | 设置运行参数，如 `stop_time_s` |
+| PUT | `/api/model/parameters/global` | `{"parameter", "value"}` | 设置全局参数 |
+| PUT | `/api/model/parameters/component` | `{"parameter", "value"}` | 设置部件参数，如 `speed@pmover01` |
+| POST | `/api/simulation/run` | — | 运行仿真（同步，跑完才返回） |
+| GET | `/api/simulation/variable?path=` | — | 单个变量的信息和取值 |
+| POST | `/api/simulation/results` | `{"variables": {"别名": "变量路径"}}` | 以第一个变量的时间点为轴的结果表，缺失值为 `null` |
+| GET | `/api/simulation/data-file?fileName=` | — | 读取模型目录下的 `.data` 文件内容 |
+| POST | `/api/simulation/input-data` | `{"data": [y1, y2, ...]}` | 把数值写成一维表格 `input.data`（X 从 0.1 起，步长 0.1） |
+
+## 客户端示例
+
+Python（`src/client.py`）：
 
 ```python
-from src.client import AMESimClient
-import json
+from AMESim_server.src.client import AMESimClient, login
 
-# 创建客户端
-client = AMESimClient('http://localhost:5003')
-
-# 初始化API
+token = login("http://127.0.0.1:5001", "admin", "你的密码")
+client = AMESimClient(token)
 client.init_api()
-
-# 打开模型
-client.open_model('Model.ame')
-
-# 运行仿真
+client.open_model("pump.ame")
 client.run_simulation()
-
-# 获取仿真结果
-result = client.get_simulation_results(
-    timeVariablePath='time',
-    speedVariablePath='speed',
-    heightVariablePath='height'
-)
-
-print(json.dumps(result, indent=2, ensure_ascii=False))
+print(client.get_simulation_results({"speed": "pin@pump01", "flow": "qout@pump01"}))
 ```
 
-### Java客户端调用示例
+Java（`src/java/AMESimClient.java`，Java 8+，依赖 Gson）：
 
 ```java
-import com.amesim.client.AMESimClient;
-import com.google.gson.JsonObject;
-
-// 创建客户端
-AMESimClient client = new AMESimClient("http://localhost:5003");
-
-// 初始化API
+AMESimClient client = new AMESimClient("http://127.0.0.1:5003", token);
 client.initAPI();
-
-// 打开模型
-client.openModel("Model.ame");
-
-// 运行仿真
+client.openModel("pump.ame");
 client.runSimulation();
-
-// 获取仿真结果
-JsonObject result = client.getSimulationResults(
-    "time",    // 时间变量路径
-    "speed",   // 速度变量路径
-    "height"   // 高度变量路径
-);
-
-System.out.println(result);
+Map<String, String> vars = new LinkedHashMap<>();
+vars.put("speed", "pin@pump01");
+JsonObject result = client.getSimulationResults(vars);
 ```
-
-### JavaScript/前端调用示例
-
-```javascript
-// 使用fetch API
-async function runSimulation() {
-    // 初始化API
-    await fetch('http://localhost:5003/api/init', {
-        method: 'POST'
-    });
-    
-    // 打开模型
-    await fetch('http://localhost:5003/api/model/open', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-            filePath: 'Model.ame'
-        })
-    });
-    
-    // 运行仿真
-    await fetch('http://localhost:5003/api/simulation/run', {
-        method: 'POST'
-    });
-    
-    // 获取仿真结果
-    const response = await fetch(
-        'http://localhost:5003/api/simulation/results?' +
-        'timePath=time&speedPath=speed&heightPath=height'
-    );
-    const result = await response.json();
-    console.log(result);
-}
-```
-
-## API接口文档
-
-### 基础接口
-
-#### 健康检查
-```
-GET /api/health
-```
-
-#### 初始化API
-```
-POST /api/init
-```
-
-#### 关闭API
-```
-POST /api/close
-```
-
-### 模型管理
-
-#### 打开模型
-```
-POST /api/model/open
-Content-Type: application/json
-
-{
-    "filePath": "Model.ame"
-}
-```
-
-#### 关闭模型
-```
-POST /api/model/close
-```
-
-### 参数管理
-
-#### 获取所有参数
-```
-GET /api/model/parameters
-```
-
-#### 设置运行参数
-```
-PUT /api/model/parameters/run
-Content-Type: application/json
-
-{
-    "parameter": "stop_time_s",
-    "value": "10.0"
-}
-```
-
-#### 设置全局参数
-```
-PUT /api/model/parameters/global
-Content-Type: application/json
-
-{
-    "parameter": "参数名",
-    "value": "参数值"
-}
-```
-
-#### 设置部件参数
-```
-PUT /api/model/parameters/component
-Content-Type: application/json
-
-{
-    "parameter": "部件路径/参数名",
-    "value": "参数值"
-}
-```
-
-### 仿真控制
-
-#### 运行仿真
-```
-POST /api/simulation/run
-```
-
-### 结果获取
-
-#### 获取变量值
-```
-GET /api/simulation/variable?path=变量路径
-```
-
-#### 获取仿真结果（时间、速度、高度）
-```
-GET /api/simulation/results?timePath=时间路径&speedPath=速度路径&heightPath=高度路径
-```
-
-**返回格式**：
-```json
-{
-    "success": true,
-    "data": [
-        {
-            "时间(s)": 0.0,
-            "速度(m/s)": 0.0,
-            "高度(m)": 0.0
-        },
-        {
-            "时间(s)": 0.1,
-            "速度(m/s)": 1.2,
-            "高度(m)": 0.5
-        }
-    ]
-}
-```
-
-## 项目结构
-
-```
-AMESim_Server-main/
-├── src/                          # 源代码目录
-│   ├── AmeSimuSessionServer.py   # Flask服务器主程序
-│   ├── client.py                 # Python客户端示例
-│   └── java/                     # Java客户端代码
-│       ├── AMESimClient.java     # Java客户端实现
-│       └── pom.xml               # Maven配置文件
-├── model/                        # 模型文件目录
-│   └── Model.ame                 # AMESim模型文件
-├── docs/                         # 文档目录
-│   └── Java使用指南.md           # Java客户端使用指南
-├── requirements.txt             # Python依赖包
-├── startAmeServer.bat            # 启动脚本
-├── README.md                     # 项目说明文档
-├── ARCHITECTURE.md               # 架构说明文档
-└── LICENSE                       # 许可证文件
-```
-
-## 响应格式
-
-所有API接口统一返回JSON格式：
-
-**成功响应**：
-```json
-{
-    "success": true,
-    "message": "操作成功",
-    "data": { ... }  // 可选，包含返回数据
-}
-```
-
-**错误响应**：
-```json
-{
-    "success": false,
-    "error": "错误信息"
-}
-```
-
-## 文档
-
-- **[架构说明文档](ARCHITECTURE.md)**：详细的系统架构、模块说明和设计文档
-
-## 注意事项
-
-1. **环境变量**：必须正确设置 `AME` 环境变量
-2. **模型路径**：相对路径会自动从 `model/` 目录查找
-3. **端口占用**：确保 5003 端口未被其他程序占用
-4. **API调用顺序**：建议按照 `init → open → run → getResults → close` 的顺序调用
-5. **跨域请求**：已启用CORS，支持前端页面直接调用
-6. **错误处理**：所有接口都有统一的错误处理机制
-
-## 许可证
-
-详见 [LICENSE](LICENSE) 文件

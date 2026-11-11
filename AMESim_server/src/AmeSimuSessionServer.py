@@ -1,480 +1,232 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
-import json
+"""AMESim 仿真服务（默认端口 5003，前端代理前缀 /api/amesim）。
+
+把 AMESim 2021.1 的 Python API 封装成 HTTP 接口。AMESim API 同一时间只能操作一个模型，
+所以服务以单线程方式运行，请求依次执行；多人同时使用时会共用同一个已打开的模型。
+
+模型文件和仿真数据文件都只能位于 AMESIM_MODEL_DIR（默认 AMESim_server/model）目录内。
+
+启动：在仓库根目录用 AMESim 自带的 Python 执行
+    "%AME%\\sys\\python\\win64\\python.exe" -m AMESim_server.src.AmeSimuSessionServer
+或直接运行 AMESim_server/startAmeServer.bat。
+"""
+import logging
 import os
 import sys
+from pathlib import Path
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-MODEL_DIR = os.path.join(BASE_DIR, "model")
+from flask import jsonify, request
 
-project_root = os.path.dirname(BASE_DIR)
-log_config_path = os.path.join(project_root, 'log')
-sys.path.insert(0, log_config_path)
-from log_config import setup_logger
+from shared.config import get_settings
+from shared.flask_app import ApiError, create_app, json_body
+from shared.logging_setup import setup_logging
 
-logger = setup_logger('AmeSimuSessionServer')
+SERVICE_NAME = "amesim_service"
+logger = logging.getLogger(SERVICE_NAME)
 
-def StartUp():
-    ame_path = os.environ.get("AME")
-    if ame_path:
-        logger.info(f"AME path: {ame_path}")
-        module_path = os.path.join(ame_path, "scripting", "python")
-        sys.path.append(module_path)
-        sys.path.append(os.path.join(module_path, "win64"))
-        sys.path.append(os.path.join(ame_path,"win64"))
+MODEL_SUFFIXES = (".ame",)
+DATA_SUFFIXES = (".data",)
+INPUT_DATA_FILE = "input.data"
+INPUT_X_STEP = 0.1
 
-        os.environ["PATH"] = os.path.join(ame_path, "sys", "python", "win64", "DLLs") + os.pathsep + os.environ["PATH"]
-        os.environ["CONDA_DLL_SEARCH_MODIFICATION_ENABLE"] = "1"
-        os.add_dll_directory(os.path.join(ame_path,"win64"))
-        os.add_dll_directory(module_path)
-        os.add_dll_directory(os.path.join(module_path, "win64"))
 
-        os.environ["PYTHONNOUSERSITE"] = "1"
+def _prepare_ame_environment() -> None:
+    """把 AMESim 安装目录下的 Python 模块和 DLL 加入搜索路径。"""
+    ame = os.environ.get("AME")
+    if not ame:
+        raise RuntimeError("未设置环境变量 AME（应指向 AMESim 安装目录）")
+    module_path = os.path.join(ame, "scripting", "python")
+    for p in (module_path, os.path.join(module_path, "win64"), os.path.join(ame, "win64")):
+        sys.path.append(p)
+    os.environ["PATH"] = os.path.join(ame, "sys", "python", "win64", "DLLs") + os.pathsep + os.environ["PATH"]
+    os.environ["CONDA_DLL_SEARCH_MODIFICATION_ENABLE"] = "1"
+    os.environ["PYTHONNOUSERSITE"] = "1"
+    os.environ["QT_PLUGIN_PATH"] = os.path.join(ame, "win64")
+    if hasattr(os, "add_dll_directory"):
+        for p in (os.path.join(ame, "win64"), module_path, os.path.join(module_path, "win64")):
+            os.add_dll_directory(p)
 
-        os.environ["QT_PLUGIN_PATH"] = os.path.join(ame_path, "win64")
 
-StartUp()
+def _load_ame_api():
+    _prepare_ame_environment()
+    import ame_apy  # noqa: WPS433  AMESim 自带模块，只能在 AMESim 的 Python 里导入
 
-if 'ame_apy' not in sys.modules:
-    try:
-        from ame_apy import *
-    except Exception as e:
-        logger.error(f"Import error: {repr(e)}")
+    return ame_apy
 
-# 创建Flask应用
-app = Flask(__name__)
-CORS(app)  # 启用跨域支持
 
-class AmeSimuSessionServiceHandler:
-    """AMESim服务处理器类"""
-    
-    # 初始化API
-    def init_api(self):
-        AMEInitAPI()
-    
-    # 打开模型文件
-    def open_ame_file(self, ame_file_path):
-        # 如果路径是相对路径，尝试从model目录查找
-        if not os.path.isabs(ame_file_path):
-            # 尝试在model目录下查找
-            model_path = os.path.join(MODEL_DIR, ame_file_path)
-            if os.path.exists(model_path):
-                ame_file_path = model_path
-            # 如果model目录下没有，尝试当前路径
-            elif not os.path.exists(ame_file_path):
-                # 如果都不存在，使用原始路径（可能会报错，但保持原有行为）
-                pass
-        AMEOpenAmeFile(ame_file_path)
-    
-    # 关闭circuit且不保存
-    def close_circuit(self):
-        AMECloseCircuit(False)
-    
-    # 关闭API
-    def close_api(self):
-        AMECloseAPI()
-    
-    # 读取模型运行参数，全局参数，部件参数
-    def get_model_all_parameter(self):
-        total_parameter = {}
-        run_parameter = {}
-        global_parameter = {}
-        comp_parameter = {}
+ame = None  # 在 main() 中加载；导入失败时服务直接退出，不再带病运行
+app = create_app(SERVICE_NAME)
 
-        run_parameter['stop_time_s'] = AMEGetRunParameter('stop_time_s')
-        run_parameter['interval_s'] = AMEGetRunParameter('interval_s')
 
-        for gP in AMEGetGlobalParameterNames():
-            global_parameter[gP] = AMEGetGlobalParameterValue(gP)
+def _api():
+    if ame is None:
+        raise ApiError("AMESim API 未加载", 503)
+    return ame
 
-        for compline in AMECreateCompLineIteration(ame_compline_comp):
-            for parvar in AMECreateParVarIteration(compline, ame_parvar_all):
-                if AMEIsParameter(parvar):
-                    comp_parameter[AMECopyDataPath(parvar)] = AMEGetParameterValue(parvar)
 
-        total_parameter = {
-            'runParameter': run_parameter,
-            'globalParameter': global_parameter,
-            'compParameter': comp_parameter
-        }
-        return total_parameter
-    
-    # 设置运行参数
-    def set_run_parameter(self, path_of_parameter, value_of_parameter):
-        AMESetRunParameter(path_of_parameter, value_of_parameter)
+def _model_file(name, suffixes) -> Path:
+    """只允许访问模型目录下的文件，文件名不能带路径。"""
+    name = (name or "").strip()
+    if not name or name != os.path.basename(name) or name in (".", ".."):
+        raise ValueError(f"文件名不合法：{name!r}（只能是模型目录下的文件名）")
+    if not name.lower().endswith(suffixes):
+        raise ValueError(f"文件类型必须是 {', '.join(suffixes)}：{name}")
+    model_dir = get_settings().amesim_model_dir
+    path = (model_dir / name).resolve()
+    if path.parent != model_dir:
+        raise ValueError(f"文件名不合法：{name}")
+    return path
 
-    # 设置全局参数
-    def set_global_parameter(self, path_of_parameter, value_of_parameter):
-        AMESetGlobalParameterValue(path_of_parameter, value_of_parameter)
 
-    # 设置部件参数
-    def set_comp_parameter(self, path_of_parameter, value_of_parameter):
-        AMESetParameterValue(path_of_parameter, value_of_parameter)
+def _param(data: dict):
+    if "parameter" not in data or "value" not in data:
+        raise ValueError("缺少 parameter 或 value")
+    return str(data["parameter"]), data["value"]
 
-    def run_simulation(self):
-        logger.info("in AMERunSimulation")
-        AMERunSimulation()
-    
-    # 获取指定变量结果数据
-    def get_variable_values(self, path_of_variable):
-        result = {}
 
-        value_result_tuple = AMEGetVariableValues(path_of_variable)
-        value_dict = dict(value_result_tuple)
+def _ok(**extra):
+    return jsonify({"success": True, **extra})
 
-        info_dict = {}
-        variable_info = AMEGetVariableInfos(path_of_variable)
-        info_dict['path'] = path_of_variable
-        info_dict['title'] = variable_info[2]
-        info_dict['unit'] = variable_info[3]
-        
-        result['variableInfo'] = info_dict
-        result['variableValue'] = value_dict
-        return result
-    
-    # 获取仿真结果数据，返回指定格式的JSON（包含时间、速度、高度）
-    def get_simulation_results(self, variable_paths_dict):
-        """
-        获取多个变量的仿真结果，使用任一变量的时间点作为时间轴。
-        :param variable_paths_dict: 字典，如 {"speed": "qout@pump01", "height": "h@tank01"}
-        :return: 列表，每个元素为 { "时间(s)": t, "speed": v1, "height": v2, ... }
-        """
-        # 获取所有变量的数据
-        var_data_dict = {}
-        for name, path in variable_paths_dict.items():
-            raw_data = dict(AMEGetVariableValues(path))
-            var_data_dict[name] = raw_data
 
-        # 任选一个变量的时间点作为全局时间轴（假设所有变量时间一致）
-        first_var_data = next(iter(var_data_dict.values()))
-        time_points = sorted(first_var_data.keys())
+@app.post("/api/init")
+def init_api():
+    _api().AMEInitAPI()
+    return _ok()
 
-        # 构建结果列表
-        result_list = []
-        for t in time_points:
-            entry = {}
-            entry["时间(s)"] = round(float(t), 3)
-            for name in variable_paths_dict:
-                value = var_data_dict[name].get(t, 0)
-                entry[name] = round(float(value), 3)
-            result_list.append(entry)
-            # print("entry keys order:", list(entry.keys()))
-        # print(result_list)
-        return result_list
 
-# 创建服务处理器实例
-handler = AmeSimuSessionServiceHandler()
+@app.post("/api/model/open")
+def open_model():
+    path = _model_file(json_body().get("filePath"), MODEL_SUFFIXES)
+    if not path.is_file():
+        raise ApiError(f"模型文件不存在：{path.name}", 404)
+    _api().AMEOpenAmeFile(str(path))
+    return _ok(model=path.name)
 
-# ==================== API路由定义 ====================
 
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    """健康检查接口"""
-    return jsonify({
-        'status': 'ok',
-        'message': 'AMESim Server is running'
+@app.post("/api/model/close")
+def close_model():
+    _api().AMECloseCircuit(False)
+    return _ok()
+
+
+@app.post("/api/close")
+def close_api():
+    _api().AMECloseAPI()
+    return _ok()
+
+
+@app.get("/api/model/parameters")
+def get_parameters():
+    api = _api()
+    run = {name: api.AMEGetRunParameter(name) for name in ("stop_time_s", "interval_s")}
+    global_params = {name: api.AMEGetGlobalParameterValue(name) for name in api.AMEGetGlobalParameterNames()}
+    comp = {}
+    for compline in api.AMECreateCompLineIteration(api.ame_compline_comp):
+        for parvar in api.AMECreateParVarIteration(compline, api.ame_parvar_all):
+            if api.AMEIsParameter(parvar):
+                comp[api.AMECopyDataPath(parvar)] = api.AMEGetParameterValue(parvar)
+    return _ok(data={"runParameter": run, "globalParameter": global_params, "compParameter": comp})
+
+
+@app.put("/api/model/parameters/run")
+def set_run_parameter():
+    name, value = _param(json_body())
+    _api().AMESetRunParameter(name, value)
+    return _ok()
+
+
+@app.put("/api/model/parameters/global")
+def set_global_parameter():
+    name, value = _param(json_body())
+    _api().AMESetGlobalParameterValue(name, value)
+    return _ok()
+
+
+@app.put("/api/model/parameters/component")
+def set_component_parameter():
+    name, value = _param(json_body())
+    _api().AMESetParameterValue(name, str(value))
+    return _ok()
+
+
+@app.post("/api/simulation/run")
+def run_simulation():
+    logger.info("开始仿真")
+    _api().AMERunSimulation()
+    return _ok()
+
+
+@app.get("/api/simulation/variable")
+def get_variable():
+    path = (request.args.get("path") or "").strip()
+    if not path:
+        raise ValueError("缺少参数 path")
+    api = _api()
+    info = api.AMEGetVariableInfos(path)
+    return _ok(data={
+        "variableInfo": {"path": path, "title": info[2], "unit": info[3]},
+        "variableValue": dict(api.AMEGetVariableValues(path)),
     })
 
-@app.route('/api/init', methods=['POST'])
-def init_api():
-    """初始化AMESim API"""
-    try:
-        handler.init_api()
-        return jsonify({
-            'success': True,
-            'message': 'API initialized successfully'
-        })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
 
-@app.route('/api/model/open', methods=['POST'])
-def open_model():
-    """打开模型文件"""
-    try:
-        data = request.get_json()
-        if not data or 'filePath' not in data:
-            return jsonify({
-                'success': False,
-                'error': 'Missing filePath parameter'
-            }), 400
-        
-        file_path = data['filePath']
-        handler.open_ame_file(file_path)
-        return jsonify({
-            'success': True,
-            'message': f'Model opened: {file_path}'
-        })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-@app.route('/api/model/close', methods=['POST'])
-def close_model():
-    """关闭模型"""
-    try:
-        handler.close_circuit()
-        return jsonify({
-            'success': True,
-            'message': 'Model closed successfully'
-        })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-@app.route('/api/model/parameters', methods=['GET'])
-def get_parameters():
-    """获取所有模型参数"""
-    try:
-        parameters = handler.get_model_all_parameter()
-        return jsonify({
-            'success': True,
-            'data': parameters
-        })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-@app.route('/api/model/parameters/run', methods=['PUT'])
-def set_run_parameter():
-    """设置运行参数"""
-    try:
-        data = request.get_json()
-        if not data or 'parameter' not in data or 'value' not in data:
-            return jsonify({
-                'success': False,
-                'error': 'Missing parameter or value'
-            }), 400
-        
-        handler.set_run_parameter(data['parameter'], data['value'])
-        return jsonify({
-            'success': True,
-            'message': 'Run parameter set successfully'
-        })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-@app.route('/api/model/parameters/global', methods=['PUT'])
-def set_global_parameter():
-    """设置全局参数"""
-    try:
-        data = request.get_json()
-        if not data or 'parameter' not in data or 'value' not in data:
-            return jsonify({
-                'success': False,
-                'error': 'Missing parameter or value'
-            }), 400
-        
-        handler.set_global_parameter(data['parameter'], data['value'])
-        return jsonify({
-            'success': True,
-            'message': 'Global parameter set successfully'
-        })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-@app.route('/api/model/parameters/component', methods=['PUT'])
-def set_comp_parameter():
-    """设置部件参数"""
-    try:
-        data = request.get_json()
-        if not data or 'parameter' not in data or 'value' not in data:
-            return jsonify({
-                'success': False,
-                'error': 'Missing parameter or value'
-            }), 400
-        
-        handler.set_comp_parameter(str(data['parameter']), str(data['value']))
-        return jsonify({
-            'success': True,
-            'message': 'Component parameter set successfully'
-        })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-@app.route('/api/simulation/run', methods=['POST'])
-def run_simulation():
-    """运行仿真"""
-    try:
-        logger.info("in run simulation")
-        handler.run_simulation()
-        return jsonify({
-            'success': True,
-            'message': 'Simulation completed successfully'
-        })
-    except Exception as e:
-        logger.error(f"运行仿真失败: {str(e)}")
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-@app.route('/api/simulation/variable', methods=['GET'])
-def get_variable():
-    """获取指定变量的结果"""
-    try:
-        variable_path = request.args.get('path')
-        if not variable_path:
-            return jsonify({
-                'success': False,
-                'error': 'Missing path parameter'
-            }), 400
-        
-        result = handler.get_variable_values(variable_path)
-        return jsonify({
-            'success': True,
-            'data': result
-        })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-@app.route('/api/simulation/results', methods=['POST'])
+@app.post("/api/simulation/results")
 def get_simulation_results():
-    """获取仿真结果：使用任一变量的时间点作为时间轴"""
-    try:
-        data = request.get_json()
-        if not data:
-            return jsonify({'success': False, 'error': 'Request body must be JSON'}), 400
+    """{variables: {别名: 变量路径}} → 以第一个变量的时间点为时间轴的结果表。缺失的值为 null。"""
+    variables = json_body().get("variables")
+    if not isinstance(variables, dict) or not variables:
+        raise ValueError("variables 必须是非空对象，如 {\"speed\": \"qout@pump01\"}")
+    api = _api()
+    values = {alias: dict(api.AMEGetVariableValues(path)) for alias, path in variables.items()}
+    times = sorted(next(iter(values.values())).keys())
+    rows = []
+    for t in times:
+        row = {"时间(s)": round(float(t), 3)}
+        for alias in variables:
+            v = values[alias].get(t)
+            row[alias] = None if v is None else round(float(v), 3)
+        rows.append(row)
+    return _ok(data=rows)
 
-        variables = data.get('variables')
-        if not isinstance(variables, dict) or not variables:
-            return jsonify({'success': False, 'error': 'variables must be a non-empty object'}), 400
 
-        results = handler.get_simulation_results(variables)
-        return jsonify({'success': True, 'data': results})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/close', methods=['POST'])
-def close_api():
-    """关闭AMESim API"""
-    try:
-        handler.close_api()
-        return jsonify({
-            'success': True,
-            'message': 'API closed successfully'
-        })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-@app.route('/api/simulation/data-file', methods=['GET'])
+@app.get("/api/simulation/data-file")
 def read_data_file():
-    """读取仿真结果数据文件（.data文件）"""
-    try:
-        file_name = request.args.get('fileName')
-        if not file_name:
-            return jsonify({
-                'success': False,
-                'error': 'Missing fileName parameter'
-            }), 400
-        
-        file_path = os.path.join(MODEL_DIR, file_name)
-        
-        if not os.path.exists(file_path):
-            return jsonify({
-                'success': False,
-                'error': f'File not found: {file_name}'
-            }), 404
-        
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        return jsonify({
-            'success': True,
-            'data': content
-        })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+    path = _model_file(request.args.get("fileName"), DATA_SUFFIXES)
+    if not path.is_file():
+        raise ApiError(f"仿真数据文件不存在：{path.name}", 404)
+    return _ok(data=path.read_text(encoding="utf-8"))
 
-@app.route('/api/simulation/input-data', methods=['POST'])
+
+@app.post("/api/simulation/input-data")
 def write_input_data():
-    """写入仿真输入数据文件（input.data）"""
+    """把一组 Y 值写成 AMESim 一维表格文件 input.data（X 从 0.1 开始，步长 0.1）。"""
+    values = json_body().get("data")
+    if not isinstance(values, list) or not values:
+        raise ValueError("data 必须是非空数组")
     try:
-        data = request.get_json()
-        if not data or 'data' not in data:
-            return jsonify({
-                'success': False,
-                'error': 'Missing data parameter'
-            }), 400
-        
-        y_values = data['data']
-        if not isinstance(y_values, list):
-            return jsonify({
-                'success': False,
-                'error': 'Data must be an array'
-            }), 400
-        
-        input_file_path = os.path.join(MODEL_DIR, 'input.data')
-        
-        lines = []
-        lines.append('# Table format: 1D')
-        lines.append('# axis1_title = X')
-        lines.append('# axis2_title = Y')
-        
-        for i, y_val in enumerate(y_values):
-            x_val = (i + 1) * 0.1
-            x_formatted = f'{x_val:.16e}'
-            y_formatted = f'{float(y_val):.14e}'
-            lines.append(f'     {x_formatted}      {y_formatted}')
-        
-        with open(input_file_path, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(lines) + '\n')
-        
-        return jsonify({
-            'success': True,
-            'message': f'Input data file updated with {len(y_values)} data points'
-        })
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
-
-# 错误处理
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({
-        'success': False,
-        'error': 'Endpoint not found'
-    }), 404
-
-@app.errorhandler(500)
-def internal_error(error):
-    return jsonify({
-        'success': False,
-        'error': 'Internal server error'
-    }), 500
-
-if __name__ == '__main__':
-    logger.info("Starting AMESim Flask Server...")
-    logger.info("Server will be available at http://0.0.0.0:5003")
-    app.run(host='0.0.0.0', port=5003, debug=True,threaded = False)
+        ys = [float(v) for v in values]
+    except (TypeError, ValueError):
+        raise ValueError("data 中只能包含数字") from None
+    lines = ["# Table format: 1D", "# axis1_title = X", "# axis2_title = Y"]
+    lines += [f"     {(i + 1) * INPUT_X_STEP:.16e}      {y:.14e}" for i, y in enumerate(ys)]
+    target = _model_file(INPUT_DATA_FILE, DATA_SUFFIXES)
+    target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return _ok(points=len(ys))
 
 
+def main() -> None:
+    global ame
+    settings = get_settings()
+    setup_logging(SERVICE_NAME)
+    try:
+        ame = _load_ame_api()
+    except Exception:
+        logger.exception("加载 AMESim API 失败，请确认使用 AMESim 自带的 Python 启动，且已设置 AME 环境变量")
+        sys.exit(1)
+    settings.amesim_model_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("AMESim 服务启动：http://%s:%s，模型目录：%s", settings.bind_host, settings.amesim_service_port,
+                settings.amesim_model_dir)
+    # AMESim API 不是线程安全的，必须单线程运行
+    app.run(host=settings.bind_host, port=settings.amesim_service_port, threaded=False)
 
+
+if __name__ == "__main__":
+    main()

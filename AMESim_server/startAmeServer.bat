@@ -1,30 +1,23 @@
 @echo off
-REM 设置代码页为UTF-8（确保文件保存为UTF-8带BOM），以正确显示中文
 chcp 65001 >nul
+REM 用 AMESim 自带的 Python 启动 AMESim 仿真服务。配置读取仓库根目录的 .env。
 
-REM 检查环境变量是否存在
 if not defined AME (
-    echo 环境变量 AME 未定义，请先设置该环境变量！
+    echo 环境变量 AME 未定义，请先把它设置为 AMESim 安装目录。
     pause
-    exit /b
+    exit /b 1
 )
 
-REM 读取环境变量，并在后面追加一段路径（如 "\python"）
-set "PYTHON_DIR=%AME%\sys\python\win64"
+set "AME_PYTHON=%AME%\sys\python\win64\python.exe"
+REM 切换到仓库根目录，服务以模块方式启动，才能找到 shared 公共包
+cd /d "%~dp0.."
 
-REM 显示使用的Python路径（可选）
-echo 使用的Python路径为：%PYTHON_DIR%
-
-REM 检查Flask是否已安装
-echo 检查Flask依赖...
-"%PYTHON_DIR%\python.exe" -m pip show flask >nul 2>&1
+"%AME_PYTHON%" -m pip show flask >nul 2>&1
 if errorlevel 1 (
-    echo 正在安装Flask依赖...
-    "%PYTHON_DIR%\python.exe" -m pip install -r requirements.txt
+    echo 正在安装依赖...
+    "%AME_PYTHON%" -m pip install -r AMESim_server\requirements.txt
 )
 
-REM 利用该路径下的python解释器运行相对路径下的python脚本
-echo 启动AMESim Flask服务器...
-"%PYTHON_DIR%\python.exe" "./src/AmeSimuSessionServer.py"
-
+echo 启动 AMESim 服务...
+"%AME_PYTHON%" -m AMESim_server.src.AmeSimuSessionServer
 pause

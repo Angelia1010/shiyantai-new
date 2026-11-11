@@ -3,7 +3,7 @@
     <div class="bg-grid"></div>
     <div class="bg-glow"></div>
     <div class="bg-particles">
-      <div v-for="i in 20" :key="i" class="particle" :style="getParticleStyle(i)"></div>
+      <div v-for="(style, i) in particles" :key="i" class="particle" :style="style"></div>
     </div>
     
     <div class="dashboard-content">
@@ -29,10 +29,10 @@
           </div>
           <div class="status-divider"></div>
           <div class="status-item">
-            <span class="status-label">数据类型:</span>
-            <span class="status-value">{{ dataType === 'experiment' ? '实验数据' : '仿真数据' }}</span>
+            <span class="status-label">当前状态:</span>
+            <span class="status-value">{{ statusMessage }}</span>
           </div>
-          <template v-if="isRealtimeFromDiagnosis">
+          <template v-if="liveMode">
             <div class="status-divider"></div>
             <div class="status-item">
               <span class="status-label">诊断模式:</span>
@@ -42,7 +42,7 @@
         </div>
       </div>
 
-      <div class="alert-banner" v-if="isRealtimeFromDiagnosis && latestAbnormalResult">
+      <div class="alert-banner" v-if="liveMode && latestAbnormalResult">
         <div class="alert-content">
           <div class="alert-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -53,7 +53,7 @@
           </div>
           <div class="alert-text">
             <span class="alert-title">检测到异常状态</span>
-            <span class="alert-info">文件: {{ latestAbnormalResult.filename }} | 时间: {{ latestAbnormalResult.timestamp }}</span>
+            <span class="alert-info">文件: {{ latestAbnormalResult.fileName }} | 时间: {{ latestAbnormalResult.timestamp }}</span>
           </div>
         </div>
         <div class="alert-actions">
@@ -67,7 +67,7 @@
         </div>
       </div>
 
-      <div class="main-content" :class="{ 'with-sidebar': isRealtimeFromDiagnosis }">
+      <div class="main-content" :class="{ 'with-sidebar': liveMode }">
         <div class="content-main">
           <div class="model-section">
             <div class="section-header">
@@ -168,7 +168,7 @@
           </div>
         </div>
 
-        <div class="diagnosis-sidebar" v-if="isRealtimeFromDiagnosis">
+        <div class="diagnosis-sidebar" v-if="liveMode">
           <div class="sidebar-header">
             <div class="sidebar-title">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -184,7 +184,7 @@
               </span>
               <span class="stat-item abnormal">
                 <span class="stat-label">异常</span>
-                <span class="stat-value">{{ diagnosisResults.filter(r => r.status === '异常').length }}</span>
+                <span class="stat-value">{{ abnormalCount }}</span>
               </span>
             </div>
           </div>
@@ -194,12 +194,12 @@
               v-for="(result, index) in diagnosisResults" 
               :key="result.taskId" 
               class="diagnosis-item"
-              :class="{ abnormal: result.status === '异常' }"
+              :class="{ abnormal: result.result === 'abnormal' }"
             >
               <div class="item-header">
-                <div class="item-status" :class="result.status === '正常' ? 'normal' : 'abnormal'">
+                <div class="item-status" :class="result.result === 'normal' ? 'normal' : 'abnormal'">
                   <span class="status-icon">
-                    <svg v-if="result.status === '正常'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <svg v-if="result.result === 'normal'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
                       <polyline points="22 4 12 14.01 9 11.01"/>
                     </svg>
@@ -209,7 +209,7 @@
                       <line x1="12" y1="16" x2="12.01" y2="16"/>
                     </svg>
                   </span>
-                  <span class="status-text">{{ result.status }}</span>
+                  <span class="status-text">{{ result.statusText }}</span>
                 </div>
                 <span class="item-time">{{ result.timestamp }}</span>
               </div>
@@ -219,9 +219,9 @@
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
                     <polyline points="14 2 14 8 20 8"/>
                   </svg>
-                  <span>{{ result.filename }}</span>
+                  <span>{{ result.fileName }}</span>
                 </div>
-                <div class="item-fault" v-if="result.status === '异常' && result.diagnosis && result.diagnosis.fault_name">
+                <div class="item-fault" v-if="result.result === 'abnormal' && result.diagnosis.fault_name">
                   <span class="fault-label">故障类型:</span>
                   <span class="fault-value">{{ result.diagnosis.fault_name }}</span>
                 </div>
@@ -273,7 +273,7 @@
           <div class="detail-section">
             <div class="detail-row">
               <span class="detail-label">文件名称:</span>
-              <span class="detail-value">{{ selectedDiagnosisResult.filename }}</span>
+              <span class="detail-value">{{ selectedDiagnosisResult.fileName }}</span>
             </div>
             <div class="detail-row">
               <span class="detail-label">诊断时间:</span>
@@ -281,17 +281,17 @@
             </div>
             <div class="detail-row">
               <span class="detail-label">诊断结果:</span>
-              <span class="detail-value" :class="selectedDiagnosisResult.status === '正常' ? 'normal' : 'abnormal'">
-                {{ selectedDiagnosisResult.status }}
+              <span class="detail-value" :class="selectedDiagnosisResult.result === 'normal' ? 'normal' : 'abnormal'">
+                {{ selectedDiagnosisResult.statusText }}
               </span>
             </div>
-            <div class="detail-row" v-if="selectedDiagnosisResult.diagnosis && selectedDiagnosisResult.diagnosis.fault_name">
+            <div class="detail-row" v-if="selectedDiagnosisResult.diagnosis.fault_name">
               <span class="detail-label">故障类型:</span>
               <span class="detail-value abnormal">{{ selectedDiagnosisResult.diagnosis.fault_name }}</span>
             </div>
           </div>
           
-          <div class="detail-section" v-if="selectedDiagnosisResult.indicators">
+          <div class="detail-section" v-if="selectedDiagnosisResult.indicators.length">
             <div class="section-title">关键指标</div>
             <div class="indicators-list">
               <div 
@@ -361,70 +361,48 @@
 </template>
 
 <script>
-import {
-  readExcelApi,
-  fileListAPI,
-  newFileListAPI,
-  getGoingJob,
-  getJobStatus,
-  diagnose,
-  storeReport,
-  createTask,
-} from "@/api/home";
-import { stopJob, downloadFile, fetchReportPreview } from "@/api/article";
-import { Message } from "element-ui";
+/**
+ * 工作台：三维/二维泵模型 + 实时诊断记录。
+ *
+ * 页面本身不读取文件。“自动诊断”页面运行时会通过 BroadcastChannel 推送特征帧和诊断结果，
+ * 工作台按每秒一帧的节奏播放特征帧，驱动模型着色和测点数值。
+ */
+import { downloadReport } from "@/api/tasks";
+import { MessageType, openChannel } from "@/utils/broadcastChannel";
 import PumpModel from "./PumpModel.vue";
 import PumpModel2D from "./PumpModel2D.vue";
-import {
-  getBroadcastChannel,
-  closeBroadcastChannel
-} from "@/utils/broadcastChannel";
+
+const FRAME_INTERVAL_MS = 1000;
+const MAX_QUEUED_FRAMES = 600; // 积压过多时丢弃最旧的帧，保证显示跟得上
+const MAX_RESULTS = 200;
+const GRADIENT =
+  "linear-gradient(to bottom, #ff0055 0%, #ff6b00 20%, #ffd000 40%, #00ff88 60%, #00d4ff 80%, #0066ff 100%)";
+
+function randomParticles(count) {
+  return Array.from({ length: count }, () => {
+    const size = Math.random() * 4 + 2;
+    return {
+      width: `${size}px`,
+      height: `${size}px`,
+      left: `${Math.random() * 100}%`,
+      top: `${Math.random() * 100}%`,
+      animationDelay: `${Math.random() * 20}s`,
+      animationDuration: `${15 + Math.random() * 20}s`,
+    };
+  });
+}
 
 export default {
-  components: {
-    PumpModel,
-    PumpModel2D,
-  },
+  name: "Dashboard",
+  components: { PumpModel, PumpModel2D },
   data() {
     return {
-      form: {
-        name: "",
-        region: "",
-        date1: "",
-        date2: "",
-        delivery: false,
-        type: [],
-        resource: "",
-        desc: "",
-      },
-      isSidebarVisible: false,
-
-      showLoading: true,
-
-      page: 0,
-      pageSize: 500,
-      timerId: null,
-      fileNames: [],
-      fileNameIndex: 0,
-
-      isRunning: true,
-
-      featureMap: {},
-      sidebarBottomFeatureMap: {},
-      queueThreshold: 60,
-      spectrumQueue: [],
-      featuresQueue: [],
-      featuresConsumerTimer: null,
-      spectrum: {},
-      groupSize: 50,
-      spectrumIndex: 0,
-
+      particles: randomParticles(20),
       mode: "temperature",
-      pumpState: { swashAngle: 0, rotateSpeed: 0 },
-      dataType: "experiment",
-      isRealtimeFromDiagnosis: false,
-      diagnosisStatus: null,
-      broadcastChannel: null,
+      featureMap: {},
+      frameQueue: [],
+      liveMode: this.$route.query.mode === "realtime",
+      statusMessage: "等待自动诊断推送数据",
       diagnosisResults: [],
       latestAbnormalResult: null,
       selectedDiagnosisResult: null,
@@ -432,765 +410,76 @@ export default {
     };
   },
   computed: {
-    temperatureGradient() {
-      return "linear-gradient(to bottom, #ff0055 0%, #ff6b00 20%, #ffd000 40%, #00ff88 60%, #00d4ff 80%, #0066ff 100%)";
-    },
-    pressureGradient() {
-      return "linear-gradient(to bottom, #ff0055 0%, #ff6b00 20%, #ffd000 40%, #00ff88 60%, #00d4ff 80%, #0066ff 100%)";
+    temperatureGradient: () => GRADIENT,
+    pressureGradient: () => GRADIENT,
+    abnormalCount() {
+      return this.diagnosisResults.filter((r) => r.result === "abnormal").length;
     },
   },
   created() {
-    window.addEventListener("message", this.iframeEventListener);
-    window.hideLoading = () => {
-      this.showLoading = false;
-    };
-
-    const hash = window.location.hash.substring(1);
-    const urlParams = new URLSearchParams(hash.split("?")[1]);
-    this.type = urlParams.get("type") || null;
-    this.path = urlParams.get("path") || null;
-    this.fault = urlParams.get("fault") || null;
-    this.selectedItems = urlParams.get("selectedItems")
-      ? urlParams.get("selectedItems").split(",")
-      : [];
-
-    const mode = urlParams.get("mode");
-    const source = urlParams.get("source");
-    if (mode === "realtime" && source === "autoDiagnosis") {
-      this.isRealtimeFromDiagnosis = true;
-      this.initBroadcastChannelListener();
-    }
-
-    console.log("urlParams:", urlParams);
-    console.log("type:", this.type);
-    console.log("path:", this.path);
-    console.log("fault:", this.fault);
-    console.log("selectedItems:", this.selectedItems);
-    console.log("isRealtimeFromDiagnosis:", this.isRealtimeFromDiagnosis);
+    this.channel = openChannel(this.handleMessage);
+    this.frameTimer = setInterval(this.showNextFrame, FRAME_INTERVAL_MS);
   },
-  mounted() {
-    if (!this.isRealtimeFromDiagnosis) {
-      this.run();
-    }
-    this.featuresConsumerTimer = setInterval(() => {
-      if (this.featuresQueue && this.featuresQueue.length > 0) {
-        const feature = this.featuresQueue.shift();
-        this.featureMap = feature || {};
-        console.log("Dashboard-featureMap:", this.featureMap)
-        this.sidebarBottomFeatureMap = feature || {};
-      }
-    }, 1000);
-  },
-  destroyed() {
-    console.log("destroyed");
-    this.isRunning = false;
-    window.removeEventListener("message", this.iframeEventListener);
-    if (this.featuresConsumerTimer) {
-      clearInterval(this.featuresConsumerTimer);
-      this.featuresConsumerTimer = null;
-    }
-    if (this.broadcastChannel) {
-      this.broadcastChannel.close();
-      this.broadcastChannel = null;
-    }
+  beforeDestroy() {
+    clearInterval(this.frameTimer);
+    this.channel.close();
   },
   methods: {
-    initBroadcastChannelListener() {
-      this.broadcastChannel = getBroadcastChannel();
-      this.broadcastChannel.onmessage = (event) => {
-        const { type, payload } = event.data;
-        console.log("Dashboard received broadcast message:", type, payload);
-
-        switch (type) {
-          case "FEATURE_MAP":
-            this.featuresQueue.push(payload);
-            console.log("Dashboard received featureMap:", payload);
-            break;
-          case "DIAGNOSIS_STATUS":
-            this.diagnosisStatus = payload;
-            console.log("Dashboard received status:", payload);
-            break;
-          case "DIAGNOSIS_RESULT":
-            this.addDiagnosisResult(payload);
-            console.log("Dashboard received diagnosis result:", payload);
-            break;
-          case "DIAGNOSIS_DATA":
-            console.log("Dashboard received diagnosis data:", payload);
-            break;
-          default:
-            console.log("Unknown message type:", type);
+    handleMessage({ type, payload }) {
+      this.liveMode = true;
+      if (type === MessageType.FEATURE_FRAMES) {
+        this.frameQueue.push(...payload);
+        if (this.frameQueue.length > MAX_QUEUED_FRAMES) {
+          this.frameQueue.splice(0, this.frameQueue.length - MAX_QUEUED_FRAMES);
         }
-      };
-      console.log("Dashboard BroadcastChannel listener initialized");
-    },
-
-    addDiagnosisResult(result) {
-      this.diagnosisResults.unshift(result);
-      if (result.status === '异常') {
-        this.latestAbnormalResult = result;
+      } else if (type === MessageType.DIAGNOSIS_STATUS) {
+        this.statusMessage = payload.message;
+      } else if (type === MessageType.DIAGNOSIS_RESULT) {
+        this.diagnosisResults.unshift(payload);
+        this.diagnosisResults.splice(MAX_RESULTS);
+        if (payload.result === "abnormal") {
+          this.latestAbnormalResult = payload;
+        }
       }
     },
-
+    showNextFrame() {
+      if (this.frameQueue.length) {
+        this.featureMap = this.frameQueue.shift();
+      }
+    },
     viewDiagnosisResult(result) {
       this.selectedDiagnosisResult = result;
       this.showDiagnosisDetail = true;
     },
-
     downloadDiagnosisReport(taskId) {
       if (taskId) {
-        downloadFile(taskId);
-        Message.success('报告下载已开始');
+        downloadReport(taskId).catch(() => {});
       }
     },
-
-    formatTimestamp(timestamp) {
-      if (!timestamp) return '-';
-      return timestamp;
-    },
-
     clearAbnormalWarning() {
       this.latestAbnormalResult = null;
     },
-
     formatIndicators(indicators) {
-      if (!indicators || !Array.isArray(indicators)) {
-        return [];
-      }
-      return indicators.map(item => {
-        const name = item.name || '';
-        const value = item.value || '';
-        const reference = item.reference || '';
-        
-        let type = 'default';
-        if (name.includes('流量')) {
-          type = 'flow';
-        } else if (name.includes('转速')) {
-          type = 'speed';
-        } else if (name.includes('压力')) {
-          type = 'pressure';
-        }
-        
-        const isAbnormal = value.includes('⚠️') || value.includes('超限') || value.includes('异常');
-        
-        const cleanValue = value.replace(' ⚠️超限', '').replace(' ✓正常', '').replace(' ⚠️异常', '');
-        
+      return (indicators || []).map((item) => {
+        const name = item.name || "";
+        let type = "default";
+        if (name.includes("流量")) type = "flow";
+        else if (name.includes("转速")) type = "speed";
+        else if (name.includes("压力")) type = "pressure";
         return {
           name,
-          value: cleanValue,
-          reference,
+          value: item.value || "",
+          reference: item.reference || "",
           type,
-          isAbnormal
+          isAbnormal: !!item.abnormal,
         };
       });
-    },
-
-    getParticleStyle(index) {
-      const size = Math.random() * 4 + 2;
-      return {
-        width: `${size}px`,
-        height: `${size}px`,
-        left: `${Math.random() * 100}%`,
-        top: `${Math.random() * 100}%`,
-        animationDelay: `${Math.random() * 20}s`,
-        animationDuration: `${15 + Math.random() * 20}s`,
-      };
-    },
-
-    async sleep(ms) {
-      return new Promise((resolve) => setTimeout(resolve, ms));
-    },
-
-    async run() {
-      console.log("开始获取任务");
-      if (!this.type || !this.path || !this.selectedItems) {
-        console.log("参数不完整，停止任务");
-        return;
-      }
-      console.log("type:", this.type);
-      console.log("path:", this.path);
-      console.log("selectedItems:", this.selectedItems);
-
-      if (this.type === "0") {
-        console.log("进入默认任务");
-        while (this.isRunning) {
-          try {
-            console.log("开始获取新文件列表");
-            const response = await newFileListAPI(this.path);
-            this.fileNames = [...(response.new_files || []), ...(response.modified_files || [])];
-            console.log("新文件列表:", this.fileNames);
-            if (this.fileNames.length) {
-              for (const filename of this.fileNames) {
-                if (this.fault === "1") {
-                  const now = Date.now();
-                  const rand = Math.floor(Math.random() * 100000)
-                    .toString()
-                    .padStart(5, "0");
-                  const task_id = `${now}${rand}`;
-                  const data = {
-                    task_id,
-                    file_name: filename,
-                    path: this.path,
-                    type: this.type,
-                    fault: "1",
-                  };
-                  try {
-                    await createTask(data);
-                    await storeReport(data);
-                  } catch (e) {
-                    console.log("createTask error:", e);
-                    this.$message.error("诊断任务创建失败！");
-                  }
-                }
-
-                await this.updateData(filename, this.path);
-              }
-            }
-            await this.sleep(5000);
-          } catch (e) {
-            console.log("error:", e);
-            break;
-          }
-        }
-      } else {
-        console.log("进入自定义任务");
-        while (this.isRunning) {
-          for (const fileName of this.selectedItems) {
-            console.log("开始处理文件：", fileName);
-            await this.updateData(fileName, this.path);
-          }
-        }
-      }
-      console.log("run loop stopped.");
-    },
-
-    async updateData(filename, path) {
-      console.log("开始处理任务filename：", filename);
-
-      this.page = 0;
-      while (this.isRunning) {
-        console.log("队列长度：", this.featuresQueue.length);
-        if (
-          this.featuresQueue &&
-          this.featuresQueue.length >= this.queueThreshold
-        ) {
-          console.log(
-            `featuresQueue 已有 ${this.featuresQueue.length} 条，跳过本次请求`
-          );
-          await this.sleep(1000);
-          continue;
-        }
-
-        const data = {
-          page: this.page,
-          page_size: this.pageSize,
-          file_names: [filename],
-          sheet_names: ["1"],
-          path: path,
-        };
-        const hasNextData = await this.loadDataNew(data);
-
-        if (hasNextData) {
-          this.page++;
-        } else {
-          console.log("完成处理文件：", filename);
-          break;
-        }
-      }
-      console.log("结束处理任务");
-    },
-    async loadDataNew(requestReq) {
-      const useMockData = false;
-
-      if (useMockData) {
-        await this.sleep(200);
-
-        const totalPages = 5;
-        if (requestReq.page >= totalPages) {
-          return false;
-        }
-
-        console.log(`[Mock] 返回第 ${requestReq.page} 页模拟数据`);
-
-        const mockResponse = this.generateMockData(requestReq);
-
-        const firstKey = Object.keys(mockResponse)[0];
-        const res = mockResponse[firstKey];
-        const dataRoot =
-          this.dataType === "experiment" ? res["1"] : res["13-1"];
-
-        if (!dataRoot) return false;
-
-        const fields = [
-          "燃油泵实际转速",
-          "电传实际转速",
-          "电传扭矩",
-          "P1进口压力",
-          "P17滑油压力",
-          "P18回油工况模拟供油压力",
-          "P2低压出口压力",
-          "P3高压出口压力",
-          "供油压力1-1",
-          "供油压力1-2",
-          "回油压力1-2",
-          "回油压力1-1",
-          "回油压力2-2",
-          "回油压力2-1",
-          "回油流量1-2",
-          "回油流量2-2",
-          "回油流量2-1",
-          "回油流量1-1",
-          "供油流量1-1",
-          "供油流量1-2",
-          "T20加热出口温度",
-          "T3进口温度",
-          "T4高压出口温度",
-          "T5出口温度",
-          "供油温度1-1",
-          "供油温度1-2",
-          "回油温度2-2",
-          "回油温度2-1",
-          "回油温度1-2",
-          "回油温度1-1",
-          "振动传感器1-1",
-          "振动传感器2-1",
-          "振动传感器3-1",
-        ];
-
-        const allFieldData = {};
-        for (const field of fields) {
-          const arr = dataRoot[field];
-          if (arr && Array.isArray(arr)) {
-            allFieldData[field] = arr;
-          }
-        }
-
-        const maxLen = Math.max(
-          ...Object.values(allFieldData).map((arr) => arr.length || 0),
-          0
-        );
-
-        for (let i = 0; i < maxLen; i += this.groupSize) {
-          const featureMap = {};
-          for (const field of fields) {
-            const arr = allFieldData[field] || [];
-            const group = arr
-              .slice(i, i + this.groupSize)
-              .map((v) =>
-                v === "nan" || v === null || v === undefined ? NaN : Number(v)
-              )
-              .filter((v) => typeof v === "number" && !isNaN(v));
-            if (group.length > 0) {
-              const max = Math.max(...group);
-              const min = Math.min(...group);
-              const avg = group.reduce((a, b) => a + b, 0) / group.length;
-              featureMap[field] = { max, min, avg };
-            }
-          }
-          if (Object.keys(featureMap).length > 0) {
-            this.featuresQueue.push(featureMap);
-          }
-        }
-        return true;
-      }
-
-      try {
-        console.log("数据请求体：", requestReq);
-        const response = await readExcelApi(requestReq);
-        const firstKey = Object.keys(response)[0];
-        const res = response[firstKey];
-        console.log("res:", res);
-        const dataRoot =
-          this.dataType === "experiment" ? res["data"]["1"] : res["data"]["13-1"];
-
-        if (!dataRoot) return false;
-
-        const fields = [
-          "燃油泵实际转速",
-          "电传实际转速",
-          "电传扭矩",
-          "P1进口压力",
-          "P17滑油压力",
-          "P18回油工况模拟供油压力",
-          "P2低压出口压力",
-          "P3高压出口压力",
-          "供油压力1-1",
-          "供油压力1-2",
-          "回油压力1-2",
-          "回油压力1-1",
-          "回油压力2-2",
-          "回油压力2-1",
-          "回油流量1-2",
-          "回油流量2-2",
-          "回油流量2-1",
-          "回油流量1-1",
-          "供油流量1-1",
-          "供油流量1-2",
-          "T20加热出口温度",
-          "T3进口温度",
-          "T4高压出口温度",
-          "T5出口温度",
-          "供油温度1-1",
-          "供油温度1-2",
-          "回油温度2-2",
-          "回油温度2-1",
-          "回油温度1-2",
-          "回油温度1-1",
-          "振动传感器1-1",
-          "振动传感器2-1",
-          "振动传感器3-1",
-        ];
-
-        const allFieldData = {};
-        for (const field of fields) {
-          const arr = dataRoot[field];
-          if (arr && Array.isArray(arr)) {
-            allFieldData[field] = arr;
-          }
-        }
-        const maxLen = Math.max(
-          ...Object.values(allFieldData).map((arr) => arr.length || 0),
-          0
-        );
-        for (let i = 0; i < maxLen; i += this.groupSize) {
-          const featureMap = {};
-          for (const field of fields) {
-            const arr = allFieldData[field] || [];
-            const group = arr
-              .slice(i, i + this.groupSize)
-              .map((v) =>
-                v === "nan" || v === null || v === undefined ? NaN : Number(v)
-              )
-              .filter((v) => typeof v === "number" && !isNaN(v));
-            if (group.length > 0) {
-              const max = Math.max(...group);
-              const min = Math.min(...group);
-              const avg = group.reduce((a, b) => a + b, 0) / group.length;
-              featureMap[field] = { max, min, avg };
-            }
-          }
-          if (Object.keys(featureMap).length > 0) {
-            this.featuresQueue.push(featureMap);
-          } else {
-            return false;
-          }
-        }
-        return true;
-      } catch (error) {
-        console.error("接口调用失败，使用模拟数据:", error);
-        return this.loadDataNew({ ...requestReq, useMockData: true });
-      }
-    },
-
-    switchDataType(type) {
-      this.dataType = type;
-      this.featuresQueue = [];
-      this.featureMap = {};
-      this.sidebarBottomFeatureMap = {};
-      this.page = 0;
-      this.run();
-    },
-
-    generateMockData(requestReq) {
-      const filename = requestReq.file_name[0] || "mock_file.xlsx";
-      const page = requestReq.page || 0;
-      const dataSize = requestReq.page_size || 500;
-
-      const generateFieldData = (baseValue, variance = 0.1, trend = 0) => {
-        const data = [];
-        for (let i = 0; i < dataSize; i++) {
-          const randomFactor = 1 + (Math.random() - 0.5) * variance;
-          const trendFactor = 1 + (trend * i) / dataSize;
-          const value = baseValue * randomFactor * trendFactor;
-          data.push(Number(value.toFixed(3)));
-        }
-        return data;
-      };
-
-      const timeOffset = page * dataSize;
-
-      const mockData = {
-        [filename]: {
-          1: {
-            燃油泵实际转速: generateFieldData(
-              1500 + Math.sin(timeOffset / 100) * 200,
-              0.05
-            ),
-            电传实际转速: generateFieldData(
-              1480 + Math.sin(timeOffset / 100) * 180,
-              0.04
-            ),
-            电传扭矩: generateFieldData(
-              120 + Math.cos(timeOffset / 150) * 30,
-              0.08
-            ),
-            P1进口压力: generateFieldData(
-              2.5 + Math.sin(timeOffset / 200) * 0.5,
-              0.06
-            ),
-            P17滑油压力: generateFieldData(
-              1.8 + Math.cos(timeOffset / 180) * 0.3,
-              0.05
-            ),
-            P18回油工况模拟供油压力: generateFieldData(
-              3.2 + Math.sin(timeOffset / 160) * 0.6,
-              0.07
-            ),
-            P2低压出口压力: generateFieldData(
-              1.2 + Math.cos(timeOffset / 220) * 0.2,
-              0.04
-            ),
-            P3高压出口压力: generateFieldData(
-              25.5 + Math.sin(timeOffset / 140) * 5,
-              0.1
-            ),
-            "供油压力1-1": generateFieldData(
-              28.0 + Math.sin(timeOffset / 130) * 4,
-              0.08
-            ),
-            "供油压力1-2": generateFieldData(
-              27.8 + Math.cos(timeOffset / 135) * 4.2,
-              0.08
-            ),
-            "回油压力1-1": generateFieldData(
-              0.8 + Math.sin(timeOffset / 250) * 0.1,
-              0.05
-            ),
-            "回油压力1-2": generateFieldData(
-              0.9 + Math.cos(timeOffset / 240) * 0.12,
-              0.05
-            ),
-            "回油压力2-1": generateFieldData(
-              0.85 + Math.sin(timeOffset / 260) * 0.11,
-              0.05
-            ),
-            "回油压力2-2": generateFieldData(
-              0.88 + Math.cos(timeOffset / 255) * 0.1,
-              0.05
-            ),
-            "回油流量1-1": generateFieldData(
-              150 + Math.sin(timeOffset / 120) * 20,
-              0.12
-            ),
-            "回油流量1-2": generateFieldData(
-              148 + Math.cos(timeOffset / 125) * 22,
-              0.12
-            ),
-            "回油流量2-1": generateFieldData(
-              152 + Math.sin(timeOffset / 115) * 18,
-              0.11
-            ),
-            "回油流量2-2": generateFieldData(
-              149 + Math.cos(timeOffset / 118) * 21,
-              0.12
-            ),
-            "供油流量1-1": generateFieldData(
-              300 + Math.sin(timeOffset / 110) * 40,
-              0.15
-            ),
-            "供油流量1-2": generateFieldData(
-              298 + Math.cos(timeOffset / 112) * 42,
-              0.15
-            ),
-            T20加热出口温度: generateFieldData(
-              65 + Math.sin(timeOffset / 300) * 5,
-              0.03
-            ),
-            T3进口温度: generateFieldData(
-              45 + Math.sin(timeOffset / 280) * 3,
-              0.04
-            ),
-            T4高压出口温度: generateFieldData(
-              55 + Math.cos(timeOffset / 290) * 4,
-              0.03
-            ),
-            T5出口温度: generateFieldData(
-              50 + Math.sin(timeOffset / 270) * 3.5,
-              0.04
-            ),
-            "供油温度1-1": generateFieldData(
-              48 + Math.sin(timeOffset / 285) * 3.2,
-              0.04
-            ),
-            "供油温度1-2": generateFieldData(
-              47.5 + Math.cos(timeOffset / 275) * 3.3,
-              0.04
-            ),
-            "回油温度1-1": generateFieldData(
-              52 + Math.sin(timeOffset / 265) * 2.8,
-              0.03
-            ),
-            "回油温度1-2": generateFieldData(
-              51.8 + Math.cos(timeOffset / 268) * 2.9,
-              0.03
-            ),
-            "回油温度2-1": generateFieldData(
-              51.5 + Math.sin(timeOffset / 272) * 2.7,
-              0.03
-            ),
-            "回油温度2-2": generateFieldData(
-              52.2 + Math.cos(timeOffset / 278) * 2.8,
-              0.03
-            ),
-            "振动传感器1-1": generateFieldData(
-              0.5 + Math.sin(timeOffset / 50) * 0.3,
-              0.25
-            ),
-            "振动传感器2-1": generateFieldData(
-              0.6 + Math.cos(timeOffset / 55) * 0.35,
-              0.25
-            ),
-            "振动传感器3-1": generateFieldData(
-              0.55 + Math.sin(timeOffset / 52) * 0.32,
-              0.25
-            ),
-          },
-          "13-1": {
-            燃油泵实际转速: generateFieldData(
-              1520 + Math.sin(timeOffset / 105) * 190,
-              0.04
-            ),
-            电传实际转速: generateFieldData(
-              1500 + Math.sin(timeOffset / 105) * 170,
-              0.035
-            ),
-            电传扭矩: generateFieldData(
-              115 + Math.cos(timeOffset / 155) * 28,
-              0.07
-            ),
-            P1进口压力: generateFieldData(
-              2.6 + Math.sin(timeOffset / 205) * 0.45,
-              0.055
-            ),
-            P17滑油压力: generateFieldData(
-              1.85 + Math.cos(timeOffset / 185) * 0.28,
-              0.045
-            ),
-            P18回油工况模拟供油压力: generateFieldData(
-              3.3 + Math.sin(timeOffset / 165) * 0.55,
-              0.065
-            ),
-            P2低压出口压力: generateFieldData(
-              1.25 + Math.cos(timeOffset / 225) * 0.18,
-              0.035
-            ),
-            P3高压出口压力: generateFieldData(
-              26.0 + Math.sin(timeOffset / 145) * 4.8,
-              0.09
-            ),
-            "供油压力1-1": generateFieldData(
-              28.5 + Math.sin(timeOffset / 135) * 3.8,
-              0.075
-            ),
-            "供油压力1-2": generateFieldData(
-              28.3 + Math.cos(timeOffset / 140) * 4.0,
-              0.075
-            ),
-            "回油压力1-1": generateFieldData(
-              0.82 + Math.sin(timeOffset / 255) * 0.09,
-              0.045
-            ),
-            "回油压力1-2": generateFieldData(
-              0.92 + Math.cos(timeOffset / 245) * 0.11,
-              0.045
-            ),
-            "回油压力2-1": generateFieldData(
-              0.87 + Math.sin(timeOffset / 265) * 0.105,
-              0.045
-            ),
-            "回油压力2-2": generateFieldData(
-              0.9 + Math.cos(timeOffset / 260) * 0.095,
-              0.045
-            ),
-            "回油流量1-1": generateFieldData(
-              155 + Math.sin(timeOffset / 125) * 18,
-              0.11
-            ),
-            "回油流量1-2": generateFieldData(
-              153 + Math.cos(timeOffset / 130) * 20,
-              0.11
-            ),
-            "回油流量2-1": generateFieldData(
-              157 + Math.sin(timeOffset / 120) * 16,
-              0.1
-            ),
-            "回油流量2-2": generateFieldData(
-              154 + Math.cos(timeOffset / 123) * 19,
-              0.11
-            ),
-            "供油流量1-1": generateFieldData(
-              305 + Math.sin(timeOffset / 115) * 38,
-              0.14
-            ),
-            "供油流量1-2": generateFieldData(
-              303 + Math.cos(timeOffset / 117) * 40,
-              0.14
-            ),
-            T20加热出口温度: generateFieldData(
-              67 + Math.sin(timeOffset / 305) * 4.8,
-              0.025
-            ),
-            T3进口温度: generateFieldData(
-              47 + Math.sin(timeOffset / 285) * 2.8,
-              0.035
-            ),
-            T4高压出口温度: generateFieldData(
-              57 + Math.cos(timeOffset / 295) * 3.8,
-              0.025
-            ),
-            T5出口温度: generateFieldData(
-              52 + Math.sin(timeOffset / 275) * 3.3,
-              0.035
-            ),
-            "供油温度1-1": generateFieldData(
-              50 + Math.sin(timeOffset / 290) * 3.0,
-              0.035
-            ),
-            "供油温度1-2": generateFieldData(
-              49.5 + Math.cos(timeOffset / 280) * 3.1,
-              0.035
-            ),
-            "回油温度1-1": generateFieldData(
-              54 + Math.sin(timeOffset / 270) * 2.6,
-              0.025
-            ),
-            "回油温度1-2": generateFieldData(
-              53.8 + Math.cos(timeOffset / 273) * 2.7,
-              0.025
-            ),
-            "回油温度2-1": generateFieldData(
-              53.5 + Math.sin(timeOffset / 277) * 2.5,
-              0.025
-            ),
-            "回油温度2-2": generateFieldData(
-              54.2 + Math.cos(timeOffset / 283) * 2.6,
-              0.025
-            ),
-            "振动传感器1-1": generateFieldData(
-              0.45 + Math.sin(timeOffset / 52) * 0.28,
-              0.22
-            ),
-            "振动传感器2-1": generateFieldData(
-              0.55 + Math.cos(timeOffset / 57) * 0.32,
-              0.22
-            ),
-            "振动传感器3-1": generateFieldData(
-              0.5 + Math.sin(timeOffset / 54) * 0.3,
-              0.22
-            ),
-          },
-        },
-      };
-
-      console.log(`[Mock] 生成第 ${page} 页数据，包含 ${dataSize} 条记录`);
-      return mockData;
     },
   },
 };
 </script>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&display=swap');
-
 * {
   margin: 0;
   padding: 0;
@@ -1203,7 +492,7 @@ export default {
   background: linear-gradient(135deg, #0a0e17 0%, #1a1f2e 50%, #0d1321 100%);
   position: relative;
   overflow: hidden;
-  font-family: 'Orbitron', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 .bg-grid {

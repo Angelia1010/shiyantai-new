@@ -113,52 +113,22 @@
 export default {
   name: 'DiagnosisExecStep',
   props: {
-    config: {
-      type: Object,
-      required: true
-    },
-    selectedFiles: {
-      type: Array,
-      default: () => []
-    },
-    isRunning: {
-      type: Boolean,
-      default: false
-    },
-    logs: {
-      type: Array,
-      default: () => []
-    },
-    currentProcessStep: {
-      type: Number,
-      default: 0
-    },
-    statusMessage: {
-      type: String,
-      default: '等待启动'
-    },
-    featureMap: {
-      type: Object,
-      default: () => ({})
-    }
+    isRunning: { type: Boolean, default: false },
+    logs: { type: Array, default: () => [] },
+    currentProcessStep: { type: Number, default: 0 },
+    statusMessage: { type: String, default: '等待启动' }
   },
   computed: {
     getAlertType() {
-      if (this.isRunning) return 'info'
-      if (this.currentProcessStep >= 5) return 'success'
-      return 'info'
+      return !this.isRunning && this.currentProcessStep >= 5 ? 'success' : 'info'
     }
   },
   watch: {
-    logs: {
-      handler() {
-        this.$nextTick(() => {
-          if (this.$refs.logContainer) {
-            this.$refs.logContainer.scrollTop = this.$refs.logContainer.scrollHeight
-          }
-        })
-      },
-      deep: true
+    logs() {
+      this.$nextTick(() => {
+        const box = this.$refs.logContainer
+        if (box) box.scrollTop = box.scrollHeight
+      })
     }
   },
   methods: {
@@ -168,7 +138,7 @@ export default {
       return '已完成'
     },
     clearLogs() {
-      this.logs.length = 0
+      this.$emit('clear-logs')
     },
     handleNext() {
       this.$emit('next')
