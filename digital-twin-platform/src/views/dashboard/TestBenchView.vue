@@ -207,18 +207,6 @@ $glass: rgba(8, 18, 34, 0.72);
   &.style-real {
     background: radial-gradient(ellipse at 50% 35%, #2a3646 0%, #18212e 55%, #10161f 100%);
   }
-  // 细扫描线，增加屏幕质感
-  &.style-tech::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    pointer-events: none;
-    background: repeating-linear-gradient(0deg, rgba(120, 200, 255, 0.025) 0 1px, transparent 1px 3px);
-    z-index: 1;
-  }
 }
 .canvas-host {
   position: absolute;
@@ -478,6 +466,17 @@ $glass: rgba(8, 18, 34, 0.72);
     &::after {
       background: linear-gradient(180deg, rgba(239, 68, 68, 0.9), rgba(239, 68, 68, 0));
     }
+  }
+}
+.test-bench-view .tb-label {
+  &.side-up { transform: translateY(-70%); }
+  &.side-left {
+    transform: translate(-65%, -70%);
+    &::after { left: 85%; }
+  }
+  &.side-right {
+    transform: translate(65%, -70%);
+    &::after { left: 15%; }
   }
 }
 .test-bench-view .tb-label__value {

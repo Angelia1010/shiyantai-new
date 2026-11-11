@@ -81,7 +81,7 @@ export const DIAGNOSIS_TARGETS = {
 export const STYLES = {
   tech: {
     label: '科技',
-    exposure: 1.1,
+    exposure: 1.2,
     envIntensity: 0.4,
     rim: 0.35,
     edges: true,
@@ -94,14 +94,14 @@ export const STYLES = {
       loopPipe: { color: 0x8b5cf6, metalness: 0.4, roughness: 0.35, glow: 0.4, edge: 0xc4b5fd, edgeOpacity: 0.7 },
       tank: { color: 0x2f6fd6, metalness: 0.35, roughness: 0.4, glow: 0.12, edge: 0x93c5fd, edgeOpacity: 0.6 },
       instrument: { color: 0xeab308, metalness: 0.4, roughness: 0.35, glow: 0.3, edge: 0xfde68a, edgeOpacity: 0.8 },
-      equipment: { color: 0x6b7a8f, metalness: 0.5, roughness: 0.5, glow: 0, edge: 0x9fb3c8, edgeOpacity: 0.18 },
-      frame: { color: 0x2a3444, metalness: 0.4, roughness: 0.7, glow: 0, edge: 0x4b5d75, edgeOpacity: 0.12 },
+      equipment: { color: 0x7d8ba0, metalness: 0.45, roughness: 0.5, glow: 0, edge: 0xa9bacd, edgeOpacity: 0.2 },
+      frame: { color: 0x3a4658, metalness: 0.4, roughness: 0.7, glow: 0, edge: 0x5b6d85, edgeOpacity: 0.15 },
       default: { color: 0x5b6879, metalness: 0.5, roughness: 0.5, glow: 0, edge: 0x8aa0b8, edgeOpacity: 0.15 }
     }
   },
   real: {
     label: '写实',
-    exposure: 0.85,
+    exposure: 1.0,
     envIntensity: 0.7,
     rim: 0,
     edges: false,

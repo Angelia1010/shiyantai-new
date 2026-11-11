@@ -29,18 +29,22 @@ const ASSEMBLY_NODE = '总装图'
 const FLY_DURATION_MS = 900
 const EDGE_THRESHOLD_DEG = 40 // 相邻面夹角大于该值才画轮廓线（调大可减少细碎线条）
 const FOG_COLOR = 0x0a1424
-const HOVER_EMISSIVE = new THREE.Color(0x2f6bff)
-const SELECT_EMISSIVE = new THREE.Color(0x3f8cff)
-const ALARM_COLOR = new THREE.Color(0xff3b3b)
-const HIGHLIGHT_EDGE = new THREE.Color(0xe6f6ff)
-const NEUTRAL_COLOR = new THREE.Color(0x2a3442)
-const NEUTRAL_EDGE = new THREE.Color(0x29435f)
+// three.js r128 把 Color 的十六进制值当作线性空间，而输出是 sRGB，
+// 直接用设计稿颜色会整体发白、发灰，所以统一先转换到线性空间
+const srgb = hex => new THREE.Color(hex).convertSRGBToLinear()
+const HOVER_EMISSIVE = srgb(0x2f6bff)
+const SELECT_EMISSIVE = srgb(0x3f8cff)
+const ALARM_COLOR = srgb(0xff3b3b)
+const HIGHLIGHT_EDGE = srgb(0xe6f6ff)
+const NEUTRAL_COLOR = srgb(0x2a3442)
+const NEUTRAL_EDGE = srgb(0x29435f)
 // 色标：蓝 → 青 → 绿 → 黄 → 红，与图例 CSS 渐变一致
 export const COLOR_STOPS = ['#2563eb', '#06b6d4', '#22c55e', '#facc15', '#ef4444']
-const STOP_COLORS = COLOR_STOPS.map(c => new THREE.Color(c))
+const STOP_COLORS = COLOR_STOPS.map(srgb)
 // 显示悬浮数值标签的部件
 // （管路贯穿整台设备，标签位置没有意义，不加）
-const LABELED = ['被试件1高低压双联泵', '回油流量计1', '回油流量计2']
+// 值为标签相对锚点的偏移方向，两个流量计挨得很近，标签分别放左右避免重叠
+const LABELED = { 被试件1高低压双联泵: 'up', 回油流量计1: 'left', 回油流量计2: 'right' }
 
 // 科技风动态效果
 const INTRO_MS = 2600 // 加载后：镜头推进 + 模型自下而上“生成”
@@ -206,11 +210,11 @@ export class TestBenchScene {
     this.needsRender = true
     // 所有部件材质共用的特效参数：边缘光（菲涅尔）、扫描光带、生成动画
     this.fx = {
-      rimColor: { value: new THREE.Color(0x38bdf8) },
+      rimColor: { value: srgb(0x38bdf8) },
       rimStrength: { value: STYLES.tech.rim },
       scanY: { value: -1e5 },
       scanWidth: { value: 0.1 },
-      scanColor: { value: new THREE.Color(0x7dd3fc) },
+      scanColor: { value: srgb(0x7dd3fc) },
       scanStrength: { value: 0 },
       revealY: { value: 1e5 }
     }
@@ -270,7 +274,7 @@ export class TestBenchScene {
     const scene = new THREE.Scene()
     this.scene = scene
 
-    this.hemiLight = new THREE.HemisphereLight(0xdde6ff, 0x101828, 0.55)
+    this.hemiLight = new THREE.HemisphereLight(0xdde6ff, 0x101828, 0.45)
     scene.add(this.hemiLight)
 
     const key = new THREE.DirectionalLight(0xffffff, 1.3)
@@ -282,9 +286,9 @@ export class TestBenchScene {
     scene.add(key.target)
     this.keyLight = key
 
-    this.fillLight = new THREE.DirectionalLight(0x7fa8ff, 0.5)
+    this.fillLight = new THREE.DirectionalLight(0x7fa8ff, 0.35)
     scene.add(this.fillLight)
-    this.rimLight = new THREE.DirectionalLight(0x9fe1ff, 0.8)
+    this.rimLight = new THREE.DirectionalLight(0x9fe1ff, 0.5)
     scene.add(this.rimLight)
 
     // 地面：阴影 + 科技底座贴图 + 两层网格（远处由雾淡出）
@@ -489,7 +493,7 @@ export class TestBenchScene {
       transparent: true,
       opacity: 0.55,
       depthWrite: false,
-      blending: THREE.AdditiveBlending
+      blending: THREE.NormalBlending
     })
     this._enhance(edgeMaterial, { gain: 2.2 })
     return { category, material, edgeMaterial, baseColor: new THREE.Color(), baseEdge: new THREE.Color(), glow: 0, edgeOpacity: 0.55 }
@@ -563,7 +567,7 @@ export class TestBenchScene {
     this.shadowPlane.scale.set(span * 4, span * 4, 1)
     this.basePlate.scale.set(span * 1.45, span * 1.45, 1)
     this.grids.forEach(g => g.scale.setScalar(span * 6))
-    this.fog = new THREE.Fog(FOG_COLOR, radius * 2.2, radius * 6.5)
+    this.fog = new THREE.Fog(FOG_COLOR, radius * 3.5, radius * 9)
     this.fx.scanWidth.value = size.y * 0.05
     this.rippleSpan = span
     this._createParticles(box, radius)
@@ -582,14 +586,17 @@ export class TestBenchScene {
   }
 
   _createLabels() {
-    LABELED.forEach(key => {
+    Object.entries(LABELED).forEach(([key, side]) => {
       const comp = this.components[key]
       if (!comp) return
+      // CSS2DRenderer 会改写外层元素的 transform，偏移放在内层
+      const wrapper = document.createElement('div')
       const el = document.createElement('div')
-      el.className = 'tb-label'
+      el.className = `tb-label side-${side}`
+      wrapper.appendChild(el)
       el.innerHTML = '<div class="tb-label__name"></div><div class="tb-label__value">--</div>'
       el.querySelector('.tb-label__name').textContent = comp.label
-      const obj = new CSS2DObject(el)
+      const obj = new CSS2DObject(wrapper)
       const center = comp.box.getCenter(new THREE.Vector3())
       obj.position.set(center.x, comp.box.max.y + this.modelRadius * 0.05, center.z)
       this.scene.add(obj)
@@ -619,8 +626,8 @@ export class TestBenchScene {
       mats.material.metalness = preset.metalness
       mats.material.roughness = preset.roughness
       mats.material.envMapIntensity = style.envIntensity
-      mats.baseColor.setHex(preset.color)
-      mats.baseEdge.setHex(preset.edge || 0x38bdf8)
+      mats.baseColor.setHex(preset.color).convertSRGBToLinear()
+      mats.baseEdge.setHex(preset.edge || 0x38bdf8).convertSRGBToLinear()
       mats.glow = preset.glow || 0
       mats.edgeOpacity = preset.edgeOpacity === undefined ? 0.55 : preset.edgeOpacity
       mats.material.color.copy(mats.baseColor)
