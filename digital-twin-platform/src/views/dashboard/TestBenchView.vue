@@ -210,8 +210,7 @@ $glass: rgba(8, 18, 34, 0.72);
   overflow: hidden;
   border-radius: 8px;
   background:
-    radial-gradient(ellipse 70% 55% at 50% 58%, rgba(30, 90, 170, 0.35) 0%, rgba(10, 24, 44, 0) 70%),
-    linear-gradient(180deg, #0a1424 0%, #0b1a30 55%, #0a1424 100%);
+    linear-gradient(180deg, #03070f 0%, #08111f 50%, #0a1628 100%); // 与三维背景一致（加载时可见）
   &.style-real {
     background: radial-gradient(ellipse at 50% 35%, #2a3646 0%, #18212e 55%, #10161f 100%);
   }

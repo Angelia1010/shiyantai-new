@@ -33,7 +33,7 @@ const ENV_URL = '/qwantani_dusk_1_puresky_4k.hdr'
 const ASSEMBLY_NODE = '总装图'
 const FLY_DURATION_MS = 900
 const EDGE_THRESHOLD_DEG = 40 // 相邻面夹角大于该值才画轮廓线（调大可减少细碎线条）
-const FOG_COLOR = 0x0a1424
+const FOG_COLOR = 0x08111f // 与背景渐变中段（地平线）一致，远处地面自然融入背景
 // three.js r128 把 Color 的十六进制值当作线性空间，而输出是 sRGB，
 // 直接用设计稿颜色会整体发白、发灰，所以统一先转换到线性空间
 const srgb = hex => new THREE.Color(hex).convertSRGBToLinear()
@@ -205,9 +205,9 @@ function backgroundTexture() {
   canvas.height = 512
   const ctx = canvas.getContext('2d')
   const g = ctx.createLinearGradient(0, 0, 0, 512)
-  g.addColorStop(0, '#070f1d')
-  g.addColorStop(0.5, '#0a1424')
-  g.addColorStop(1, '#0d1f3a')
+  g.addColorStop(0, '#03070f')
+  g.addColorStop(0.5, '#08111f')
+  g.addColorStop(1, '#0a1628')
   ctx.fillStyle = g
   ctx.fillRect(0, 0, 4, 512)
   const tex = new THREE.CanvasTexture(canvas)
@@ -345,7 +345,7 @@ export class TestBenchScene {
     // 实体深色地面：接收阴影，让设备“落地”；远处由雾融入背景
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(1, 1),
-      new THREE.MeshStandardMaterial({ color: srgb(0x0b1424), metalness: 0.2, roughness: 0.85 })
+      new THREE.MeshStandardMaterial({ color: srgb(0x070d18), metalness: 0.1, roughness: 0.9, envMapIntensity: 0.3 })
     )
     floor.rotation.x = -Math.PI / 2
     floor.position.y = -0.001
@@ -744,7 +744,7 @@ export class TestBenchScene {
       r.position.z = center.z
     })
     this.grids.forEach(g => g.scale.setScalar(span * 3))
-    this.fog = new THREE.Fog(FOG_COLOR, radius * 3.5, radius * 9)
+    this.fog = new THREE.Fog(srgb(FOG_COLOR), radius * 3.5, radius * 9)
     this.fx.scanWidth.value = size.y * 0.05
 
     const key = this.keyLight
