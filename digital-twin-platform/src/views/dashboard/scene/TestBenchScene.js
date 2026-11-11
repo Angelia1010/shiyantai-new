@@ -56,7 +56,7 @@ const SCAN_PERIOD_MS = 7000 // 扫描光带周期
 const SCAN_SWEEP_MS = 2600 // 每次扫描用时
 const RIPPLE_PERIOD_MS = 3600 // 地面波纹周期
 const RIPPLE_COUNT = 3
-const PARTICLE_COUNT = 260
+const PARTICLE_COUNT = 120
 const AUTO_ROTATE_IDLE_MS = 15000 // 无操作多久后开始缓慢自转
 
 // 注入到部件材质与轮廓线材质的着色代码：扫描光带 + 生成动画（revealY 以上的片元丢弃）
@@ -80,9 +80,10 @@ float fxEdge = 1.0 - smoothstep(0.0, scanWidth * 0.6, abs(vFxWorld.y - revealY))
 gl_FragColor.rgb += scanColor * (fxBand * FX_GAIN + fxEdge * 1.6);
 #include <tonemapping_fragment>`
 
-// 选择性辉光：只有加入 BLOOM_LAYER 的物体（轮廓线、管路、光圈、波纹、粒子）发光
+// 选择性辉光：只有加入 BLOOM_LAYER 的物体（管路轮廓线、光圈、波纹、粒子）发光
+const BLOOM_MIX = 0.7 // 辉光叠加比例
 const BLOOM_LAYER = 1
-const MIX_SHADER = { // 正常画面 + 辉光；背景透明处用辉光亮度作为 alpha
+const MIX_SHADER = { // 正常画面 + 辉光
   vertexShader: `varying vec2 vUv;
 void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: `uniform sampler2D baseTexture;
@@ -91,7 +92,7 @@ varying vec2 vUv;
 void main() {
   vec4 base = texture2D(baseTexture, vUv);
   vec3 bloom = texture2D(bloomTexture, vUv).rgb;
-  gl_FragColor = vec4(base.rgb + bloom, max(base.a, max(bloom.r, max(bloom.g, bloom.b))));
+  gl_FragColor = vec4(base.rgb + bloom * BLOOM_MIX, base.a);
 }`
 }
 
@@ -195,6 +196,23 @@ function footprintTexture(aspect, outlineOnly = false) {
   const tex = new THREE.CanvasTexture(canvas)
   tex.encoding = THREE.sRGBEncoding
   tex.anisotropy = 8
+  return tex
+}
+
+/** 科技风背景：上暗下亮的竖直渐变（不透明，避免辉光与透明背景叠加出色块）。 */
+function backgroundTexture() {
+  const canvas = document.createElement('canvas')
+  canvas.width = 4
+  canvas.height = 512
+  const ctx = canvas.getContext('2d')
+  const g = ctx.createLinearGradient(0, 0, 0, 512)
+  g.addColorStop(0, '#070f1d')
+  g.addColorStop(0.5, '#0a1424')
+  g.addColorStop(1, '#0d1f3a')
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, 4, 512)
+  const tex = new THREE.CanvasTexture(canvas)
+  tex.encoding = THREE.sRGBEncoding
   return tex
 }
 
@@ -357,11 +375,11 @@ export class TestBenchScene {
 
     const fineGrid = new THREE.GridHelper(1, 80, 0x1d4f7d, 0x16304c)
     fineGrid.material.transparent = true
-    fineGrid.material.opacity = 0.22
+    fineGrid.material.opacity = 0.1
     this.ground.add(fineGrid)
     const coarseGrid = new THREE.GridHelper(1, 16, 0x2e78b8, 0x2e78b8)
     coarseGrid.material.transparent = true
-    coarseGrid.material.opacity = 0.18
+    coarseGrid.material.opacity = 0.1
     coarseGrid.position.y = 0.0005
     this.ground.add(coarseGrid)
     this.grids = [fineGrid, coarseGrid]
@@ -424,7 +442,7 @@ export class TestBenchScene {
           bloomTexture: { value: bloomComposer.renderTarget2.texture }
         },
         vertexShader: MIX_SHADER.vertexShader,
-        fragmentShader: MIX_SHADER.fragmentShader
+        fragmentShader: MIX_SHADER.fragmentShader.replace('BLOOM_MIX', BLOOM_MIX.toFixed(2))
       }), 'baseTexture')
       mix.needsSwap = true
       finalComposer.addPass(mix)
@@ -454,7 +472,9 @@ export class TestBenchScene {
     try {
       // 第一遍：只保留发光物体
       const fog = this.scene.fog
+      const background = this.scene.background
       this.scene.fog = null
+      this.scene.background = null
       this.scene.traverse(obj => {
         if (!(obj.isMesh || obj.isLine || obj.isPoints) || !obj.visible) return
         if (this.bloomLayer.test(obj.layers)) return
@@ -472,6 +492,7 @@ export class TestBenchScene {
       this.hiddenForBloom.length = 0
       this.swappedForBloom.length = 0
       this.scene.fog = fog
+      this.scene.background = background
       // 第二遍：正常画面 + 辉光
       this.finalComposer.render()
     } catch (e) {
@@ -497,11 +518,11 @@ export class TestBenchScene {
     const geometry = new THREE.BufferGeometry()
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
     const material = new THREE.PointsMaterial({
-      size: radius * 0.012,
+      size: radius * 0.007,
       map: dotTexture(),
       color: 0x7dd3fc,
       transparent: true,
-      opacity: 0.75,
+      opacity: 0.5,
       depthWrite: false,
       blending: THREE.AdditiveBlending
     })
@@ -693,8 +714,8 @@ export class TestBenchScene {
         // 轮廓线作为子对象，跟随网格变换
         const edges = new THREE.LineSegments(new THREE.EdgesGeometry(obj.geometry, EDGE_THRESHOLD_DEG), mats.edgeMaterial)
         edges.raycast = () => {} // 不参与拾取
-        edges.layers.enable(BLOOM_LAYER)
-        if (/Pipe$/.test(mats.category)) obj.layers.enable(BLOOM_LAYER)
+        // 只有管路轮廓线发光；管路本体和其他轮廓不发光，保持清晰
+        if (/Pipe$/.test(mats.category)) edges.layers.enable(BLOOM_LAYER)
         obj.add(edges)
         this.edgeObjects.push(edges)
         if (comp) {
@@ -833,6 +854,8 @@ export class TestBenchScene {
     this.effects = !!style.effects
     this.fxGroup.visible = this.effects
     this.bloomEnabled = !!style.bloom
+    if (style.fog && !this.bgTexture) this.bgTexture = backgroundTexture()
+    this.scene.background = style.fog ? this.bgTexture : null // 写实风用容器 CSS 背景
     if (style.bloom && this.bloomPass) {
       this.bloomPass.strength = style.bloom.strength
       this.bloomPass.radius = style.bloom.radius
@@ -1298,6 +1321,7 @@ export class TestBenchScene {
     })
     if (this.bloomPass && this.bloomPass.dispose) this.bloomPass.dispose()
     if (this.darkMaterial) this.darkMaterial.dispose()
+    if (this.bgTexture) this.bgTexture.dispose()
     this.renderer.dispose()
     if (this.renderer.forceContextLoss) this.renderer.forceContextLoss()
     el.remove()

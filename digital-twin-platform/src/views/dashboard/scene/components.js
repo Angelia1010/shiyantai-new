@@ -91,7 +91,7 @@ export const STYLES = {
     edges: true,
     fog: true,
     effects: true, // 扫描光带、波纹、粒子、自转
-    bloom: { strength: 0.9, radius: 0.45 }, // 只作用于轮廓线、管路、光圈、粒子
+    bloom: { strength: 0.6, radius: 0.25 }, // 只作用于管路轮廓线、光圈、波纹、粒子
     materials: {
       testPiece: { color: 0xe07a2e, metalness: 0.55, roughness: 0.35, glow: 0.12, edge: 0xffc48a, edgeOpacity: 0.35 },
       // 被试件上的大块底板、安装面板：中性色，避免整片橙色
