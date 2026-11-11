@@ -69,7 +69,7 @@ export const DIAGNOSIS_TARGETS = {
 
 /**
  * 两套外观：
- * - tech  科技风：深蓝半金属本体 + 发光轮廓线 + 边缘光
+ * - tech  科技风：深蓝半金属本体 + 发光轮廓线 + 边缘光 + 动态效果
  * - real  写实：工业材质
  * 每个材质类别给出本体参数（MeshStandardMaterial）和轮廓线颜色。
  */
@@ -81,6 +81,7 @@ export const STYLES = {
     rim: 0.85,
     edges: true,
     fog: true,
+    effects: true, // 扫描光带、波纹、粒子、自转
     materials: {
       pump: { color: 0x163a63, metalness: 0.55, roughness: 0.38, edge: 0x5cc8ff },
       pipe: { color: 0x0f3550, metalness: 0.6, roughness: 0.35, edge: 0x38bdf8 },
@@ -98,6 +99,7 @@ export const STYLES = {
     rim: 0,
     edges: false,
     fog: false,
+    effects: false,
     materials: {
       pump: { color: 0x9aa3ad, metalness: 0.85, roughness: 0.35 },
       pipe: { color: 0x8e959e, metalness: 0.9, roughness: 0.28 },

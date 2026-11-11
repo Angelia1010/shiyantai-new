@@ -41,6 +41,31 @@ const STOP_COLORS = COLOR_STOPS.map(c => new THREE.Color(c))
 // 显示悬浮数值标签的部件
 const LABELED = ['被试件1高低压双联泵', '供油管路', '回油管路', '回油流量计1', '回油流量计2']
 
+// 科技风动态效果
+const INTRO_MS = 2600 // 加载后：镜头推进 + 模型自下而上“生成”
+const SCAN_PERIOD_MS = 7000 // 扫描光带周期
+const SCAN_SWEEP_MS = 2600 // 每次扫描用时
+const RIPPLE_PERIOD_MS = 3600 // 地面波纹周期
+const RIPPLE_COUNT = 3
+const PARTICLE_COUNT = 260
+const AUTO_ROTATE_IDLE_MS = 15000 // 无操作多久后开始缓慢自转
+
+// 注入到部件材质与轮廓线材质的着色代码：扫描光带 + 生成动画（revealY 以上的片元丢弃）
+const FX_VERTEX_DECL = 'varying vec3 vFxWorld;\n'
+const FX_VERTEX_BODY = '#include <project_vertex>\nvFxWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;'
+const FX_FRAGMENT_DECL = `uniform float scanY;
+uniform float scanWidth;
+uniform vec3 scanColor;
+uniform float scanStrength;
+uniform float revealY;
+varying vec3 vFxWorld;
+`
+const FX_FRAGMENT_BODY = `if (vFxWorld.y > revealY) discard;
+float fxBand = scanStrength * (1.0 - smoothstep(0.0, scanWidth, abs(vFxWorld.y - scanY)));
+float fxEdge = 1.0 - smoothstep(0.0, scanWidth * 0.6, abs(vFxWorld.y - revealY));
+gl_FragColor.rgb += scanColor * (fxBand * FX_GAIN + fxEdge * 1.6);
+#include <tonemapping_fragment>`
+
 const easeInOutCubic = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
 
 function gradientColor(t, target) {
@@ -124,6 +149,42 @@ function baseTexture() {
   return tex
 }
 
+/** 发光圆点贴图（粒子用）。 */
+function dotTexture() {
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = 64
+  const ctx = canvas.getContext('2d')
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32)
+  g.addColorStop(0, 'rgba(255,255,255,1)')
+  g.addColorStop(0.25, 'rgba(160,220,255,0.8)')
+  g.addColorStop(1, 'rgba(56,189,248,0)')
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, 64, 64)
+  return new THREE.CanvasTexture(canvas)
+}
+
+/** 地面光圈：细圆环 + 淡色圆盘，单位半径，通过 scale 控制大小。 */
+function makeHalo(color) {
+  const group = new THREE.Group()
+  const ringMat = new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+  })
+  const discMat = new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity: 0.12, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+  })
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 96), ringMat)
+  const inner = new THREE.Mesh(new THREE.RingGeometry(0.62, 0.65, 96), ringMat)
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(1, 96), discMat)
+  ;[ring, inner, disc].forEach(m => {
+    m.rotation.x = -Math.PI / 2
+    m.raycast = () => {}
+    group.add(m)
+  })
+  group.position.y = 0.004
+  group.userData.materials = [ringMat, discMat]
+  return group
+}
+
 export class TestBenchScene {
   constructor(container, callbacks = {}) {
     this.container = container
@@ -142,8 +203,20 @@ export class TestBenchScene {
     this.pointer = { x: 0, y: 0, dirty: false, inside: false }
     this.disposed = false
     this.needsRender = true
-    // 所有部件材质共用的“边缘光”参数（菲涅尔效果）
-    this.rimUniforms = { rimColor: { value: new THREE.Color(0x38bdf8) }, rimStrength: { value: STYLES.tech.rim } }
+    // 所有部件材质共用的特效参数：边缘光（菲涅尔）、扫描光带、生成动画
+    this.fx = {
+      rimColor: { value: new THREE.Color(0x38bdf8) },
+      rimStrength: { value: STYLES.tech.rim },
+      scanY: { value: -1e5 },
+      scanWidth: { value: 0.1 },
+      scanColor: { value: new THREE.Color(0x7dd3fc) },
+      scanStrength: { value: 0 },
+      revealY: { value: 1e5 }
+    }
+    this.effects = true // 科技风动态效果开关（写实风关闭）
+    this.alarmHalos = {}
+    this.lastInteraction = 0
+    this.intro = null
 
     this._initRenderer()
     this._initScene()
@@ -186,7 +259,9 @@ export class TestBenchScene {
     controls.screenSpacePanning = true
     controls.maxPolarAngle = Math.PI * 0.49 // 不能转到地面以下
     controls.rotateSpeed = 0.7
+    controls.autoRotateSpeed = 0.35
     controls.addEventListener('change', () => { this.needsRender = true })
+    controls.addEventListener('start', () => { this.lastInteraction = performance.now() })
     this.controls = controls
   }
 
@@ -240,6 +315,57 @@ export class TestBenchScene {
     this.grids = [fineGrid, coarseGrid]
 
     scene.add(this.ground)
+
+    // 动态效果：地面波纹、上升粒子、选中/告警光圈（尺寸在模型加载后确定）
+    this.fxGroup = new THREE.Group()
+    this.ripples = []
+    for (let i = 0; i < RIPPLE_COUNT; i++) {
+      const ripple = new THREE.Mesh(
+        new THREE.RingGeometry(0.97, 1, 128),
+        new THREE.MeshBasicMaterial({
+          color: 0x38bdf8, transparent: true, opacity: 0, depthWrite: false,
+          blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+        })
+      )
+      ripple.rotation.x = -Math.PI / 2
+      ripple.position.y = 0.003
+      this.fxGroup.add(ripple)
+      this.ripples.push(ripple)
+    }
+    this.selectHalo = makeHalo(0x38bdf8)
+    this.selectHalo.visible = false
+    scene.add(this.selectHalo)
+    scene.add(this.fxGroup)
+  }
+
+  /** 按模型尺寸生成上升粒子。 */
+  _createParticles(box, radius) {
+    const positions = new Float32Array(PARTICLE_COUNT * 3)
+    const speeds = new Float32Array(PARTICLE_COUNT)
+    const height = (box.max.y - box.min.y) * 1.6
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      const a = Math.random() * Math.PI * 2
+      const r = radius * (0.25 + Math.random() * 0.95)
+      positions[i * 3] = Math.cos(a) * r
+      positions[i * 3 + 1] = Math.random() * height
+      positions[i * 3 + 2] = Math.sin(a) * r
+      speeds[i] = height * (0.02 + Math.random() * 0.05) // 每秒上升高度
+    }
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    const material = new THREE.PointsMaterial({
+      size: radius * 0.012,
+      map: dotTexture(),
+      color: 0x7dd3fc,
+      transparent: true,
+      opacity: 0.75,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    })
+    this.particles = new THREE.Points(geometry, material)
+    this.particles.raycast = () => {}
+    this.particles.userData = { speeds, height }
+    this.fxGroup.add(this.particles)
   }
 
   _loadEnvironment() {
@@ -311,6 +437,7 @@ export class TestBenchScene {
     this._createLabels()
     this.setStyle(this.styleName)
     this.setView('overview', false)
+    this._startIntro()
     this.renderer.shadowMap.needsUpdate = true
     this.needsRender = true
 
@@ -320,24 +447,42 @@ export class TestBenchScene {
     )
   }
 
-  /** 给材质加菲涅尔边缘光：视线越掠过表面越亮，营造“全息”质感。 */
-  _addRim(material) {
-    const uniforms = this.rimUniforms
+  /**
+   * 给材质注入特效着色代码：
+   * - 扫描光带 / 生成动画（所有材质）
+   * - 菲涅尔边缘光（rim=true 的实体材质）：视线越掠过表面越亮，营造“全息”质感
+   */
+  _enhance(material, { rim = false, gain = 1 } = {}) {
+    const fx = this.fx
     material.onBeforeCompile = shader => {
-      shader.uniforms.rimColor = uniforms.rimColor
-      shader.uniforms.rimStrength = uniforms.rimStrength
-      shader.fragmentShader = 'uniform vec3 rimColor;\nuniform float rimStrength;\n' + shader.fragmentShader.replace(
-        '#include <emissivemap_fragment>',
-        `#include <emissivemap_fragment>
-        float rimF = 1.0 - clamp(abs(dot(normalize(normal), normalize(vViewPosition))), 0.0, 1.0);
-        totalEmissiveRadiance += rimColor * pow(rimF, 2.2) * rimStrength;`
+      Object.assign(shader.uniforms, {
+        scanY: fx.scanY, scanWidth: fx.scanWidth, scanColor: fx.scanColor,
+        scanStrength: fx.scanStrength, revealY: fx.revealY
+      })
+      shader.vertexShader = FX_VERTEX_DECL + shader.vertexShader.replace('#include <project_vertex>', FX_VERTEX_BODY)
+      let frag = FX_FRAGMENT_DECL + shader.fragmentShader.replace(
+        '#include <tonemapping_fragment>',
+        FX_FRAGMENT_BODY.replace('FX_GAIN', gain.toFixed(2))
       )
+      if (rim) {
+        shader.uniforms.rimColor = fx.rimColor
+        shader.uniforms.rimStrength = fx.rimStrength
+        frag = 'uniform vec3 rimColor;\nuniform float rimStrength;\n' + frag.replace(
+          '#include <emissivemap_fragment>',
+          `#include <emissivemap_fragment>
+          float rimF = 1.0 - clamp(abs(dot(normalize(normal), normalize(vViewPosition))), 0.0, 1.0);
+          totalEmissiveRadiance += rimColor * pow(rimF, 2.2) * rimStrength;`
+        )
+      }
+      shader.fragmentShader = frag
     }
+    // 不同注入参数要编译成不同的着色器程序
+    material.customProgramCacheKey = () => `fx-${rim}-${gain}`
   }
 
   _makeComponentMaterials(category) {
     const material = new THREE.MeshStandardMaterial({ color: 0xffffff })
-    this._addRim(material)
+    this._enhance(material, { rim: true, gain: 0.6 })
     const edgeMaterial = new THREE.LineBasicMaterial({
       color: 0x38bdf8,
       transparent: true,
@@ -345,6 +490,7 @@ export class TestBenchScene {
       depthWrite: false,
       blending: THREE.AdditiveBlending
     })
+    this._enhance(edgeMaterial, { gain: 2.2 })
     return { category, material, edgeMaterial, baseColor: new THREE.Color(), baseEdge: new THREE.Color() }
   }
 
@@ -353,6 +499,7 @@ export class TestBenchScene {
     const glass = new THREE.MeshStandardMaterial({
       color: 0x7fb8e8, metalness: 0.1, roughness: 0.05, transparent: true, opacity: 0.25, depthWrite: false
     })
+    this._enhance(glass, { gain: 0.8 })
     this.glassMaterial = glass
     this.defaultMaterials = this._makeComponentMaterials('default')
 
@@ -416,6 +563,9 @@ export class TestBenchScene {
     this.basePlate.scale.set(span * 1.45, span * 1.45, 1)
     this.grids.forEach(g => g.scale.setScalar(span * 6))
     this.fog = new THREE.Fog(FOG_COLOR, radius * 2.2, radius * 6.5)
+    this.fx.scanWidth.value = size.y * 0.05
+    this.rippleSpan = span
+    this._createParticles(box, radius)
 
     const key = this.keyLight
     key.position.set(radius * 1.2, radius * 2, radius * 0.9)
@@ -456,6 +606,12 @@ export class TestBenchScene {
     this.scene.fog = style.fog && this.fog ? this.fog : null
     this.grids.forEach(g => { g.visible = style.fog })
     this.edgeObjects.forEach(e => { e.visible = style.edges })
+    this.effects = !!style.effects
+    this.fxGroup.visible = this.effects
+    if (!this.effects) {
+      this.fx.scanStrength.value = 0
+      this.controls.autoRotate = false
+    }
 
     const apply = mats => {
       const preset = style.materials[mats.category] || style.materials.default
@@ -485,6 +641,7 @@ export class TestBenchScene {
     const target = box.getCenter(new THREE.Vector3())
     const dist = Math.max(this._fitDistance(box, target, dir) * margin, this.controls.minDistance * 1.2)
     const position = target.clone().addScaledVector(dir, dist)
+    this.lastInteraction = performance.now()
     if (!animate) {
       this.camera.position.copy(position)
       this.controls.target.copy(target)
@@ -527,6 +684,7 @@ export class TestBenchScene {
 
   select(key) {
     this.selectedKey = key && this.components[key] ? key : null
+    this._placeHalo(this.selectHalo, this.selectedKey)
     this._applyHighlights()
     this.cb.onSelect && this.cb.onSelect(this.selectedKey)
   }
@@ -552,7 +710,110 @@ export class TestBenchScene {
 
   setAlarms(keys) {
     this.alarms = new Set((keys || []).filter(k => this.components[k]))
+    // 告警部件脚下的红色光圈
+    Object.keys(this.alarmHalos).forEach(key => {
+      if (this.alarms.has(key)) return
+      const halo = this.alarmHalos[key]
+      this.scene.remove(halo)
+      halo.traverse(o => { if (o.geometry) o.geometry.dispose() })
+      halo.userData.materials.forEach(m => m.dispose())
+      delete this.alarmHalos[key]
+    })
+    this.alarms.forEach(key => {
+      if (this.alarmHalos[key]) return
+      const halo = makeHalo(0xff3b3b)
+      this._placeHalo(halo, key)
+      this.scene.add(halo)
+      this.alarmHalos[key] = halo
+    })
     this._applyHighlights()
+  }
+
+  /** 把光圈放到部件正下方的地面上。 */
+  _placeHalo(halo, key) {
+    const comp = key && this.components[key]
+    halo.visible = !!comp
+    if (!comp) return
+    const center = comp.box.getCenter(new THREE.Vector3())
+    const size = comp.box.getSize(new THREE.Vector3())
+    halo.position.x = center.x
+    halo.position.z = center.z
+    halo.userData.radius = Math.max(size.x, size.z) * 0.62 + this.modelRadius * 0.03
+    halo.scale.setScalar(halo.userData.radius)
+    this.needsRender = true
+  }
+
+  /** 加载完成动画：镜头从远处推进，模型自下而上生成。 */
+  _startIntro() {
+    const toPos = this.camera.position.clone()
+    const toTarget = this.controls.target.clone()
+    const fromPos = toTarget.clone().addScaledVector(toPos.clone().sub(toTarget), 2.1)
+    fromPos.y += this.modelRadius * 0.5
+    this.camera.position.copy(fromPos)
+    this.fly = { start: performance.now(), duration: INTRO_MS, fromPos, fromTarget: toTarget.clone(), toPos, toTarget }
+    this.intro = { start: performance.now(), minY: this.modelBox.min.y, maxY: this.modelBox.max.y }
+    this.fx.revealY.value = this.modelBox.min.y
+    this.lastInteraction = performance.now()
+  }
+
+  /** 每帧更新动态效果，返回本帧是否需要重绘。 */
+  _updateEffects(now) {
+    let active = false
+    if (this.intro) {
+      const t = Math.min(1, (now - this.intro.start) / INTRO_MS)
+      const pad = this.fx.scanWidth.value
+      this.fx.revealY.value = this.intro.minY - pad + (this.intro.maxY - this.intro.minY + 2 * pad) * easeInOutCubic(t)
+      if (t >= 1) {
+        this.intro = null
+        this.fx.revealY.value = 1e5
+        this.lastScan = now
+      }
+      active = true
+    }
+    if (!this.effects || !this.modelBox) return active
+
+    // 周期扫描光带
+    if (!this.intro) {
+      const phase = (now - (this.lastScan || now)) % SCAN_PERIOD_MS
+      if (phase < SCAN_SWEEP_MS) {
+        const t = phase / SCAN_SWEEP_MS
+        const pad = this.fx.scanWidth.value * 2
+        this.fx.scanY.value = this.modelBox.min.y - pad + (this.modelBox.max.y - this.modelBox.min.y + 2 * pad) * t
+        this.fx.scanStrength.value = Math.sin(Math.PI * t)
+      } else {
+        this.fx.scanStrength.value = 0
+      }
+    }
+
+    // 地面波纹
+    this.ripples.forEach((ripple, i) => {
+      const t = ((now / RIPPLE_PERIOD_MS) + i / RIPPLE_COUNT) % 1
+      ripple.scale.setScalar(this.rippleSpan * (0.2 + 0.55 * t))
+      ripple.material.opacity = 0.45 * (1 - t) * Math.min(1, t * 6)
+    })
+
+    // 上升粒子
+    if (this.particles) {
+      const dt = Math.min(0.05, (now - (this.lastFrame || now)) / 1000)
+      const pos = this.particles.geometry.attributes.position
+      const { speeds, height } = this.particles.userData
+      for (let i = 0; i < speeds.length; i++) {
+        let y = pos.getY(i) + speeds[i] * dt
+        if (y > height) y -= height
+        pos.setY(i, y)
+      }
+      pos.needsUpdate = true
+    }
+
+    // 光圈呼吸
+    const breathe = 1 + 0.06 * Math.sin(now / 400)
+    const halos = [this.selectHalo, ...Object.values(this.alarmHalos)]
+    halos.forEach(h => { if (h.visible && h.userData.radius) h.scale.setScalar(h.userData.radius * breathe) })
+
+    // 一段时间无操作后缓慢自转（选中部件时不转）
+    this.controls.autoRotate = !this.intro && !this.fly && !this.selectedKey &&
+      now - this.lastInteraction > AUTO_ROTATE_IDLE_MS
+    return true
   }
 
   resize() {
@@ -656,6 +917,7 @@ export class TestBenchScene {
     }
     this._onDown = e => {
       this.downAt = { x: e.clientX, y: e.clientY }
+      this.lastInteraction = performance.now()
     }
     this._onUp = e => {
       if (!this.downAt || e.button !== 0) return
@@ -714,12 +976,14 @@ export class TestBenchScene {
     this.frameId = requestAnimationFrame(this._animate)
 
     if (this.fly) {
-      const t = Math.min(1, (now - this.fly.start) / FLY_DURATION_MS)
+      const t = Math.min(1, (now - this.fly.start) / (this.fly.duration || FLY_DURATION_MS))
       const k = easeInOutCubic(t)
       this.camera.position.lerpVectors(this.fly.fromPos, this.fly.toPos, k)
       this.controls.target.lerpVectors(this.fly.fromTarget, this.fly.toTarget, k)
       if (t >= 1) this.fly = null
     }
+    const animating = this._updateEffects(now)
+    this.lastFrame = now
     this.controls.update()
     this._processHover()
 
@@ -735,7 +999,7 @@ export class TestBenchScene {
     }
 
     // 按需渲染：画面没有变化时不重绘，降低 GPU 占用
-    if (this.needsRender || this.fly || this.alarms.size) {
+    if (this.needsRender || animating || this.fly || this.alarms.size) {
       this.needsRender = false
       this.renderer.render(this.scene, this.camera)
       this.labelRenderer.render(this.scene, this.camera)

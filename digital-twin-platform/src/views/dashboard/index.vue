@@ -18,27 +18,7 @@
       </button>
     </header>
 
-    <!-- 左：关键测点 -->
-    <aside class="panel metrics">
-      <div class="panel-title">关键测点<span v-if="!hasData" class="counter">等待数据</span></div>
-      <div class="metric-scroll">
-        <div v-for="group in metricGroups" :key="group.title" class="metric-group">
-          <div class="group-title">{{ group.title }}</div>
-          <div class="metric-grid">
-            <div v-for="field in group.fields" :key="field" :class="['metric', { empty: !featureMap[field] }]">
-              <div class="metric-name" :title="field">{{ field }}</div>
-              <div class="metric-value">{{ latest(field) }}<small>{{ unit(field) }}</small></div>
-              <svg class="spark" viewBox="0 0 100 24" preserveAspectRatio="none">
-                <polyline v-if="history[field].length > 1" :points="sparkline(field)" />
-                <line v-else x1="0" y1="20" x2="100" y2="20" />
-              </svg>
-            </div>
-          </div>
-        </div>
-      </div>
-    </aside>
-
-    <!-- 中：三维模型 -->
+    <!-- 三维模型 -->
     <section class="stage">
       <test-bench-view
         ref="bench"
@@ -49,7 +29,7 @@
       />
     </section>
 
-    <!-- 右：诊断 -->
+    <!-- 右侧：诊断 -->
     <aside class="panel diagnosis">
       <div class="panel-title">最新诊断</div>
       <div v-if="latestResult" :class="['verdict', latestResult.result]">
@@ -118,7 +98,33 @@
       </div>
     </aside>
 
-    <!-- 下：趋势 -->
+    <!-- 下左：关键测点 -->
+    <section class="panel metrics">
+      <div class="panel-title">
+        关键测点
+        <span class="group-legend">
+          <span v-for="group in metricGroups" :key="group.title" :class="['tag', group.key]">{{ group.title }}</span>
+        </span>
+      </div>
+      <div class="metric-grid">
+        <template v-for="group in metricGroups">
+          <div
+            v-for="field in group.fields"
+            :key="field"
+            :class="['metric', group.key, { empty: !featureMap[field] }]"
+            :title="field"
+          >
+            <svg class="spark" viewBox="0 0 100 24" preserveAspectRatio="none">
+              <polyline v-if="history[field].length > 1" :points="sparkline(field)" />
+            </svg>
+            <div class="metric-name">{{ field }}</div>
+            <div class="metric-value">{{ latest(field) }}<small>{{ unit(field) }}</small></div>
+          </div>
+        </template>
+      </div>
+    </section>
+
+    <!-- 下右：趋势 -->
     <section class="panel trend">
       <div class="trend-head">
         <div class="panel-title">趋势</div>
@@ -197,9 +203,9 @@ const DEVIATION_LIMIT = 15 // %
 const DEVIATION_SCALE = 30 // 偏差条满格对应的百分比
 
 const METRIC_GROUPS = [
-  { title: '被试件', fields: ['燃油泵实际转速', '电传实际转速', '电传扭矩'] },
-  { title: '供油', fields: ['供油压力1-1', '供油压力1-2', '供油温度1-1', '供油流量1-1'] },
-  { title: '回油', fields: ['回油压力1-1', '回油压力1-2', '回油温度1-1', '回油流量1-1', '回油流量1-2'] }
+  { key: 'pump', title: '被试件', fields: ['燃油泵实际转速', '电传实际转速', '电传扭矩'] },
+  { key: 'supply', title: '供油', fields: ['供油压力1-1', '供油压力1-2', '供油温度1-1', '供油流量1-1'] },
+  { key: 'return', title: '回油', fields: ['回油压力1-1', '回油压力1-2', '回油温度1-1', '回油流量1-1', '回油流量1-2'] }
 ]
 
 const TREND_GROUPS = {
@@ -426,11 +432,11 @@ $warn: #f59e0b;
   height: 100%;
   min-height: 600px;
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr) 300px;
-  grid-template-rows: 46px minmax(0, 1fr) 220px;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) 320px;
+  grid-template-rows: 46px minmax(0, 1fr) 236px;
   grid-template-areas:
     'top top top'
-    'metrics stage diagnosis'
+    'stage stage diagnosis'
     'metrics trend diagnosis';
   gap: 10px;
   padding: 10px;
@@ -608,61 +614,81 @@ $warn: #f59e0b;
   small { color: $muted; font-size: 12px; }
 }
 
-/* ---------- 左：测点 ---------- */
+/* ---------- 关键测点 ---------- */
+$pump: #a78bfa;
+$supply: #38bdf8;
+$return: #fbbf24;
+
 .metrics {
   grid-area: metrics;
   display: flex;
   flex-direction: column;
 }
-.metric-scroll {
+.group-legend {
+  display: flex;
+  gap: 10px;
+  font-weight: normal;
+  letter-spacing: 0;
+}
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: $muted;
+  &::before {
+    content: '';
+    width: 8px;
+    height: 3px;
+    border-radius: 2px;
+  }
+  &.pump::before { background: $pump; }
+  &.supply::before { background: $supply; }
+  &.return::before { background: $return; }
+}
+.metric-grid {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
+  grid-auto-rows: 50px;
+  gap: 6px;
   margin-right: -8px;
   padding-right: 8px;
 }
-.group-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: $muted;
-  font-size: 12px;
-  margin: 8px 0 6px;
-  &::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: linear-gradient(90deg, $border, transparent);
-  }
-}
-.metric-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-}
 .metric {
-  padding: 7px 9px 4px;
+  position: relative;
+  overflow: hidden;
+  padding: 6px 9px;
   border-radius: 6px;
-  background: linear-gradient(180deg, rgba(56, 189, 248, 0.06), rgba(56, 189, 248, 0.015));
+  background: rgba(56, 189, 248, 0.04);
   border: 1px solid rgba(56, 189, 248, 0.1);
-  transition: border-color 0.15s;
-  &:hover { border-color: rgba(56, 189, 248, 0.35); }
+  border-top: 2px solid var(--group-color);
+  transition: border-color 0.15s, background 0.15s;
+  &.pump { --group-color: #{$pump}; }
+  &.supply { --group-color: #{$supply}; }
+  &.return { --group-color: #{$return}; }
+  &:hover { background: rgba(56, 189, 248, 0.08); }
   &.empty .metric-value { color: #4d6380; }
 }
 .metric-name {
+  position: relative;
   color: $muted;
   font-size: 12px;
+  line-height: 16px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .metric-value {
-  margin-top: 2px;
+  position: relative;
   color: $bright;
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 600;
-  line-height: 1.2;
+  line-height: 22px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
   small {
     margin-left: 3px;
     font-size: 11px;
@@ -670,25 +696,24 @@ $warn: #f59e0b;
     color: $muted;
   }
 }
+// 迷你曲线作为卡片背景
 .spark {
-  display: block;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
   width: 100%;
-  height: 16px;
-  margin-top: 2px;
+  height: 60%;
+  opacity: 0.55;
   polyline {
     fill: none;
-    stroke: $accent;
-    stroke-width: 1.4;
-    vector-effect: non-scaling-stroke;
-  }
-  line {
-    stroke: rgba(56, 189, 248, 0.15);
-    stroke-dasharray: 3 3;
+    stroke: var(--group-color);
+    stroke-width: 1.2;
     vector-effect: non-scaling-stroke;
   }
 }
 
-/* ---------- 中：模型 ---------- */
+/* ---------- 三维模型 ---------- */
 .stage {
   grid-area: stage;
   position: relative;
@@ -1008,15 +1033,14 @@ $warn: #f59e0b;
 @media (max-width: 1280px) {
   .dashboard {
     grid-template-columns: minmax(0, 1fr) 280px;
-    grid-template-rows: 46px minmax(420px, 1fr) 220px auto;
+    grid-template-rows: 46px minmax(440px, 1fr) 236px 236px;
     grid-template-areas:
       'top top'
       'stage diagnosis'
-      'trend diagnosis'
-      'metrics metrics';
+      'metrics diagnosis'
+      'trend trend';
     overflow-y: auto;
   }
-  .metrics { max-height: 360px; }
   .stats { display: none; }
 }
 </style>
