@@ -38,7 +38,7 @@ def _row_time(line: bytes, encoding: str, delimiter: Optional[str]) -> Optional[
     return parse_time(fields[0]) if fields else None
 
 
-def replay_file(src: Path, dest: Path, speed: float) -> None:
+def replay_file(src: Path, dest: Path, speed: float, quiet: bool = False) -> None:
     raw = src.read_bytes()
     text, encoding = decode_bytes(raw[:65536])
     delimiter = detect_delimiter(text.splitlines())
@@ -59,7 +59,8 @@ def replay_file(src: Path, dest: Path, speed: float) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     data_lines = lines[head_end:]
     total = len(data_lines)
-    print(f"回放 {src.name} → {dest}（{total} 行，{speed:g} 倍速）")
+    if not quiet:
+        print(f"回放 {src.name} → {dest}（{total} 行，{speed:g} 倍速）")
     with dest.open("wb") as f:
         f.write(b"\n".join(lines[:head_end]) + (b"\n" if head_end else b""))
         f.flush()
@@ -88,10 +89,12 @@ def replay_file(src: Path, dest: Path, speed: float) -> None:
                 f.flush()
                 batch = []
                 last_flush = time.monotonic()
-                print(f"\r  {n + 1}/{total} 行", end="", flush=True)
+                if not quiet:
+                    print(f"\r  {n + 1}/{total} 行", end="", flush=True)
         if batch:
             f.write(b"\n".join(batch).rstrip(b"\n") + b"\n")
-    print(f"\r  完成，共 {total} 行，用时 {time.monotonic() - start_wall:.1f} 秒")
+    if not quiet:
+        print(f"\r  完成，共 {total} 行，用时 {time.monotonic() - start_wall:.1f} 秒")
 
 
 def main(argv=None) -> int:

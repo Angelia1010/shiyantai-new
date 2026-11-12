@@ -221,6 +221,9 @@ deploy/nginx.conf           生产部署示例
 
 ## 测试
 
+**实时故障诊断测试（端到端）**：系统运行时双击仓库根目录的 `测试实时诊断.bat`，模拟试验台边测边写数据，
+检查实时显示、自动诊断与诊断结论，并生成测试报告。说明见 [docs/实时诊断测试说明.md](docs/实时诊断测试说明.md)。
+
 ```bash
 pip install -r pump_test_bench/requirements.txt
 python -m pytest            # 在仓库根目录运行，覆盖后端核心逻辑与接口（AMESim 用假模块测试）
