@@ -1,7 +1,16 @@
-"""从试验数据（稳定段）取出模型输入（工况）与各测点均值。"""
-from typing import Dict, List, Optional, Tuple
+"""从试验数据（稳定段）取出模型输入（工况）与各测点均值。
 
+输入有三种取法：
+- column（+ fallback_columns）：单个测点的均值，主测点无效时用备用测点；
+- columns + aggregate：多个测点的中位数（如多只流量计的共识值）；
+- derived = density：由油温按燃油密度模型计算（需要调用方提供 density_fn）。
+"""
+from typing import Callable, Dict, List, Optional, Tuple
+
+import numpy as np
 import pandas as pd
+
+DensityFn = Callable[[float], Optional[float]]
 
 
 def _mean(seg: pd.DataFrame, col: str) -> Optional[float]:
@@ -11,21 +20,46 @@ def _mean(seg: pd.DataFrame, col: str) -> Optional[float]:
     return float(values.mean()) if len(values) else None
 
 
-def condition_of(seg: pd.DataFrame, cfg: Dict) -> Tuple[Dict[str, float], List[str]]:
-    """返回 (工况 {输入名: 值}, 说明)。主测点无效（缺失或超出 valid 范围）时用备用测点；都无效则缺该输入。"""
+def _first_valid(seg: pd.DataFrame, cols: List[str], lo: float, hi: float) -> Tuple[Optional[float], int]:
+    for i, col in enumerate(cols):
+        value = _mean(seg, col)
+        if value is not None and lo <= value <= hi:
+            return value, i
+    return None, -1
+
+
+def condition_of(seg: pd.DataFrame, cfg: Dict, density_fn: Optional[DensityFn] = None) -> Tuple[Dict[str, float], List[str]]:
+    """返回 (工况 {输入名: 值}, 说明)。"""
     cond: Dict[str, float] = {}
     notes: List[str] = []
     for spec in cfg["inputs"]:
         lo, hi = spec.get("valid", [float("-inf"), float("inf")])
-        for i, col in enumerate([spec["column"]] + spec.get("fallback_columns", [])):
-            value = _mean(seg, col)
-            if value is not None and lo <= value <= hi:
-                cond[spec["name"]] = value
-                if i:
-                    notes.append(f"{spec['column']} 读数无效，{spec['name']}改用 {col}")
-                break
+        if spec.get("derived") == "density":
+            cols = [spec["temperature_column"]] + spec.get("fallback_columns", [])
+            temp, i = _first_valid(seg, cols, -40, 120)
+            rho = density_fn(temp) if (temp is not None and density_fn) else None
+            if rho is None:
+                notes.append(f"无法计算{spec['name']}（缺少有效油温或密度模型）")
+                continue
+            if i > 0:
+                notes.append(f"{cols[0]} 读数无效，{spec['name']}改用 {cols[i]} 计算")
+            cond[spec["name"]] = rho
+        elif spec.get("columns"):
+            vals = [v for v in (_mean(seg, c) for c in spec["columns"]) if v is not None]
+            value = float(np.median(vals)) if vals else None
+            if value is None or not lo <= value <= hi:
+                notes.append(f"缺少有效的{spec['name']}")
+                continue
+            cond[spec["name"]] = value
         else:
-            notes.append(f"缺少有效的{spec['name']}（{spec['column']}）")
+            cols = [spec["column"]] + spec.get("fallback_columns", [])
+            value, i = _first_valid(seg, cols, lo, hi)
+            if value is None:
+                notes.append(f"缺少有效的{spec['name']}（{spec['column']}）")
+                continue
+            if i > 0:
+                notes.append(f"{spec['column']} 读数无效，{spec['name']}改用 {cols[i]}")
+            cond[spec["name"]] = value
     return cond, notes
 
 
@@ -38,3 +72,11 @@ def measured_means(seg: pd.DataFrame, cfg: Dict) -> Dict[str, float]:
             if value is not None:
                 out[col] = value
     return out
+
+
+def input_columns(cfg: Dict) -> List[str]:
+    cols: List[str] = []
+    for spec in cfg["inputs"]:
+        cols += spec.get("columns", []) or [c for c in [spec.get("column"), spec.get("temperature_column")] if c]
+        cols += spec.get("fallback_columns", [])
+    return cols

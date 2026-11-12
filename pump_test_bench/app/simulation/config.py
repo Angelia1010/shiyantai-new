@@ -1,22 +1,24 @@
-"""仿真配置加载：默认 pump_test_bench/config/simulation.json，可用环境变量 SIM_CONFIG 指定。按修改时间缓存。"""
+"""仿真模型注册表：pump_test_bench/config/simulation/ 下每个 .json 是一个模型（可用环境变量 SIM_CONFIG_DIR 指定目录）。
+
+加一个模型 = 加一份配置 + 建一张基准表，诊断代码不用改。按文件修改时间缓存。
+"""
 import json
 import os
 import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-DEFAULT_SIM_CONFIG = Path(__file__).resolve().parents[2] / "config" / "simulation.json"
+DEFAULT_SIM_DIR = Path(__file__).resolve().parents[2] / "config" / "simulation"
 _lock = threading.Lock()
 _cache: Dict[str, Tuple[float, Dict]] = {}
 
 
-def sim_config_path() -> Path:
-    value = os.environ.get("SIM_CONFIG", "").strip()
-    return Path(value) if value else DEFAULT_SIM_CONFIG
+def sim_config_dir() -> Path:
+    value = os.environ.get("SIM_CONFIG_DIR", "").strip()
+    return Path(value) if value else DEFAULT_SIM_DIR
 
 
-def load_sim_config() -> Dict:
-    path = sim_config_path()
+def _load(path: Path) -> Dict:
     mtime = path.stat().st_mtime
     with _lock:
         cached = _cache.get(str(path))
@@ -25,12 +27,26 @@ def load_sim_config() -> Dict:
     try:
         cfg = json.loads(path.read_text(encoding="utf-8"))
     except ValueError as exc:
-        raise ValueError(f"仿真配置文件格式错误：{path}（{exc}）") from None
-    if not cfg.get("inputs") or not cfg.get("outputs"):
-        raise ValueError(f"仿真配置缺少 inputs 或 outputs：{path}")
+        raise ValueError(f"仿真模型配置格式错误：{path.name}（{exc}）") from None
+    for key in ("id", "name", "engine", "inputs", "outputs"):
+        if not cfg.get(key):
+            raise ValueError(f"仿真模型配置 {path.name} 缺少 {key}")
     with _lock:
         _cache[str(path)] = (mtime, cfg)
     return cfg
+
+
+def list_models() -> List[Dict]:
+    d = sim_config_dir()
+    models = [_load(p) for p in sorted(d.glob("*.json"))] if d.exists() else []
+    return sorted(models, key=lambda m: (m.get("order", 99), m["id"]))
+
+
+def load_model_cfg(model_id: str) -> Dict:
+    for m in list_models():
+        if m["id"] == model_id:
+            return m
+    raise ValueError(f"没有这个仿真模型：{model_id}")
 
 
 def input_names(cfg: Dict) -> List[str]:
@@ -41,10 +57,10 @@ def output_names(cfg: Dict) -> List[str]:
     return [o["name"] for o in cfg["outputs"]]
 
 
-def output_of_column(cfg: Dict) -> Dict[str, Dict]:
-    """测点列 → 它所属的模型输出。"""
-    return {c: o for o in cfg["outputs"] for c in o["columns"]}
+def find_output(cfg: Dict, name: str) -> Optional[Dict]:
+    return next((o for o in cfg["outputs"] if o["name"] == name), None)
 
 
-def find_input(cfg: Dict, name: str) -> Optional[Dict]:
-    return next((i for i in cfg["inputs"] if i["name"] == name), None)
+def residual_mode(output: Dict) -> str:
+    """relative：相对偏差（流量、压力）；absolute：绝对偏差（温度，零点没有物理意义）。"""
+    return output.get("residual", "relative")

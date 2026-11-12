@@ -145,7 +145,7 @@ def infer_causes(findings: List[Dict], loops: List[Dict]) -> List[Dict]:
         f = system[0]
         follow = "同步变化，说明实际流量确实变了" in f["detail"]
         low = (f.get("value") or 0) < 0
-        extra = take(lambda x: x["category"] == "model_pressure")
+        extra: List[Dict] = []
         if low and follow:
             name = "被试泵出力低于预期"
             why = ("各流量计彼此一致，但整体低于仿真模型在该工况下的预期，与流量相关的压力也同步降低，"
@@ -164,21 +164,10 @@ def infer_causes(findings: List[Dict], loops: List[Dict]) -> List[Dict]:
             why = "各流量计彼此一致，但整体高于仿真模型在该工况下的预期"
             alt = ["电传转速信号偏低", "流量控制阀开度大于该档位的设定", "仿真基准表与当前设备状态不符（检修后未重建）"]
             advice = "核对电传转速信号与阀开度设定；设备检修后请重建仿真基准表。"
-        causes.append(_cause(name, system + extra, why, advice, location="主油路", alternatives=alt))
+        causes.append(_cause(name, system + extra, why, advice, location="主油路", alternatives=alt,
+                             component=f.get("component")))
 
-    # 7) 没有冗余表的压力测点偏离模型预期
-    for f in [f for f in pool if f["category"] == "model_pressure"]:
-        if f not in pool:
-            continue
-        items = take(lambda x, t=f["target"]: x["target"] == t)
-        causes.append(_cause(
-            f"{f['label']} 压力测点偏离", items,
-            "该压力测点没有冗余表可以互校；与仿真模型在同一工况下的预期相比偏离较大，而流量与其他压力都正常，"
-            "更可能是该压力传感器零点或量程漂移",
-            f"用标准压力表比对 {f['label']}，停机泄压后检查零点。",
-            alternatives=["该处管路阻力变化（滤网堵塞、阀开度变化）"]))
-
-    # 8) 其余：按测点归并
+    # 7) 其余：按测点归并（模型的发现在后面处理，以便并入已有原因）
     names = {"noise": "读数波动过大", "spike": "读数毛刺", "trend": "偏差持续变化", "temperature": "温度传感器偏差",
              "zero": "零点偏移"}
     advice = {"noise": "检查信号屏蔽与接地，远离变频器/加热器动力线。",
@@ -187,8 +176,8 @@ def infer_causes(findings: List[Dict], loops: List[Dict]) -> List[Dict]:
               "temperature": "用标准温度计比对两只传感器，检查安装深度与接线。",
               "zero": "在停流状态下做零点校准。"}
     signal = ("noise", "spike")
-    while pool:
-        f = pool[0]
+    while any(not x["category"].startswith("model") for x in pool):
+        f = next(x for x in pool if not x["category"].startswith("model"))
         if f["category"] in signal:  # 同一测点的抖动与毛刺是同一类信号问题，合并
             items = take(lambda x, t=f["target"]: x["target"] == t and x["category"] in signal)
             if any(x["category"] == "spike" for x in items):
@@ -201,16 +190,68 @@ def infer_causes(findings: List[Dict], loops: List[Dict]) -> List[Dict]:
         causes.append(_cause(f"{f['label']} {names.get(f['category'], f['title'])}", items, why,
                              advice.get(f["category"], "检查该测点。")))
 
-    # 模型对比的“注意”级发现：作为已有原因的补充依据（例如泄漏时，回油侧低于模型预期而供油侧与模型一致）
     loop_cols = set(group) | {(lp.get("mass") or {}).get("column") for lp in loops if lp.get("mass")}
-    for f in findings:
-        if f["category"] != "model" or f["severity"] not in (NOTICE,):
+    mass_cols = {(lp.get("mass") or {}).get("column") for lp in loops if lp.get("mass")}
+
+    def related(c: Dict) -> set:
+        loop_level = c["location"] in ("主油路",) or c["component"] in ("回油管路", "被试件2")
+        return {c["target"]} | (loop_cols if loop_level else set())
+
+    def attach(host: Dict, items: List[Dict]) -> None:
+        host["evidence"] += [f"{x.get('model_name', '模型')}：{x['detail']}" for x in items]
+        host["severity"] = _worst([{"severity": host["severity"]}] + items)
+
+    # 9) 涡轮流量计模型的参考量偏差：质量流量计读数或燃油密度
+    ref = take(lambda x: x["category"] == "model_reference")
+    if ref:
+        # 先并入质量流量计的原因；有泄漏、夹气这类整条油路的原因时，参考量偏差是它们的结果，也并入
+        host = next((c for c in causes if c["target"] in mass_cols), None) or \
+            next((c for c in causes if c["location"] == "主油路"), None)
+        if host:
+            attach(host, ref)
+        else:
+            causes.append(_cause(
+                "质量流量计或燃油密度偏差", ref,
+                "几只涡轮流量计彼此一致，但都与按质量流量和密度算出的理论流量对不上，说明是模型的参考量偏了",
+                "检查质量流量计零点与标定；核对诊断设置中的燃油 20 ℃ 密度是否为当前油品。",
+                alternatives=["油品粘度与标定时差别较大（涡轮流量计系数随粘度变化）"]))
+
+    # 10) 模型输入测点偏差（如温控模型的汇流温度传感器）
+    for f in take(lambda x: x["category"] == "model_input"):
+        causes.append(_cause(
+            f"{f['label']} 测点偏差", [f],
+            f"{f.get('model_name', '模型')}的各输出测点彼此一致、整体偏离预期，最可能是作为模型输入的 {f['label']} 本身偏了",
+            f"用标准温度计或压力表比对 {f['label']}，检查安装深度与接线。",
+            alternatives=["该段管路的实际工况（加热、冷却）发生变化"]))
+
+    # 11) 单个测点偏离模型预期：属于已有原因的测点或管路 → 作为补充依据；否则单独成为原因
+    kind_text = {
+        "pressure": ("压力测点偏离", "该压力测点没有冗余表可以互校；与模型在同一工况下的预期相比偏离较大，其他测点正常，"
+                     "更可能是该压力传感器零点或量程漂移", "用标准压力表比对 {label}，停机泄压后检查零点。",
+                     ["该处管路阻力变化（滤网堵塞、阀开度变化）"]),
+        "temperature": ("温度测点偏离", "与温控链路模型的预期相比偏离较大，而同一链路上的其他温度正常，更可能是该温度传感器偏差",
+                        "用标准温度计比对 {label}，检查热电阻安装深度与接线。", ["该段管路散热或加热条件变化"]),
+        "flow": ("与流量计模型不符", "与按质量流量和密度算出的理论流量相比偏离较大",
+                 "对 {label} 进行校准；处理前可暂以其他流量计读数为准。", ["多只流量计同时漂移（互校难以发现）"]),
+    }
+    for f in [f for f in pool if f["category"] == "model_single"]:
+        if f not in pool:
             continue
-        for c in causes:
-            related = {c["target"]} | (loop_cols if c["location"] in ("主油路", "回油管路") or c["component"] == "回油管路" else set())
-            if f["target"] in related or (c["target"] == f["target"]):
-                c["evidence"].append(f"模型对比：{f['detail']}")
-                break
+        items = take(lambda x, t=f["target"]: x["target"] == t and x["category"] == "model_single")
+        host = next((c for c in causes if f["target"] in related(c)), None)
+        if host:
+            attach(host, items)
+            continue
+        name, why, advice, alt = kind_text.get(f.get("kind"), kind_text["pressure"])
+        causes.append(_cause(f"{f['label']} {name}", items, why, advice.format(label=f["label"]), alternatives=alt))
+
+    # 模型对比的“注意”级发现：作为已有原因的补充依据（例如泄漏时，回油侧低于模型预期而供油侧与模型一致）
+    for f in findings:
+        if f["category"] != "model" or f["severity"] != NOTICE:
+            continue
+        host = next((c for c in causes if f["target"] in related(c)), None)
+        if host:
+            host["evidence"].append(f"{f.get('model_name', '模型')}：{f['detail']}")
 
     causes.sort(key=lambda c: -SEVERITY_RANK[c["severity"]])
     return causes

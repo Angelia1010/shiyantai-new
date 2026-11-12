@@ -66,14 +66,19 @@ def test_stuck_meter():
 def test_leak_is_not_blamed_on_single_meters():
     df = faults.leak(healthy_frame(), ["回油流量1-1", "回油流量1-2", "回油质量流量2"], 0.04)
     body = diagnose_frame(df)
-    cats = {f["category"] for f in decisive(body)}
+    cats = {f["category"] for f in decisive(body) if not f["category"].startswith("model")}
     assert cats == {"balance"}, decisive(body)
     assert body["loops"][0]["balance"]["corrected"] == pytest.approx(0.04, abs=0.006)
+    # 涡轮流量计模型发现供油侧高于理论流量：并入泄漏这一个原因
+    assert [c["name"] for c in body["causes"]] == ["供回油之间泄漏"]
 
 
 def test_mass_meter_drift():
     body = diagnose_frame(faults.drift(healthy_frame(), "回油质量流量2", 0.04))
-    assert {(f["category"], f["target"]) for f in decisive(body)} == {("mass_volume", "回油质量流量2")}
+    found = {(f["category"], f["target"]) for f in decisive(body)}
+    assert found - {("model_reference", "理论体积流量")} == {("mass_volume", "回油质量流量2")}
+    # 涡轮流量计模型的“参考量偏差”与质量-体积校核指向同一原因
+    assert [c["name"] for c in body["causes"]] == ["回油质量流量计2 零点或标定漂移"]
 
 
 def test_noise_and_spikes_are_warnings():
@@ -207,9 +212,10 @@ def _real():
 def test_model_check_on_healthy_file():
     body = diagnose_frame(_real())
     assert body["result"] == "normal"
-    model = body["model"]
-    assert model["available"] and model["system"] is None
-    assert all(abs(r["residual"]) < r["warn"] for r in model["rows"])
+    assert [m["id"] for m in body["models"]] == ["bench", "turbine", "thermal"]
+    for model in body["models"]:
+        assert model["available"] and model["group"] is None, model["id"]
+        assert all(abs(r["residual"]) < r["warn"] for r in model["rows"]), model["id"]
 
 
 def test_pump_wear_found_only_by_model():
@@ -218,10 +224,21 @@ def test_pump_wear_found_only_by_model():
     cols = {c: pd.to_numeric(df[c]).to_numpy(dtype=float) for c in gen.PUMP_COLUMNS}
     for c, v in gen.pump_wear(cols, gen.profile("const", t), None, ratio=0.08).items():
         df[c] = v
-    assert diagnose_frame(df, sim_table=None)["result"] == "normal"  # 各表一致，互校看不出
+    assert diagnose_frame(df, sims=None)["result"] == "normal"  # 各表一致，互校看不出
     body = diagnose_frame(df)
     assert body["result"] == "abnormal" and body["causes"][0]["name"] == "被试泵出力低于预期"
-    assert body["model"]["system"]["pressures_follow"] is True
+    bench = next(m for m in body["models"] if m["id"] == "bench")
+    assert bench["group"]["pressures_follow"] is True
+    # 涡轮流量计模型：质量流量也同比例减少，各表与公式一致，不应报
+    turbine = next(m for m in body["models"] if m["id"] == "turbine")
+    assert turbine["group"] is None
+    # 诊断方案：泵-管路模型设为“仅作参考”时不影响结论
+    from pump_test_bench.app.diagnosis.settings import profile
+    ref = diagnose_frame(df, profile=profile({"bench": {"mode": "reference"}}, saved={}))
+    assert ref["result"] == "normal"
+    assert any(f.get("reference_only") for f in ref["findings"])
+    off = diagnose_frame(df, profile=profile({"bench": {"mode": "off"}}, saved={}))
+    assert "bench" not in [m["id"] for m in off["models"]]
 
 
 def test_pressure_sensor_drift_found_by_model():
@@ -233,7 +250,7 @@ def test_pressure_sensor_drift_found_by_model():
 
 def test_amesim_model_adapter_with_fake_client():
     """AMESim 适配：按配置设置参数、运行、取末段稳态均值（用假客户端，不需要 AMESim）。"""
-    from pump_test_bench.app.simulation.config import load_sim_config
+    from pump_test_bench.app.simulation.config import load_model_cfg
     from pump_test_bench.app.simulation.models import AmesimModel
 
     class Fake:
@@ -249,7 +266,7 @@ def test_amesim_model_adapter_with_fake_client():
                 return {}
             return call
 
-    cfg = json_copy(load_sim_config())
+    cfg = json_copy(load_model_cfg("bench"))
     cfg["amesim"]["model_file"] = "pump.ame"
     cfg["amesim"]["variables"] = {"系统流量": "qout@pump01"}
     cfg["amesim"]["parameters"] = [p for p in cfg["amesim"]["parameters"] if "待填写" not in str(p)]
@@ -265,3 +282,24 @@ def test_amesim_model_adapter_with_fake_client():
 def json_copy(d):
     import json
     return json.loads(json.dumps(d))
+
+
+def test_turbine_model_reference_shift_on_mass_meter_fault():
+    """质量流量计偏 +5%：各涡轮表相对公式一致偏低 → 判为参考量偏差，并入质量流量计的原因。"""
+    df = _real()
+    df["回油质量流量2"] = pd.to_numeric(df["回油质量流量2"]) * 1.05
+    body = diagnose_frame(df)
+    turbine = next(m for m in body["models"] if m["id"] == "turbine")
+    assert turbine["group"]["meaning"] == "reference"
+    assert len(body["causes"]) == 1 and "回油质量流量计2" in body["causes"][0]["name"]
+    assert any("涡轮流量计模型" in e for e in body["causes"][0]["evidence"])
+
+
+def test_thermal_model_input_sensor_shift():
+    """汇流温度传感器偏 +7 ℃：温控链路模型的各温度一致偏低 → 判为模型输入测点偏差。"""
+    df = _real()
+    df["T9冷热油汇流后温度"] = pd.to_numeric(df["T9冷热油汇流后温度"]) + 7
+    assert diagnose_frame(df, sims=None)["result"] == "normal"
+    body = diagnose_frame(df)
+    assert body["result"] != "normal"
+    assert body["causes"][0]["name"] == "T9冷热油汇流后温度 测点偏差"

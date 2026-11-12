@@ -49,7 +49,11 @@ def baseline_path() -> Path:
 
 
 def load_baseline() -> Optional[Dict]:
-    for path in (baseline_path(), DEFAULT_BASELINE):
+    try:
+        candidates = [baseline_path(), DEFAULT_BASELINE]
+    except Exception:  # 没有服务配置（离线工具）时只用随代码提供的基准
+        candidates = [DEFAULT_BASELINE]
+    for path in candidates:
         try:
             if path.is_file():
                 return json.loads(path.read_text(encoding="utf-8"))

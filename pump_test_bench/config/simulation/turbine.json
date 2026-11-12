@@ -1,0 +1,104 @@
+{
+  "_说明": "涡轮流量计模型：现有数学公式（质量流量、密度 → 涡轮转速 Y = 2696.17 + 15468.63·m − 3.42·ρ → 叶片频率 f = 6Y/2π → 理论流量 q = 0.304921·f + 0.210230），再用正常数据标定每只表的固有偏差（随流量线性变化）。负责发现单只或几只涡轮表的 K 系数漂移，以及参考量（质量流量计、燃油密度）的偏差。",
+  "id": "turbine",
+  "name": "涡轮流量计模型",
+  "order": 2,
+  "description": "回路 1/2 流量计与供油管路上的涡轮流量计：质量流量、密度 → 理论体积流量",
+  "components": [
+    "回油流量计1",
+    "回油流量计2",
+    "供油管路"
+  ],
+  "default_mode": "decisive",
+  "engine": {
+    "type": "formula",
+    "formula": "turbine_meter",
+    "_说明": "formula = 内置数学公式（app/simulation/formulas.py）；以后可改为 amesim 并补全 amesim 段"
+  },
+  "inputs": [
+    {
+      "name": "质量流量",
+      "column": "回油质量流量2",
+      "unit": "kg/h",
+      "grid": [
+        100,
+        150,
+        200,
+        250,
+        300,
+        350,
+        400,
+        450
+      ],
+      "valid": [
+        20,
+        20000
+      ]
+    },
+    {
+      "name": "燃油密度",
+      "derived": "density",
+      "temperature_column": "供油温度1-1",
+      "fallback_columns": [
+        "供油温度1-2"
+      ],
+      "unit": "kg/m³",
+      "grid": [
+        770,
+        785,
+        800,
+        815,
+        830
+      ],
+      "_说明": "由油温按燃油密度模型计算（诊断设置里填了 20 ℃ 密度时用它，否则用健康基准拟合的密度-温度关系）"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "理论体积流量",
+      "unit": "L/h",
+      "kind": "flow",
+      "columns": [
+        "回油流量1-1",
+        "回油流量1-2",
+        "供油流量1-1",
+        "供油流量1-2"
+      ],
+      "component_by_column": {
+        "回油流量1-1": "回油流量计1",
+        "回油流量1-2": "回油流量计2",
+        "供油流量1-1": "供油管路",
+        "供油流量1-2": "供油管路"
+      }
+    }
+  ],
+  "rules": {
+    "group_shift": {
+      "output": "理论体积流量",
+      "min_columns": 3,
+      "meaning": "reference"
+    }
+  },
+  "thresholds": {
+    "sigma_warn": 3,
+    "sigma_alarm": 5,
+    "floor_warn": {
+      "flow": 0.02
+    },
+    "floor_alarm": {
+      "flow": 0.035
+    }
+  },
+  "media": {
+    "video": "videos/涡轮流量计仿真2.mp4",
+    "caption": "涡轮流量计 AMESim 仿真录屏（示意），不随本次计算变化"
+  },
+  "amesim": {
+    "_说明": "接入涡轮流量计的 AMESim 部件模型时填写，结构同 bench.json",
+    "model_file": "待填写.ame",
+    "parameters": [],
+    "variables": {
+      "理论体积流量": "待填写"
+    }
+  }
+}

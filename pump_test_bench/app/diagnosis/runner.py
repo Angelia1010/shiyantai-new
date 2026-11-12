@@ -14,15 +14,17 @@ from pump_test_bench.app.diagnosis.history import DEFAULTS as HISTORY_DEFAULTS, 
 logger = logging.getLogger(__name__)
 
 
-def run_task_diagnosis(task: Dict, path: Path, operator: str, density: Optional[float] = None) -> Dict:
+def run_task_diagnosis(task: Dict, path: Path, operator: str, density: Optional[float] = None,
+                       models: Optional[Dict] = None) -> Dict:
     """诊断任务对应的文件，保存报告并返回；失败时把任务标记为 Failed 再抛出。
 
     density：当前燃油 20 ℃ 密度（kg/m³）；不传时用前端“诊断设置”里保存的值，仍没有则用健康基准的密度模型。
+    models：本次诊断临时调整的诊断方案 {模型 id: {mode, sigma_warn, sigma_alarm}}，不传用保存的方案。
     """
     try:
         if density is None:
             density = diag_settings.fuel_density_20()
-        body = diagnose_file(path, density=density)
+        body = diagnose_file(path, density=density, models=models)
         _attach_history(task, body)
         report = build_report(task, body, operator=operator)
         repo.save_report(task["task_id"], report, render_docx(report))

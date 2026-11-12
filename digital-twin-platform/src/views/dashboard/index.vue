@@ -177,9 +177,9 @@
                 <b>{{ f.title }}</b> · {{ f.detail }}
               </div>
             </template>
-            <template v-if="detail.model">
+            <template v-if="detail.models && detail.models.length">
               <div class="section-title">仿真模型对比</div>
-              <model-compare :model="detail.model" dark />
+              <model-compare :models="detail.models" dark />
             </template>
             <div class="section-title">检测明细</div>
             <table class="indicators">

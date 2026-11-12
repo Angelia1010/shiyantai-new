@@ -29,7 +29,7 @@ from pump_test_bench.app.diagnosis.checks import ABNORMAL, INFO, NOTICE, SEVERIT
 from pump_test_bench.app.diagnosis.config import config_path, load_config
 from pump_test_bench.app.diagnosis.signals import Segment, find_steady, time_axis
 from pump_test_bench.app.simulation.check import model_check, summary_rows
-from pump_test_bench.app.simulation.config import load_sim_config
+from pump_test_bench.app.simulation.config import list_models
 from pump_test_bench.app.simulation.table import load_table
 
 logger = logging.getLogger(__name__)
@@ -82,10 +82,10 @@ def _meter_thresholds(cfg: Dict, base: Optional[Dict], flow: Optional[float] = N
 
 
 def analyze(df: pd.DataFrame, cfg: Dict, baseline: Optional[Dict] = None,
-            fuel_density_20: Optional[float] = None, sim_table: Optional[Dict] = None,
-            sim_cfg: Optional[Dict] = None) -> Dict:
+            fuel_density_20: Optional[float] = None, sims: Optional[List] = None,
+            profile: Optional[Dict] = None) -> Dict:
     """fuel_density_20：当前燃油 20 ℃ 密度（kg/m³），不填时用健康基准/配置的密度-温度模型。
-    sim_table / sim_cfg：仿真基准表与仿真配置，有时做模型残差检查。"""
+    sims：[(模型配置, 仿真基准表), ...]；profile：诊断方案 {模型 id: {mode, sigma_warn, sigma_alarm}}。"""
     t = time_axis(df)
     th = cfg["thresholds"]
     bmeters = (baseline or {}).get("meters", {})
@@ -414,11 +414,23 @@ def analyze(df: pd.DataFrame, cfg: Dict, baseline: Optional[Dict] = None,
         results.append(result)
 
     # 6½) 模型残差：与仿真模型在同一工况下的预期值比较（互校已判为有问题的表不参与系统性判断）
-    model_result = None
-    if sim_table and sim_cfg:
+    model_results = []
+    if sims and any(lp["active"] for lp in results):  # 没有流量时不做模型对比
         flagged = {m["column"] for lp in results for m in lp["meters"] if m.get("severity", INFO) != INFO}
-        model_result = model_check(seg, sim_cfg, sim_table, flagged)
-        findings.extend(model_result["findings"])
+        components = {m["column"]: m.get("component") for lp in cfg["loops"] for m in lp["meters"] if m.get("component")}
+        density_fn = lambda t: _density(cfg, baseline, t, fuel_density_20)[0]  # noqa: E731
+        for mcfg, table in sims:
+            setting = (profile or {}).get(mcfg["id"], {"mode": mcfg.get("default_mode", "decisive")})
+            if setting.get("mode") == "off":
+                continue
+            res = model_check(seg, mcfg, table, flagged, density_fn, setting, components)
+            res["mode"] = setting.get("mode", "decisive")
+            if res["mode"] == "reference":  # 仅作参考：不影响结论
+                for f in res["findings"]:
+                    if f["severity"] in (WARNING, ABNORMAL):
+                        f["raw_severity"], f["severity"], f["reference_only"] = f["severity"], NOTICE, True
+            findings.extend(res["findings"])
+            model_results.append(res)
 
     # 7) 同位置温度传感器互校（油温决定密度修正，偏了会把质量-体积校核带偏）
     for pair in cfg.get("temperature_pairs", []):
@@ -474,7 +486,7 @@ def analyze(df: pd.DataFrame, cfg: Dict, baseline: Optional[Dict] = None,
                                     f"[{rule['min']}, {rule['max']}]"))
 
     return {"segment": segment, "loops": results, "findings": findings,
-            "condition": _condition(seg, cfg, results), "model": model_result,
+            "condition": _condition(seg, cfg, results), "models": model_results,
             "ignored": [f"{c}（{r}）" if r else c for c, r in ignored.items() if c in df.columns]}
 
 
@@ -545,8 +557,9 @@ def _indicators(analysis: Dict) -> List[Dict]:
             rows.append({"name": "经验公式理论流量（参考）", "reference": "不参与判定",
                          "value": f"{lg['q_theory']:.1f} L/h，偏差 {lg['deviation'] * 100:+.1f}%"
                          + ("" if lg["valid"] else "（超出公式适用范围）")})
-    if analysis.get("model") and analysis["model"].get("available"):
-        rows += summary_rows(analysis["model"])
+    for m in analysis.get("models") or []:
+        if m.get("available"):
+            rows += summary_rows(m)
     return rows
 
 
@@ -617,7 +630,7 @@ def build_report_body(analysis: Dict, baseline: Optional[Dict] = None) -> Dict:
             "config": str(config_path().name),
             "baseline": {k: baseline[k] for k in ("created", "source", "files") if k in baseline} if baseline else None,
         },
-        "model": _model_summary(analysis.get("model")),
+        "models": [_model_summary(m) for m in analysis.get("models") or []],
     }
 
 
@@ -633,39 +646,46 @@ def _loop_summary(loop: Dict) -> Dict:
     return out
 
 
-def _model_summary(model: Optional[Dict]) -> Optional[Dict]:
-    """报告中的模型对比（可序列化）。"""
-    if not model:
-        return None
-    keep = ("column", "output", "kind", "unit", "measured", "expected", "residual", "warn", "alarm", "severity",
-            "excluded")
-    return {"available": model["available"], "model": model["model"], "table_created": model.get("table_created"),
-            "condition": model["condition"], "notes": model["notes"], "outside": model.get("outside", []),
-            "system": model.get("system"), "rows": [{k: r[k] for k in keep} for r in model.get("rows", [])]}
+def _model_summary(model: Dict) -> Dict:
+    """报告中的一个模型对比（可序列化）。"""
+    keep = ("column", "output", "kind", "unit", "mode", "measured", "expected", "residual", "warn", "alarm",
+            "severity", "excluded", "component")
+    return {"id": model["id"], "name": model["name"], "mode": model.get("mode"), "available": model["available"],
+            "model": model["model"], "table_created": model.get("table_created"), "condition": model["condition"],
+            "notes": model["notes"], "outside": model.get("outside", []), "group": model.get("group"),
+            "rows": [{k: r[k] for k in keep if k in r} for r in model.get("rows", [])]}
 
 
-def _auto_sim():
-    """默认的仿真基准表与配置；没有基准表时不做模型检查。"""
+def load_sims() -> List:
+    """所有已配置、且有基准表的仿真模型：[(模型配置, 基准表), ...]。"""
+    out = []
     try:
-        table = load_table()
-        return (table, load_sim_config()) if table else (None, None)
+        for mcfg in list_models():
+            table = load_table(mcfg["id"])
+            if table:
+                out.append((mcfg, table))
     except Exception:
-        logger.warning("加载仿真基准表失败，本次不做模型对比", exc_info=True)
-        return None, None
+        logger.warning("加载仿真模型失败，本次不做模型对比", exc_info=True)
+    return out
 
 
 def diagnose_frame(df: pd.DataFrame, density: Optional[float] = None, baseline: Optional[Dict] = None,
-                   cfg: Optional[Dict] = None, sim_table="auto", sim_cfg: Optional[Dict] = None) -> Dict:
-    """sim_table：仿真基准表；"auto" 用默认基准表，None 不做模型对比。"""
+                   cfg: Optional[Dict] = None, sims="auto", profile: Optional[Dict] = None) -> Dict:
+    """sims："auto" 用所有有基准表的模型，None 不做模型对比；profile：诊断方案，不传用保存的方案。"""
+    from pump_test_bench.app.diagnosis.settings import profile as current_profile
     cfg = cfg or load_config()
-    if sim_table == "auto":
-        sim_table, sim_cfg = _auto_sim()
-    elif sim_table is not None and sim_cfg is None:
-        sim_cfg = load_sim_config()
-    return build_report_body(analyze(df, cfg, baseline, density, sim_table, sim_cfg), baseline)
+    if sims == "auto":
+        sims = load_sims()
+    if sims and profile is None:
+        profile = current_profile()
+    body = build_report_body(analyze(df, cfg, baseline, density, sims, profile), baseline)
+    body["profile"] = profile or {}
+    return body
 
 
-def diagnose_file(path: Path, density: Optional[float] = None) -> Dict:
+def diagnose_file(path: Path, density: Optional[float] = None, models: Optional[Dict] = None) -> Dict:
+    """models：本次诊断临时调整的诊断方案（只覆盖给出的模型）。"""
     from pump_test_bench.app.diagnosis.baseline import load_baseline  # 避免循环导入
+    from pump_test_bench.app.diagnosis.settings import profile as current_profile
     _, df = read_table(path)
-    return diagnose_frame(df, density, load_baseline())
+    return diagnose_frame(df, density, load_baseline(), profile=current_profile(models))

@@ -1,9 +1,10 @@
-"""建立仿真基准表并用正常数据标定。
+"""建立仿真基准表并用正常数据标定（每个模型一张表）。
 
 用法（仓库根目录）：
-    python -m pump_test_bench.tools.build_simulation_table 健康数据目录                 # 按 simulation.json 的模型类型，保存到数据目录
-    python -m pump_test_bench.tools.build_simulation_table 健康数据目录 --model amesim  # 用 AMESim（需先启动 AMESim 服务）
-    python -m pump_test_bench.tools.build_simulation_table 健康数据目录 --out 文件.json
+    python -m pump_test_bench.tools.build_simulation_table 健康数据目录                    # 所有模型，保存到数据目录
+    python -m pump_test_bench.tools.build_simulation_table 健康数据目录 --model bench      # 只建一个模型
+    python -m pump_test_bench.tools.build_simulation_table 健康数据目录 --engine amesim    # 用 AMESim
+    python -m pump_test_bench.tools.build_simulation_table 健康数据目录 --default          # 写入随代码提供的默认表
 
 也可以在前端“仿真模型”页面操作。
 """
@@ -13,34 +14,40 @@ from pathlib import Path
 
 from pump_test_bench.app.diagnosis.baseline import _files
 from pump_test_bench.app.simulation.calibration import build_reference
-from pump_test_bench.app.simulation.config import load_sim_config
-from pump_test_bench.app.simulation.table import save_table
+from pump_test_bench.app.simulation.config import list_models, load_model_cfg
+from pump_test_bench.app.simulation.table import default_table_path, save_table
 
 
 def print_summary(table) -> None:
     calib = table.get("calibration", {})
-    print(f"\n模型：{table['model']['label']}；网格 "
+    print(f"\n{table['model_name']}：{table['model']['label']}；网格 "
           + " × ".join(f"{i['name']}{len(i['grid'])}" for i in table["inputs"])
           + f"；标定文件 {calib.get('files')} 个（{calib.get('method', '')}）")
     print(f"{'测点':<14}{'所属输出':<10}{'固有偏差':>10}{'离散σ':>10}")
     for col, c in calib.get("columns", {}).items():
-        print(f"{col:<14}{c['output']:<10}{c['bias'] * 100:>9.2f}%{c['std'] * 100:>9.2f}%")
+        unit = "℃" if c.get("mode") == "absolute" else "%"
+        k = 1 if unit == "℃" else 100
+        print(f"{col:<14}{c['output']:<10}{c['bias'] * k:>9.2f}{unit}{c['std'] * k:>9.2f}{unit}")
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="建立仿真基准表")
     parser.add_argument("source", type=Path, help="正常（健康）数据文件或目录")
-    parser.add_argument("--model", choices=("surrogate", "amesim"), help="模型类型，默认按 simulation.json")
-    parser.add_argument("--out", type=Path, help="保存位置，默认数据目录下的 simulation_table.json")
+    parser.add_argument("--model", help="模型 id（默认全部）：" + "、".join(m["id"] for m in list_models()))
+    parser.add_argument("--engine", choices=("surrogate", "formula", "amesim"), help="引擎，默认按模型配置")
+    parser.add_argument("--default", action="store_true", help="写入 config/simulation_tables/（随代码提供的默认表）")
     args = parser.parse_args(argv)
 
-    def progress(stage, done, total):
-        print(f"\r{stage} {done}/{total}", end="", flush=True)
+    models = [load_model_cfg(args.model)] if args.model else list_models()
+    files = _files(args.source)
+    for mcfg in models:
+        def progress(stage, done, total, name=mcfg["name"]):
+            print(f"\r{name} {stage} {done}/{total}      ", end="", flush=True)
 
-    table = build_reference(_files(args.source), load_sim_config(), args.model, progress, source=str(args.source))
-    print_summary(table)
-    path = save_table(table, args.out)
-    print(f"\n已保存：{path}")
+        table = build_reference(files, mcfg, args.engine, progress, source=str(args.source))
+        print_summary(table)
+        path = save_table(table, default_table_path(mcfg["id"]) if args.default else None)
+        print(f"已保存：{path}")
     return 0
 
 

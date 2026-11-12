@@ -101,9 +101,9 @@
           <div ref="chartContainer" class="chart-container"></div>
         </el-card>
 
-        <el-card shadow="never" class="indicators-card" v-if="diagnosisResult && diagnosisResult.model">
+        <el-card shadow="never" class="indicators-card" v-if="diagnosisResult && diagnosisResult.models">
           <div slot="header">仿真模型对比</div>
-          <model-compare :model="diagnosisResult.model" />
+          <model-compare :models="diagnosisResult.models" />
         </el-card>
 
         <el-card shadow="never" class="indicators-card" v-if="diagnosisResult && diagnosisResult.indicators.length">
@@ -160,10 +160,14 @@ export default {
     fields() {
       return Object.keys(this.experimentSeries)
     },
-    /** 当前字段的模型预期（报告 model.rows 中同名测点） */
+    /** 当前字段的模型预期（各模型 rows 中同名测点，取第一个有它的模型） */
     modelRow() {
-      const model = this.diagnosisResult && this.diagnosisResult.model
-      return (model && model.rows || []).find(r => r.column === this.selectedField) || null
+      const models = (this.diagnosisResult && this.diagnosisResult.models) || []
+      for (const m of models) {
+        const row = (m.rows || []).find(r => r.column === this.selectedField)
+        if (row) return { ...row, modelName: m.name }
+      }
+      return null
     },
     /** 需要展示的发现（不含“提示”级别） */
     shownFindings() {
@@ -217,23 +221,30 @@ export default {
         itemStyle: { color: '#409eff' }
       }
       if (row) {
-        const lo = row.expected * (1 - row.warn)
-        const hi = row.expected * (1 + row.warn)
+        const abs = row.mode === 'absolute'
+        const lo = abs ? row.expected - row.warn : row.expected * (1 - row.warn)
+        const hi = abs ? row.expected + row.warn : row.expected * (1 + row.warn)
         line.markLine = {
           silent: true,
           symbol: 'none',
           lineStyle: { color: '#909399', type: 'dashed' },
-          label: { formatter: `模型预期 ${row.expected.toFixed(row.unit === 'MPa' ? 3 : 1)} ${row.unit}`, color: '#606266' },
+          label: { formatter: `${row.modelName}预期 ${row.expected.toFixed(row.unit === 'MPa' ? 3 : 1)} ${row.unit}`, color: '#606266' },
           data: [{ yAxis: row.expected }]
         }
         line.markArea = {
           silent: true,
           itemStyle: { color: 'rgba(144, 147, 153, 0.12)' },
-          label: { show: true, position: 'insideTopLeft', color: '#909399', formatter: `预警范围 ±${(row.warn * 100).toFixed(1)}%` },
+          label: {
+            show: true,
+            position: 'insideTopLeft',
+            color: '#909399',
+            formatter: `预警范围 ±${abs ? `${row.warn.toFixed(1)} ${row.unit}` : `${(row.warn * 100).toFixed(1)}%`}`
+          },
           data: [[{ yAxis: lo }, { yAxis: hi }]]
         }
       }
-      const all = values.concat(row ? [row.expected * (1 - row.alarm), row.expected * (1 + row.alarm)] : [])
+      const span = row ? (row.mode === 'absolute' ? row.alarm : row.expected * row.alarm) : 0
+      const all = values.concat(row ? [row.expected - span, row.expected + span] : [])
       const finite = all.filter(v => Number.isFinite(v))
       this.chart.setOption({
         title: {

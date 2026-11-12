@@ -63,13 +63,17 @@ export class DiagnosisPipeline {
       this.checkCancelled()
       this.onStep(3, '正在诊断分析（含仿真模型对比）...')
       const density = this.config.mediumDensity || null // 当前燃油 20 ℃ 密度，留空时后端用诊断设置
-      report = await diagnoseTask(taskId, density)
-      const model = report.model
-      if (model && model.available) {
-        this.log(`仿真模型对比：${model.model}，工况 ${Object.entries(model.condition)
-          .map(([k, v]) => `${k} ${Number(v).toFixed(v >= 100 ? 0 : 2)}`).join('、')}`, 'info')
-      } else if (model) {
-        this.log(`仿真模型对比未进行：${(model.notes || []).join('；') || '工况不完整'}`, 'warn')
+      // 本次诊断的模型参与方式（只传与保存方案不同的部分也可以，这里全部传，后端会校验）
+      const models = {}
+      for (const [id, mode] of Object.entries(this.config.models || {})) models[id] = { mode }
+      report = await diagnoseTask(taskId, density, Object.keys(models).length ? models : undefined)
+      for (const m of report.models || []) {
+        if (m.available) {
+          const g = m.group ? `，发现整体偏移 ${(m.group.mode === 'absolute' ? m.group.residual.toFixed(1) : (m.group.residual * 100).toFixed(2) + '%')}` : ''
+          this.log(`仿真模型对比 · ${m.name}（${m.model}）${g}`, m.group ? 'warn' : 'info')
+        } else {
+          this.log(`仿真模型对比 · ${m.name} 未进行：${(m.notes || []).join('；') || '工况不完整'}`, 'warn')
+        }
       }
     }
     this.onStep(5, `处理完成: ${fileName}`)

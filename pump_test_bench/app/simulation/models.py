@@ -2,6 +2,7 @@
 
 - SurrogateModel（数据代理模型）：用正常数据拟合的二次响应面。AMESim 模型接入之前，用它把整套流程跑通；
   它只“记住”了健康数据的规律，能发现偏离健康规律的情况，但不能模拟没见过的部件故障。
+- FormulaModel：内置数学公式（如涡轮流量计公式），见 formulas.py；
 - AmesimModel：通过 AMESim 服务（AMESim_server）设置参数、运行仿真、读取变量，取末段稳态值。
 """
 import logging
@@ -85,6 +86,22 @@ class SurrogateModel(SimulationModel):
         return cls(d["inputs"], d["centers"], d["scales"], d["coef"], d.get("fit_info"))
 
 
+# --------------------------------------------------------------------------- 数学公式
+class FormulaModel(SimulationModel):
+    kind = "formula"
+
+    def __init__(self, cfg: Dict):
+        from pump_test_bench.app.simulation.formulas import FORMULAS
+        name = cfg["engine"].get("formula", "")
+        if name not in FORMULAS:
+            raise ValueError(f"未知的公式：{name}（可用：{'、'.join(FORMULAS)}）")
+        self.fn = FORMULAS[name]
+        self.label = f"数学公式（{cfg['name']}）"
+
+    def run(self, condition: Dict[str, float]) -> Dict[str, float]:
+        return self.fn(condition)
+
+
 # --------------------------------------------------------------------------- AMESim 模型
 class AmesimModel(SimulationModel):
     kind = "amesim"
@@ -107,7 +124,7 @@ class AmesimModel(SimulationModel):
         client = self._client()
         missing = [k for k, v in self.ame.get("variables", {}).items() if "待填写" in str(v)]
         if "待填写" in str(self.ame.get("model_file", "")) or missing:
-            raise ValueError("simulation.json 的 amesim 段还有“待填写”项（模型文件、变量路径），请先按模型补全")
+            raise ValueError(f"模型配置 {self.cfg['id']}.json 的 amesim 段还有“待填写”项（模型文件、变量路径），请先按模型补全")
         client.init_api()
         client.open_model(self.ame["model_file"])
         if self.ame.get("stop_time_s"):
@@ -161,13 +178,15 @@ class AmesimModel(SimulationModel):
 
 def make_model(cfg: Dict, kind: Optional[str] = None, surrogate: Optional[Dict] = None,
                samples_fn: Optional[Callable[[], List[Dict]]] = None) -> SimulationModel:
-    kind = kind or cfg.get("model", {}).get("type", "surrogate")
+    kind = kind or cfg.get("engine", {}).get("type", "surrogate")
     if kind == "amesim":
         return AmesimModel(cfg)
+    if kind == "formula":
+        return FormulaModel(cfg)
     if kind == "surrogate":
         if surrogate:
             return SurrogateModel.from_dict(surrogate)
         if samples_fn is None:
             raise ValueError("数据代理模型需要正常数据来拟合")
         return SurrogateModel.fit(samples_fn(), cfg)
-    raise ValueError(f"未知的模型类型：{kind}（surrogate 或 amesim）")
+    raise ValueError(f"未知的模型类型：{kind}（surrogate、formula 或 amesim）")

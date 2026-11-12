@@ -57,6 +57,11 @@ def k_factor(cols: Cols, g, rng, col: str, ratio: float) -> Cols:
     return {col: cols[col] * (1 + ratio * g)}
 
 
+def k_factor_many(cols: Cols, g, rng, names: List[str], ratio: float) -> Cols:
+    """几只流量计同时 K 系数漂移（同一批次、同样工况下磨损）：互校只能看出“一侧整体偏了”。"""
+    return {c: cols[c] * (1 + ratio * g) for c in names}
+
+
 def bearing_drag(cols: Cols, g, rng, col: str, loss: float, jitter: float = 0.01) -> Cols:
     """轴承阻滞：克服摩擦要消耗一部分流量，读数少一个固定量（L/h），小流量时百分比更大，并伴随转速抖动。"""
     v = cols[col]
@@ -243,6 +248,13 @@ FAULTS: List[Fault] = [
           {"col": "P5低压压力", "offset": 0.02}, "const", "+0.02MPa", "abnormal",
           "P5低压压力 压力测点偏离（无冗余表，只能靠模型发现）；高流量时压力大，同样漂移的相对值小（预警）", ("B", "C"),
           expect_by={"C": "warning"}),
+    Fault("F18", "F18_汇流温度传感器漂移", "汇流温度传感器偏移（T9 +7℃，温控模型的输入）", "T9冷热油汇流后温度", temp_offset,
+          {"col": "T9冷热油汇流后温度", "offset": 7.0}, "const", "+7℃", "warning",
+          "T9冷热油汇流后温度 测点偏差（只有温控链路模型能发现）", ("B", "C")),
+    Fault("F19", "F19_两只回油表同时偏低", "两只回油流量计同时 K 系数漂移（同批磨损，−4%）", "回油流量1-1、1-2", k_factor_many,
+          {"names": ["回油流量1-1", "回油流量1-2"], "ratio": -0.04}, "const", "明显4%", "abnormal",
+          "两只回油流量计同时偏低（互校会怀疑泄漏，质量流量计与涡轮流量计模型排除）", ("B", "C"),
+          cols=["回油流量1-1", "回油流量1-2"]),
     Fault("F15", "F15_油温传感器断路", "油温热电阻断路（读数固定约157.6℃）", TEMP, temp_open,
           {"col": TEMP}, "step", "30%处断路", "abnormal",
           "供油温度1-1 超出量程（异常）", ("B",), 0.3),

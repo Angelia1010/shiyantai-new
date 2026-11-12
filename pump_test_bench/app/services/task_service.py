@@ -9,15 +9,16 @@
     POST   /tasks                       创建任务 {path, file_name, mode}
     POST   /tasks/delete                批量删除 {task_ids: [...]}
     GET    /tasks/<id>                  任务详情
-    POST   /tasks/<id>/diagnose         诊断 {density?}（当前燃油 20 ℃ 密度；不填时用诊断设置里的值）
+    POST   /tasks/<id>/diagnose         诊断 {density?, models?}（density：当前燃油 20 ℃ 密度；models：本次临时的诊断方案）
     GET    /tasks/<id>/report           报告（JSON）
     GET    /diagnosis/settings          诊断设置（当前燃油 20 ℃ 密度等）
     PUT    /diagnosis/settings          修改诊断设置 {fuel_density_20?, fuel_note?}
     GET    /diagnosis/history           历次诊断的关键指标（趋势图用）?days=&limit=
-    GET    /simulation/status           仿真模型：配置、基准表与标定结果、重建任务状态
-    POST   /simulation/table            后台重建仿真基准表 {path: 正常数据目录, model?: surrogate|amesim}
-    DELETE /simulation/table            删除数据目录下的基准表，恢复默认表
-    POST   /simulation/predict          工况试算 {condition: {电传转速, 进口压力, 油温}}
+    GET    /simulation/status           仿真模型列表：各模型配置、基准表与标定结果、诊断方案、重建任务状态
+    POST   /simulation/models/<id>/table    后台重建该模型的基准表 {path: 正常数据目录, engine?: surrogate|formula|amesim}
+    DELETE /simulation/models/<id>/table    删除该模型重建的基准表，恢复默认表
+    POST   /simulation/models/<id>/predict  工况试算 {condition: {输入名: 值}}
+    PUT    /simulation/profile          保存诊断方案 {models: {模型 id: {mode, sigma_warn?, sigma_alarm?}}}
     GET    /tasks/<id>/report.docx      报告（Word）
     POST   /logs                        前端日志 {source, logs: [{level, message}]}
 
@@ -127,8 +128,9 @@ def _task_file(task: Dict):
 @app.post("/tasks/<task_id>/diagnose")
 def diagnose(task_id: str):
     task = _require_task(task_id)
-    density = _density(request.get_json(silent=True) or {})
-    return jsonify(run_task_diagnosis(task, _task_file(task), g.user, density=density))
+    data = request.get_json(silent=True) or {}
+    models = diag_settings.check_models(data.get("models")) if data.get("models") else None
+    return jsonify(run_task_diagnosis(task, _task_file(task), g.user, density=_density(data), models=models))
 
 
 @app.get("/tasks/<task_id>/report")
@@ -197,29 +199,35 @@ def simulation_status():
     return jsonify(sim_service.status())
 
 
-@app.post("/simulation/table")
-def simulation_build():
+@app.post("/simulation/models/<model_id>/table")
+def simulation_build(model_id: str):
     data = json_body()
-    model = data.get("model") or None
-    if model not in (None, "surrogate", "amesim"):
-        raise ValueError("model 只能是 surrogate 或 amesim")
+    engine = data.get("engine") or sim_service.load_model_cfg(model_id)["engine"]["type"]
+    if engine not in sim_service.ENGINE_LABELS:
+        raise ValueError("engine 只能是 surrogate、formula 或 amesim")
     directory, files = sim_service.resolve_source(data.get("path"))
     try:
-        job = sim_service.start_build(files, model or sim_service.load_sim_config()["model"]["type"],
-                                      str(directory), g.user)
+        job = sim_service.start_build(model_id, files, engine, str(directory), g.user)
     except RuntimeError as exc:
         raise ApiError(str(exc), 409) from None
     return jsonify(job), 202
 
 
-@app.delete("/simulation/table")
-def simulation_reset():
-    return jsonify({"removed": sim_service.reset_table(), **sim_service.status()})
+@app.delete("/simulation/models/<model_id>/table")
+def simulation_reset(model_id: str):
+    return jsonify({"removed": sim_service.reset_table(model_id), **sim_service.status()})
 
 
-@app.post("/simulation/predict")
-def simulation_predict():
-    return jsonify(sim_service.try_predict(json_body().get("condition") or {}))
+@app.post("/simulation/models/<model_id>/predict")
+def simulation_predict(model_id: str):
+    return jsonify(sim_service.try_predict(model_id, json_body().get("condition") or {}))
+
+
+@app.put("/simulation/profile")
+def simulation_profile():
+    saved = diag_settings.save_settings({"models": json_body().get("models")})
+    logger.info("用户 %s 修改诊断方案：%s", g.user, saved["models"])
+    return jsonify(sim_service.status())
 
 
 # ---------------------------------------------------------------- 前端日志

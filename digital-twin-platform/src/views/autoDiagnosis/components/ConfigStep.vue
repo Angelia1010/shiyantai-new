@@ -91,15 +91,38 @@
         <span>仿真模型</span>
         <el-button type="text" style="float: right; padding: 0" @click="$router.push('/simulation')">管理仿真模型</el-button>
       </div>
-      <div v-if="simStatus && simStatus.table" class="sim-info">
-        诊断时自动按实测工况（{{ simStatus.table.inputs.map(i => i.name).join('、') }}）查仿真基准表，
-        与模型预期值比较。当前模型：<b>{{ simStatus.table.model.label }}</b>，
-        基准表建立于 {{ simStatus.table.created }}，标定用了 {{ simStatus.table.calibration.files }} 个正常数据文件。
-      </div>
-      <div v-else-if="simStatus" class="sim-info warn">
-        还没有仿真基准表，诊断时不做模型对比。可在“仿真模型”页用正常数据建立。
-      </div>
-      <div v-else class="sim-info">正在读取仿真模型状态...</div>
+      <div v-if="!simStatus" class="sim-info">正在读取仿真模型...</div>
+      <template v-else>
+        <div class="sim-info">
+          诊断时按实测工况查各模型的仿真基准表，与模型预期值比较。下面的设置只对本次{{ localConfig.diagnosisMode === 'realtime' ? '（实时模式由后端自动诊断，使用“仿真模型”页保存的诊断方案）' : '诊断生效' }}；
+          默认方案在“仿真模型”页设置。
+        </div>
+        <el-table :data="simStatus.models" size="mini" border class="sim-table">
+          <el-table-column label="模型" min-width="150">
+            <template slot-scope="{ row }">
+              <b>{{ row.name }}</b>
+              <div class="sim-desc">{{ row.description }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="基准表" min-width="140">
+            <template slot-scope="{ row }">
+              <span v-if="row.table">{{ row.table.model.label }}<br><span class="sim-desc">{{ row.table.created }}</span></span>
+              <span v-else class="warn">还没有基准表</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="本次诊断" width="130">
+            <template slot-scope="{ row }">
+              <el-select
+                v-model="localConfig.models[row.id]"
+                size="mini"
+                :disabled="!row.table || localConfig.diagnosisMode === 'realtime'"
+              >
+                <el-option v-for="(label, value) in MODE_LABELS" :key="value" :label="label" :value="value" />
+              </el-select>
+            </template>
+          </el-table-column>
+        </el-table>
+      </template>
     </el-card>
 
     <div class="action-bar">
@@ -113,7 +136,7 @@
 
 <script>
 import { getDataDirs } from '@/api/files'
-import { getSimulationStatus } from '@/api/simulation'
+import { MODE_LABELS, getSimulationStatus } from '@/api/simulation'
 
 export default {
   name: 'ConfigStep',
@@ -125,11 +148,17 @@ export default {
   },
   data() {
     return {
-      simStatus: null
+      simStatus: null,
+      MODE_LABELS
     }
   },
   created() {
-    getSimulationStatus().then(st => { this.simStatus = st }).catch(() => { this.simStatus = { table: null } })
+    getSimulationStatus().then(st => {
+      this.simStatus = st
+      for (const m of st.models) {
+        if (!(m.id in this.localConfig.models)) this.$set(this.localConfig.models, m.id, m.setting.mode || 'decisive')
+      }
+    }).catch(() => { this.simStatus = { models: [] } })
   },
   computed: {
     localConfig: {
@@ -167,8 +196,16 @@ export default {
   color: #606266;
   line-height: 1.8;
 }
-.sim-info.warn {
+.sim-info.warn,
+.warn {
   color: #e6a23c;
+}
+.sim-table {
+  margin-top: 8px;
+}
+.sim-desc {
+  color: #909399;
+  font-size: 12px;
 }
 .config-step-card {
   max-height: calc(100vh - 280px);

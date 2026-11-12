@@ -90,6 +90,7 @@ export default {
         diagnosisMode: 'realtime',
         autoDiagnosis: true,
         mediumDensity: null, // 当前燃油 20 ℃ 密度；与工作台、自动诊断共用（诊断设置），留空按健康基准的油品
+        models: {}, // 本次诊断各仿真模型的参与方式 { 模型 id: decisive | reference | off }，初始为保存的诊断方案
         groupSize: 5
       },
       selectedFiles: [],

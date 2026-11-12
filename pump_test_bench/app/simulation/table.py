@@ -1,7 +1,7 @@
-"""仿真基准表：模型在工况网格上的结果，在线诊断时多线性插值。
+"""仿真基准表：每个模型在其工况网格上的结果，在线诊断时多线性插值。
 
-保存在 ``<DB_PATH 所在目录>/simulation_table.json``；没有时用随代码提供的
-``config/simulation_table_default.json``（由 2026-11 正常数据的代理模型生成）。
+每个模型一张表，保存在 ``<DB_PATH 所在目录>/simulation_tables/<模型 id>.json``（前端或工具重建的）；
+没有时用随代码提供的 ``config/simulation_tables/<模型 id>.json``（由 2026-11 正常数据生成）。
 """
 import itertools
 import json
@@ -16,14 +16,18 @@ import numpy as np
 from pump_test_bench.app.simulation.models import SimulationModel
 
 logger = logging.getLogger(__name__)
-DEFAULT_TABLE = Path(__file__).resolve().parents[2] / "config" / "simulation_table_default.json"
+DEFAULT_TABLE_DIR = Path(__file__).resolve().parents[2] / "config" / "simulation_tables"
 _lock = threading.Lock()
 _cache: Dict[str, Tuple[float, Dict]] = {}
 
 
-def table_path() -> Path:
+def table_path(model_id: str) -> Path:
     from shared.config import get_settings
-    return get_settings().db_path.parent / "simulation_table.json"
+    return get_settings().db_path.parent / "simulation_tables" / f"{model_id}.json"
+
+
+def default_table_path(model_id: str) -> Path:
+    return DEFAULT_TABLE_DIR / f"{model_id}.json"
 
 
 def build_table(model: SimulationModel, cfg: Dict, progress: Optional[Callable[[int, int], None]] = None) -> Dict:
@@ -45,12 +49,15 @@ def build_table(model: SimulationModel, cfg: Dict, progress: Optional[Callable[[
     if hasattr(model, "to_dict"):
         model_info["surrogate"] = model.to_dict()
     return {
-        "version": 1,
+        "version": 2,
+        "model_id": cfg["id"],
+        "model_name": cfg["name"],
         "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "model": model_info,
-        "inputs": [{"name": s["name"], "unit": s.get("unit", ""), "column": s["column"], "grid": s["grid"]}
+        "inputs": [{"name": s["name"], "unit": s.get("unit", ""), "grid": s["grid"],
+                    "source": s.get("column") or "、".join(s.get("columns", [])) or f"由 {s.get('temperature_column')} 计算"}
                    for s in cfg["inputs"]],
-        "outputs": [{k: o[k] for k in ("name", "unit", "kind", "columns") if k in o} for o in cfg["outputs"]],
+        "outputs": [{k: o[k] for k in ("name", "unit", "kind", "columns", "residual") if k in o} for o in cfg["outputs"]],
         "values": values,
     }
 
@@ -101,7 +108,7 @@ def sensitivity(table: Dict, condition: Dict[str, float], output: str, ref_outpu
 
 
 def save_table(table: Dict, path: Optional[Path] = None) -> Path:
-    path = path or table_path()
+    path = path or table_path(table["model_id"])
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(table, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -109,14 +116,14 @@ def save_table(table: Dict, path: Optional[Path] = None) -> Path:
     return path
 
 
-def load_table() -> Optional[Dict]:
-    """数据目录下的基准表优先，其次随代码提供的默认表；都没有返回 None。"""
+def load_table(model_id: str) -> Optional[Dict]:
+    """数据目录下重建的表优先，其次随代码提供的默认表；都没有返回 None。"""
     candidates = []
     try:
-        candidates.append(table_path())
+        candidates.append(table_path(model_id))
     except Exception:  # 没有服务配置（如离线工具）时只用默认表
         pass
-    candidates.append(DEFAULT_TABLE)
+    candidates.append(default_table_path(model_id))
     for path in candidates:
         if not path.exists():
             continue
@@ -131,6 +138,7 @@ def load_table() -> Optional[Dict]:
             logger.warning("仿真基准表格式错误，忽略：%s", path)
             continue
         table["_path"] = str(path)
+        table["_default"] = path == default_table_path(model_id)
         with _lock:
             _cache[str(path)] = (mtime, table)
         return table

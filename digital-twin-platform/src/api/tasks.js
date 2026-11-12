@@ -21,9 +21,12 @@ export function deleteTasks(taskIds) {
   return request({ url: `${BASE}/tasks/delete`, method: 'post', data: { task_ids: taskIds } })
 }
 
-/** 诊断（流量计互校、质量-体积校核、传感器自检），返回报告。density = 当前燃油 20 ℃ 密度，留空时用诊断设置里的值 */
-export function diagnoseTask(taskId, density) {
-  return request({ url: `${BASE}/tasks/${encodeURIComponent(taskId)}/diagnose`, method: 'post', data: { density } })
+/**
+ * 诊断（流量计互校、质量-体积校核、传感器自检、仿真模型对比），返回报告。
+ * density = 当前燃油 20 ℃ 密度，留空时用诊断设置里的值；models = 本次临时的诊断方案，留空用保存的方案
+ */
+export function diagnoseTask(taskId, density, models) {
+  return request({ url: `${BASE}/tasks/${encodeURIComponent(taskId)}/diagnose`, method: 'post', data: { density, models } })
 }
 
 export function getReport(taskId) {

@@ -134,9 +134,9 @@
           </el-table>
         </template>
 
-        <template v-if="reportDialog.report.model">
+        <template v-if="reportModels.length">
           <div class="section-title">仿真模型对比</div>
-          <model-compare :model="reportDialog.report.model" style="margin-bottom: 20px" />
+          <model-compare :models="reportModels" style="margin-bottom: 20px" />
         </template>
 
         <div class="section-title">检测明细</div>
@@ -201,6 +201,12 @@ export default {
     }
   },
   computed: {
+    /** 报告中的仿真模型对比（兼容旧报告的单个 model） */
+    reportModels() {
+      const r = this.reportDialog.report
+      if (!r) return []
+      return r.models || (r.model ? [{ ...r.model, name: '仿真模型' }] : [])
+    },
     /** 报告中需要展示的发现（不含“提示”级别） */
     shownFindings() {
       const report = this.reportDialog.report

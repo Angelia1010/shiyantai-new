@@ -96,30 +96,31 @@ python -m pump_test_bench.tools.generate_fault_data 健康数据目录 --out 故
 
 ### 仿真模型（`pump_test_bench/app/simulation/`）
 
-仿真模型是试验台的**健康参考模型**：给定工况（电传转速、进口压力、油温），给出健康系统各测点的预期值
-（系统流量、质量流量、各压力、电传扭矩）。它补的是互校看不到的问题：
+仿真模型是试验台各部分的**健康参考模型**：给定工况，给出健康时各测点的预期值，诊断时与实测比较。
+每个模型一份配置（`config/simulation/<id>.json`），各有一张仿真基准表并用正常数据标定。第一批三个模型对应三维模型的三片区域：
 
-- **系统性偏离**：各流量计彼此一致，但整体低于模型预期 → 被试泵出力下降（或转速信号偏高等）。
-  再看与流量相关的压力是否按模型关系同步变化，区分“实际流量确实变了”与“测量整体偏了”；
-- **没有冗余表的测点**：各压力只能与模型预期比较，例如压力传感器零点漂移。
+| 模型 | 三维部件 | 引擎 | 输入 → 输出 | 负责发现 |
+|---|---|---|---|---|
+| 泵-管路系统 `bench` | 被试件、供/回油管路 | 数据代理模型 | 电传转速、进口压力、油温 → 流量、压力、扭矩 | 被试泵出力下降、无冗余的压力传感器漂移 |
+| 涡轮流量计 `turbine` | 回路 1/2 流量计、供油管路 | 数学公式 | 质量流量、燃油密度 → 理论体积流量 | 单只/几只涡轮表 K 系数漂移；参考量（质量计、密度）偏差 |
+| 温控链路 `thermal` | 加热器、板式换热器、循环油箱 | 数据代理模型 | 汇流温度、流量 → 油箱、供油、回油温度 | 温度传感器偏差；汇流温度（模型输入）测点偏差 |
 
-运行方式：**离线**把模型在工况网格（5 档转速 × 3 档进口压力 × 4 段油温）上算一遍，存为“仿真基准表”，
-并用正常数据**标定**每个测点的固有偏差与离散（阈值 = max(下限, 3σ)）；**在线**诊断时按实测工况插值，毫秒级，
-实时自动诊断也能用，不需要一直开着 AMESim。
-
-模型有两种（`config/simulation.json` 的 `model.type`）：
-
-- `surrogate` **数据代理模型**：由正常数据拟合的二次响应面，用于 AMESim 接入前跑通整套流程。随代码提供的
-  `config/simulation_table_default.json` 由 2026-11 的 60 个正常文件生成（系统流量离散约 1.2%，压力 1.6–4.5%）。
-  它只学到了健康数据的规律，能发现偏离，但不能模拟没见过的部件故障；
-- `amesim` **AMESim 模型**：补全 `simulation.json` 中 `amesim` 段（模型文件、各输入怎样设置到模型、各输出的变量路径），
-  启动 AMESim 服务后重建基准表即可切换，诊断流程不变。
-
-前端“仿真模型”页可查看基准表与标定结果、用正常数据重建基准表、做工况试算，并播放仿真动画。命令行：
+- **引擎**：`surrogate` 数据代理模型（由正常数据拟合的二次响应面，AMESim 接入前用于跑通流程）、`formula` 内置数学公式
+  （`formulas.py`）、`amesim` AMESim 模型（补全配置中 `amesim` 段后重建基准表即可切换）。
+- **基准表**：离线在工况网格上运行模型，在线按实测工况插值（毫秒级，自动诊断也能用）。随代码提供的默认表在
+  `config/simulation_tables/`，前端或工具重建的保存在数据库目录 `simulation_tables/`，优先使用。
+- **标定**：用正常数据求每个测点的固有偏差（随工况平滑变化）与离散 σ，按留一组（油温目录）交叉验证，阈值 = max(下限, 倍数 × σ)。
+  2026-11 数据：系统流量 σ≈1.1%，压力 1.6–4.5%，涡轮表 1.1–1.5%，温度 1.4–2.0 ℃。
+- **规则**：单测点偏离；整体偏移（一组测点彼此一致、整体偏离，含义分 pump / reference / input 三种）。
+  模型的发现并入原因分析：属于已有原因的作为补充依据，否则单独成为原因。
+- **诊断方案**：每个模型“参与结论 / 仅作参考 / 关闭”，以及预警、异常的 σ 倍数。全局一套（“仿真模型”页），
+  自动诊断与手动诊断共用；手动诊断时可在“自动诊断”页临时调整。
+- **加模型**：在 `config/simulation/` 加一份配置（输入、输出与测点、规则、阈值），重建基准表即可，诊断代码不用改。
 
 ```bash
-python -m pump_test_bench.tools.build_simulation_table 健康数据目录                 # 保存到数据目录 simulation_table.json
-python -m pump_test_bench.tools.build_simulation_table 健康数据目录 --model amesim  # 用 AMESim
+python -m pump_test_bench.tools.build_simulation_table 健康数据目录                    # 所有模型，保存到数据目录
+python -m pump_test_bench.tools.build_simulation_table 健康数据目录 --model turbine    # 只建一个模型
+python -m pump_test_bench.tools.build_simulation_table 健康数据目录 --engine amesim    # 用 AMESim
 ```
 
 ## 快速开始（Windows）
@@ -149,9 +150,9 @@ shared/                     各后端服务共用：配置、鉴权、路径校�
 pump_test_bench/
   app/core/                 数据解析与读取、实时监控、报告生成、原经验公式
   app/diagnosis/            诊断：稳定段、流量计互校、泄漏、质量-体积校核、传感器自检、健康基准、故障注入
-  app/simulation/           仿真模型：代理模型/AMESim 适配、仿真基准表、标定、模型残差检查
+  app/simulation/           仿真模型：模型注册、代理模型/数学公式/AMESim 适配、基准表、标定、模型残差检查
   config/                   诊断配置 bench.json、默认健康基准 baseline_default.json、
-                            仿真配置 simulation.json、默认仿真基准表 simulation_table_default.json
+                            仿真模型配置 simulation/*.json、默认仿真基准表 simulation_tables/*.json
   app/db/tasks.py           任务存储（SQLite，自动迁移旧版 fault_diagnosis_tasks_2 表）
   app/llm/                  大模型客户端、会话存储、窗口分析
   app/services/             三个 HTTP 服务

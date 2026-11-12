@@ -213,7 +213,7 @@ def test_diagnosis_settings(task_client, token):
     r = task_client.put("/diagnosis/settings", headers=auth(token), json={"fuel_density_20": 0.79})
     assert r.status_code == 400  # 单位填成 g/cm³
     r = task_client.put("/diagnosis/settings", headers=auth(token), json={"fuel_density_20": 801.5, "fuel_note": "批次 A"})
-    assert r.get_json() == {"fuel_density_20": 801.5, "fuel_note": "批次 A"}
+    assert r.get_json() == {"fuel_density_20": 801.5, "fuel_note": "批次 A", "models": {}}
     assert task_client.get("/diagnosis/settings", headers=auth(token)).get_json()["fuel_density_20"] == 801.5
 
 
@@ -238,34 +238,48 @@ def test_history_splits_mass_zero_drift(task_client, sample_dir, token):
 
 
 def test_simulation_endpoints(task_client, env, token):
-    """仿真模型：状态（默认基准表）→ 工况试算 → 用正常数据重建基准表（后台任务）→ 恢复默认。"""
+    """仿真模型：模型列表（默认基准表）→ 工况试算 → 诊断方案 → 用正常数据重建某个模型（后台任务）→ 恢复默认。"""
     import shutil
     import time as _time
     from pump_test_bench.tests.conftest import REPO_ROOT
     st = task_client.get("/simulation/status", headers=auth(token)).get_json()
-    assert st["table"]["is_default"] and st["table"]["model"]["type"] == "surrogate"
-    assert any(c["column"] == "回油流量1-1" for c in st["table"]["calibration"]["columns"])
+    ids = [m["id"] for m in st["models"]]
+    assert ids == ["bench", "turbine", "thermal"]
+    bench = st["models"][0]
+    assert bench["table"]["is_default"] and bench["setting"]["mode"] == "decisive"
+    assert st["models"][1]["engine"] == "formula" and st["models"][1]["media"]["video"]
 
-    pred = task_client.post("/simulation/predict", headers=auth(token),
+    pred = task_client.post("/simulation/models/bench/predict", headers=auth(token),
                             json={"condition": {"电传转速": 2000, "进口压力": 0.15, "油温": 36}}).get_json()
     flow = next(e for e in pred["expected"] if e["name"] == "系统流量")
     assert 350 < flow["value"] < 390 and pred["outside"] == []
-    assert task_client.post("/simulation/predict", headers=auth(token), json={"condition": {}}).status_code == 400
+    turb = task_client.post("/simulation/models/turbine/predict", headers=auth(token),
+                            json={"condition": {"质量流量": 290, "燃油密度": 782}}).get_json()
+    assert 350 < turb["expected"][0]["value"] < 390
+    assert task_client.post("/simulation/models/bench/predict", headers=auth(token), json={"condition": {}}).status_code == 400
+
+    st = task_client.put("/simulation/profile", headers=auth(token),
+                         json={"models": {"thermal": {"mode": "reference", "sigma_warn": 4}}}).get_json()
+    thermal = next(m for m in st["models"] if m["id"] == "thermal")
+    assert thermal["setting"] == {"mode": "reference", "sigma_warn": 4, "sigma_alarm": 5}
+    assert task_client.put("/simulation/profile", headers=auth(token),
+                           json={"models": {"thermal": {"mode": "maybe"}}}).status_code == 400
 
     src = REPO_ROOT / "标准台性能录取数据" / "标准台性能录取数据"
     healthy = env / "healthy"
     for folder in ("36-38摄氏度", "45-50摄氏度"):
         shutil.copytree(src / folder, healthy / folder)
-    r = task_client.post("/simulation/table", headers=auth(token), json={"path": str(healthy)})
+    r = task_client.post("/simulation/models/bench/table", headers=auth(token), json={"path": str(healthy)})
     assert r.status_code == 202
-    for _ in range(200):
+    for _ in range(300):
         job = task_client.get("/simulation/status", headers=auth(token)).get_json()["job"]
         if job["state"] != "running":
             break
         _time.sleep(0.1)
-    assert job["state"] == "done", job
+    assert job["state"] == "done" and job["model_id"] == "bench", job
     st = task_client.get("/simulation/status", headers=auth(token)).get_json()
-    assert not st["table"]["is_default"] and st["table"]["calibration"]["files"] == 30
+    assert not st["models"][0]["table"]["is_default"] and st["models"][0]["table"]["calibration"]["files"] == 30
+    assert st["models"][1]["table"]["is_default"]  # 其他模型不受影响
 
-    st = task_client.delete("/simulation/table", headers=auth(token)).get_json()
-    assert st["removed"] and st["table"]["is_default"]
+    st = task_client.delete("/simulation/models/bench/table", headers=auth(token)).get_json()
+    assert st["removed"] and st["models"][0]["table"]["is_default"]

@@ -1,0 +1,241 @@
+{
+  "_说明": "泵-管路系统模型：给定工况（电传转速、进口压力、油温），给出健康系统的流量、压力与扭矩预期值。负责发现各流量计一致但整体偏离（被试泵出力下降等）和没有冗余表的压力测点偏离。修改后在前端“仿真模型”页重建基准表。",
+  "id": "bench",
+  "name": "泵-管路系统模型",
+  "order": 1,
+  "description": "被试件与供、回油管路：工况 → 流量、压力、扭矩",
+  "components": [
+    "被试件2",
+    "被试件1高低压双联泵",
+    "供油管路",
+    "回油管路"
+  ],
+  "default_mode": "decisive",
+  "engine": {
+    "_说明": "surrogate = 数据代理模型（由正常数据拟合）；amesim = AMESim 模型（补全下方 amesim 段）",
+    "type": "surrogate"
+  },
+  "inputs": [
+    {
+      "name": "电传转速",
+      "column": "电传实际转速",
+      "unit": "rpm",
+      "grid": [
+        1000,
+        1500,
+        2000,
+        2500,
+        3000
+      ]
+    },
+    {
+      "name": "进口压力",
+      "column": "P1进口压力",
+      "unit": "MPa",
+      "grid": [
+        0.1,
+        0.15,
+        0.25
+      ]
+    },
+    {
+      "name": "油温",
+      "column": "供油温度1-1",
+      "fallback_columns": [
+        "供油温度1-2"
+      ],
+      "unit": "℃",
+      "grid": [
+        15,
+        27,
+        37,
+        46
+      ],
+      "valid": [
+        -40,
+        120
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "系统流量",
+      "unit": "L/h",
+      "kind": "flow",
+      "single": "notice",
+      "component": "被试件2",
+      "columns": [
+        "供油流量1-1",
+        "供油流量1-2",
+        "齿轮流量计",
+        "回油流量1-1",
+        "回油流量1-2"
+      ]
+    },
+    {
+      "name": "回油质量流量",
+      "unit": "kg/h",
+      "kind": "flow",
+      "single": "notice",
+      "columns": [
+        "回油质量流量2"
+      ]
+    },
+    {
+      "name": "低压压力",
+      "unit": "MPa",
+      "kind": "pressure",
+      "flow_dependent": true,
+      "columns": [
+        "P5低压压力"
+      ],
+      "component": "被试件2周边管路"
+    },
+    {
+      "name": "定压压力",
+      "unit": "MPa",
+      "kind": "pressure",
+      "flow_dependent": true,
+      "columns": [
+        "P6定压压力"
+      ],
+      "component": "被试件2周边管路"
+    },
+    {
+      "name": "回油压力",
+      "unit": "MPa",
+      "kind": "pressure",
+      "flow_dependent": true,
+      "columns": [
+        "回油压力1-2"
+      ],
+      "component": "回油管路"
+    },
+    {
+      "name": "供油压力",
+      "unit": "MPa",
+      "kind": "pressure",
+      "columns": [
+        "供油压力1-1",
+        "供油压力1-2"
+      ],
+      "component": "供油管路"
+    },
+    {
+      "name": "控制腔压力",
+      "unit": "MPa",
+      "kind": "pressure",
+      "columns": [
+        "P9控制腔压力"
+      ],
+      "component": "被试件1高低压双联泵"
+    },
+    {
+      "name": "电传扭矩",
+      "unit": "N·m",
+      "kind": "torque",
+      "single": "notice",
+      "columns": [
+        "电传扭矩"
+      ],
+      "component": "被试件2"
+    }
+  ],
+  "rules": {
+    "group_shift": {
+      "output": "系统流量",
+      "min_columns": 4,
+      "meaning": "pump",
+      "component": "被试件2"
+    }
+  },
+  "thresholds": {
+    "sigma_warn": 3,
+    "sigma_alarm": 5,
+    "floor_warn": {
+      "flow": 0.025,
+      "pressure": 0.04,
+      "torque": 0.15
+    },
+    "floor_alarm": {
+      "flow": 0.04,
+      "pressure": 0.07,
+      "torque": 0.25
+    },
+    "pressure_consistency": 0.5
+  },
+  "amesim": {
+    "_说明": "接入 AMESim 时填写：模型文件放在 AMESim 服务的模型目录；parameters 说明每个输入怎样设置到模型，variables 给出每个输出对应的模型变量路径（一个输出可对应同一点的多只表）。以下 ordiam 档位表沿用原前端配置",
+    "url": "http://127.0.0.1:5003",
+    "model_file": "待填写.ame",
+    "stop_time_s": 20,
+    "steady_tail_s": 5,
+    "parameters": [
+      {
+        "input": "电传转速",
+        "kind": "input_table",
+        "points": 150
+      },
+      {
+        "input": "电传转速",
+        "kind": "component",
+        "params": [
+          "ordiam@flowcontrol01",
+          "ordiam@flowcontrol01_1",
+          "ordiam@flowcontrol01_2"
+        ],
+        "lookup": {
+          "1000": [
+            2,
+            2,
+            2
+          ],
+          "1500": [
+            3,
+            5,
+            5
+          ],
+          "2000": [
+            7,
+            10,
+            10
+          ],
+          "2500": [
+            7,
+            7,
+            10
+          ],
+          "3000": [
+            6.5,
+            7,
+            7
+          ]
+        }
+      },
+      {
+        "input": "进口压力",
+        "kind": "component",
+        "params": [
+          "待填写@燃油泵或压力源"
+        ]
+      },
+      {
+        "input": "油温",
+        "kind": "global",
+        "params": [
+          "待填写_油温或粘度参数"
+        ]
+      }
+    ],
+    "variables": {
+      "系统流量": "待填写@供油流量变量",
+      "回油质量流量": "待填写@质量流量变量",
+      "低压压力": "待填写@P5",
+      "定压压力": "待填写@P6",
+      "回油压力": "待填写@回油压力",
+      "供油压力": "待填写@供油压力",
+      "控制腔压力": "待填写@P9",
+      "电传扭矩": "待填写@扭矩"
+    }
+  }
+}
