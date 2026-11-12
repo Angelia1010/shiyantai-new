@@ -188,7 +188,7 @@ export class DiagnosisPipeline {
   }
 
   async diagnose(taskId, experimentSeries, simulationData) {
-    const density = this.config.mediumDensity || null // 留空时后端按油温计算
+    const density = this.config.mediumDensity || null // 当前燃油 20 ℃ 密度，留空时后端用诊断设置
     const comparable = Object.keys(simulationData).filter(name => name in experimentSeries)
     if (comparable.length) {
       this.log('执行诊断，并附上与仿真数据的对比...', 'info')

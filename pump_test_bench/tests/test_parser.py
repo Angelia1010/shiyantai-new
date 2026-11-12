@@ -84,3 +84,19 @@ def test_frame_aggregator_windows_and_time_wrap(tmp_path):
     assert len(frames) == 1 and frames[0]["stats"]["值"] == {"avg": 2.0, "min": 1.0, "max": 3.0}
     last = agg.flush()
     assert last["rows"] == 1 and last["t"] == 3600.0
+
+
+def test_sibling_header_rejected_when_columns_shifted(tmp_path):
+    """同目录文件列数相同但列顺序变了：不借用表头（宁可报错，不能错列诊断）。"""
+    src = (STANDARD_SAMPLES / "S1295-P0.10.txt").read_bytes().decode("gb18030").splitlines()
+    (tmp_path / "有表头.txt").write_bytes("\n".join(src[:10]).encode("gb18030"))
+    rows = [ln.split("\t") for ln in src[1:10] if ln.strip()]
+    shifted = ["\t".join([r[0]] + r[2:-1] + [r[1], ""]) for r in rows]  # 第 2 列挪到最后
+    (tmp_path / "无表头.txt").write_bytes("\n".join(shifted).encode("gb18030"))
+    layout, _, _ = read_text_table(tmp_path / "无表头.txt")
+    assert layout.header_source == "generic"
+
+    same = ["\t".join(r) for r in rows]
+    (tmp_path / "无表头2.txt").write_bytes("\n".join(same).encode("gb18030"))
+    layout, _, _ = read_text_table(tmp_path / "无表头2.txt")
+    assert layout.header_source.startswith("sibling:")

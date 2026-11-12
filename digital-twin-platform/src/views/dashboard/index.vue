@@ -164,13 +164,14 @@
           <div v-else class="modal-body">
             <div class="kv"><span>诊断结果</span><b :class="detail.result">{{ detail.statusText }}</b></div>
             <div class="kv"><span>诊断时间</span><b>{{ detail.timestamp }}</b></div>
-            <div class="kv"><span>问题类型</span><b>{{ detail.diagnosis.fault_name || '—' }}</b></div>
-            <div class="kv"><span>问题位置</span><b>{{ detail.diagnosis.location || '—' }}</b></div>
+            <div class="kv"><span>结论</span><b>{{ detail.summary || '—' }}</b></div>
             <div v-if="detail.condition && detail.condition.label" class="kv">
               <span>试验工况</span><b>{{ detail.condition.label }}</b>
             </div>
+            <div class="section-title">原因分析</div>
+            <cause-list :causes="detail.causes || []" :history="detail.history" dark />
             <template v-if="detailFindings.length">
-              <div class="section-title">诊断发现</div>
+              <div class="section-title">检查项</div>
               <div v-for="(f, i) in detailFindings" :key="i" :class="['finding', f.severity]">
                 <span class="finding-level">{{ SEVERITY_LABELS[f.severity] }}</span>
                 <b>{{ f.title }}</b> · {{ f.detail }}
@@ -217,6 +218,17 @@
               <input v-model="pathDialog.autoDiagnose" type="checkbox">
               文件写完后自动诊断（在服务器上进行，不需要打开任何页面）
             </label>
+            <div class="density-row">
+              <span>当前燃油密度（20 ℃）</span>
+              <input
+                v-model.trim="pathDialog.density"
+                class="density-input"
+                placeholder="留空：按健康基准的油品"
+                @keyup.enter="savePath"
+              >
+              <span class="unit">kg/m³</span>
+            </div>
+            <p class="path-hint small">换油品或换批次后填写合格证上的 20 ℃ 密度，否则质量流量计校核可能误报。自动诊断与手动诊断共用此设置。</p>
             <template v-if="pathDialog.dirs.length">
               <div class="dir-title">已登记的数据目录（点击选用）</div>
               <div v-for="dir in pathDialog.dirs" :key="dir.path" class="dir-item">
@@ -250,7 +262,8 @@
  */
 import screenfull from 'screenfull'
 import { getDataDirs, getLiveFrames, removeDataDir, setAutoDiagnose, setWatchPath } from '@/api/files'
-import { downloadReport, getReport, listTasks } from '@/api/tasks'
+import { downloadReport, getDiagnosisSettings, getReport, listTasks, saveDiagnosisSettings } from '@/api/tasks'
+import CauseList from '@/components/CauseList'
 import { errorMessage } from '@/utils/request'
 import { MessageType, openChannel } from '@/utils/broadcastChannel'
 import { fieldUnit, formatValue } from '@/utils/features'
@@ -290,13 +303,13 @@ function formatTime(ms) {
 
 export default {
   name: 'Dashboard',
-  components: { TestBenchView, TrendChart },
+  components: { TestBenchView, TrendChart, CauseList },
   data() {
     return {
       featureMap: {},
       history: Object.fromEntries(TRACKED_FIELDS.map(f => [f, []])),
       live: { state: 'off', path: null, file: null, frameTime: '', autoDiagnose: true },
-      pathDialog: { visible: false, value: '', saving: false, error: '', dirs: [], autoDiagnose: true },
+      pathDialog: { visible: false, value: '', saving: false, error: '', dirs: [], autoDiagnose: true, density: '', densitySaved: '' },
       diagnosisStatus: '',
       records: [],
       latestResult: null,
@@ -424,9 +437,15 @@ export default {
     },
     openPathDialog() {
       this.pathDialog = {
-        visible: true, value: this.live.path || '', saving: false, error: '', dirs: [], autoDiagnose: this.live.autoDiagnose
+        visible: true, value: this.live.path || '', saving: false, error: '', dirs: [], autoDiagnose: this.live.autoDiagnose,
+        density: '', densitySaved: ''
       }
       this.loadDirs()
+      getDiagnosisSettings().then(st => {
+        const v = st.fuel_density_20 == null ? '' : String(st.fuel_density_20)
+        this.pathDialog.density = v
+        this.pathDialog.densitySaved = v
+      }).catch(() => {})
     },
     async loadDirs() {
       try {
@@ -453,6 +472,10 @@ export default {
       this.pathDialog.saving = true
       this.pathDialog.error = ''
       try {
+        if (this.pathDialog.density !== this.pathDialog.densitySaved) {
+          await saveDiagnosisSettings({ fuel_density_20: this.pathDialog.density === '' ? null : Number(this.pathDialog.density) })
+          this.pathDialog.densitySaved = this.pathDialog.density
+        }
         const status = this.pathDialog.value === this.live.path
           ? await setAutoDiagnose(this.pathDialog.autoDiagnose) // 目录没变：只改自动诊断开关，不重置监控
           : await setWatchPath(this.pathDialog.value, true, this.pathDialog.autoDiagnose)
@@ -1198,6 +1221,31 @@ $return: #fbbf24;
   color: $muted;
   cursor: pointer;
   &:hover { color: $bad; }
+}
+.density-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: $text;
+  font-size: 13px;
+  .density-input {
+    width: 170px;
+    padding: 6px 10px;
+    background: rgba(56, 189, 248, 0.05);
+    border: 1px solid $border;
+    border-radius: 6px;
+    color: $bright;
+    outline: none;
+    &:focus { border-color: $accent; }
+  }
+  .unit {
+    color: $muted;
+  }
+}
+.path-hint.small {
+  font-size: 12px;
+  margin-top: 6px;
 }
 .auto-toggle {
   display: flex;

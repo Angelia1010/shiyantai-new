@@ -152,8 +152,31 @@ class Layout:
         return len(self.columns)
 
 
-def _header_from_siblings(path: Path, width: int, delimiter: Optional[str]) -> Optional[Tuple[List[str], str]]:
-    """在同目录（按修改时间从近到远）的其他文件里找列数相同的表头。"""
+def _similar_rows(ref: Sequence[str], row: Sequence[str], min_ratio: float = 0.85) -> bool:
+    """两行数据逐列量级是否相近，用来确认借来的表头列顺序没变。
+
+    同一台试验台不同工况下，同一列的数值在同一量级（流量 150 与 540、温度 15 与 47 都算相近）；
+    列顺序一旦错位，就会出现 370 L/h 对 0、0.15 MPa 对 36 ℃ 这样的明显不符。
+    """
+    pairs = 0
+    ok = 0
+    for a, b in zip(ref[1:], row[1:]):  # 第一列是时间
+        if not (is_number(a) and is_number(b)):
+            continue
+        x, y = float(a), float(b)
+        pairs += 1
+        if abs(x - y) <= max(2.0, 0.8 * max(abs(x), abs(y))):
+            ok += 1
+    return pairs > 0 and ok / pairs >= min_ratio
+
+
+def _header_from_siblings(path: Path, width: int, delimiter: Optional[str],
+                          sample: Optional[Sequence[str]] = None) -> Tuple[Optional[Tuple[List[str], str]], bool]:
+    """在同目录（按修改时间从近到远）的其他文件里找列数相同、且数据量级对得上的表头。
+
+    返回 (找到的 (表头, 文件名) 或 None, 是否有列数相同但数据对不上的文件)。
+    """
+    rejected = False
     try:
         siblings = sorted(
             (p for p in path.parent.iterdir()
@@ -161,18 +184,28 @@ def _header_from_siblings(path: Path, width: int, delimiter: Optional[str]) -> O
             key=lambda p: abs(p.stat().st_mtime - path.stat().st_mtime),
         )[:30]
     except OSError:
-        return None
+        return None, False
     for sib in siblings:
         try:
             with sib.open("rb") as f:
-                text, _ = decode_bytes(f.read(8192))
+                text, _ = decode_bytes(f.read(16384))
         except OSError:
             continue
-        first = next((ln for ln in text.splitlines() if ln.strip()), "")
-        fields = split_line(first, delimiter)
-        if len(fields) == width and looks_like_header(fields):
-            return fields, sib.name
-    return None
+        lines = [ln for ln in text.splitlines() if ln.strip()]
+        if not lines:
+            continue
+        fields = split_line(lines[0], delimiter)
+        if len(fields) != width or not looks_like_header(fields):
+            continue
+        ref = next((split_line(ln, delimiter) for ln in lines[1:4]
+                    if len(split_line(ln, delimiter)) >= width), None)
+        if sample is not None and ref is not None and not _similar_rows(ref[:width], sample[:width]):
+            logger.warning("文件 %s 与 %s 列数相同但数据量级对不上，不借用其表头（列顺序可能变了）",
+                           path.name, sib.name)
+            rejected = True
+            continue
+        return (fields, sib.name), False
+    return None, rejected
 
 
 def infer_layout(path: Path, head: bytes) -> Optional[Layout]:
@@ -191,11 +224,14 @@ def infer_layout(path: Path, head: bytes) -> Optional[Layout]:
         raw, has_header, source = first, True, "file"
     else:
         width = max(len(split_line(ln, delimiter)) for ln in lines[:20])
-        found = _header_from_siblings(path, width, delimiter)
+        sample = next((f for f in (split_line(ln, delimiter) for ln in lines[:20])
+                       if len(f) >= width and parse_time(f[0]) is not None), None)
+        found, rejected = _header_from_siblings(path, width, delimiter, sample)
         if found:
             raw, source = found[0], f"sibling:{found[1]}"
         else:
-            known = next((h for h in KNOWN_HEADERS if len(h) == width), None)
+            # 同目录有列数相同、数据却对不上的文件，说明列顺序变了，内置表头也不可信：用通用列名，宁可报错不可错列
+            known = None if rejected else next((h for h in KNOWN_HEADERS if len(h) == width), None)
             if known:
                 raw, source = list(known), "known"
             else:

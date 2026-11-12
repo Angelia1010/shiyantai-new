@@ -9,9 +9,12 @@
     POST   /tasks                       创建任务 {path, file_name, mode}
     POST   /tasks/delete                批量删除 {task_ids: [...]}
     GET    /tasks/<id>                  任务详情
-    POST   /tasks/<id>/diagnose         诊断 {density?}（不填密度时按油温计算）
+    POST   /tasks/<id>/diagnose         诊断 {density?}（当前燃油 20 ℃ 密度；不填时用诊断设置里的值）
     POST   /tasks/<id>/preliminary      诊断 + AMESim 仿真对比 {experiment_data, simulation_data, threshold?, exceeded_limit?, density?}
     GET    /tasks/<id>/report           报告（JSON）
+    GET    /diagnosis/settings          诊断设置（当前燃油 20 ℃ 密度等）
+    PUT    /diagnosis/settings          修改诊断设置 {fuel_density_20?, fuel_note?}
+    GET    /diagnosis/history           历次诊断的关键指标（趋势图用）?days=&limit=
     GET    /tasks/<id>/report.docx      报告（Word）
     POST   /logs                        前端日志 {source, logs: [{level, message}]}
 
@@ -26,6 +29,7 @@ from flask import g, jsonify, request, send_file
 from pump_test_bench.app.core import preliminary as prelim
 from pump_test_bench.app.core.data_reader import TABLE_SUFFIXES
 from pump_test_bench.app.db import tasks as repo
+from pump_test_bench.app.diagnosis import settings as diag_settings
 from pump_test_bench.app.diagnosis.runner import run_task_diagnosis
 from shared.auth import check_credentials, issue_token
 from shared.config import get_settings
@@ -110,16 +114,7 @@ def get_task(task_id: str):
 
 
 def _density(data: Dict) -> Optional[float]:
-    value = data.get("density")
-    if value in (None, ""):
-        return None
-    try:
-        density = float(value)
-    except (TypeError, ValueError):
-        raise ValueError("density 必须是数字") from None
-    if density <= 0:
-        raise ValueError("density 必须大于 0")
-    return density
+    return diag_settings.check_density(data.get("density"))
 
 
 def _task_file(task: Dict):
@@ -167,6 +162,47 @@ def download_report(task_id: str):
         raise ApiError("该任务还没有诊断报告", 404)
     return send_file(BytesIO(content), as_attachment=True, download_name=f"{task_id}_诊断报告.docx",
                      mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+
+# ---------------------------------------------------------------- 诊断设置
+@app.get("/diagnosis/settings")
+def get_diagnosis_settings():
+    return jsonify(diag_settings.load_settings())
+
+
+@app.put("/diagnosis/settings")
+def put_diagnosis_settings():
+    saved = diag_settings.save_settings(json_body())
+    logger.info("用户 %s 修改诊断设置：%s", g.user, saved)
+    return jsonify(saved)
+
+
+_HISTORY_SOURCES = {"live": ("auto", "realtime"), "file": ("file",), "all": None}
+
+
+@app.get("/diagnosis/history")
+def diagnosis_history():
+    """历次诊断的关键指标，按时间从早到晚。source=live（试验台实时/自动诊断，默认）| file | all。"""
+    import time as _time
+    from pump_test_bench.app.diagnosis.history import metrics
+    days = float(request.args.get("days", "90") or 90)
+    if not 0 < days <= 3650:
+        raise ValueError("days 必须在 0 到 3650 之间")
+    source = request.args.get("source", "live")
+    if source not in _HISTORY_SOURCES:
+        raise ValueError("source 只能是 live、file 或 all")
+    modes = _HISTORY_SOURCES[source]
+    since = int((_time.time() - days * 86400) * 1000)
+    items = []
+    for item in repo.list_reports(since=since, limit=1000):
+        if modes and item["mode"] not in modes:
+            continue
+        m = metrics(item["report"])
+        if not m:
+            continue
+        items.append({"task_id": item["task_id"], "file_name": item["file_name"], "mode": item["mode"],
+                      "time": item["updated_at"], **m})
+    return jsonify({"items": items, "days": days, "source": source})
 
 
 # ---------------------------------------------------------------- 前端日志

@@ -22,23 +22,43 @@ import pandas as pd
 from pump_test_bench.app.core import flow_meter as legacy
 from pump_test_bench.app.core.data_reader import read_table
 from pump_test_bench.app.diagnosis import checks as ck
+from pump_test_bench.app.diagnosis.causes import infer_causes
 from pump_test_bench.app.diagnosis.checks import ABNORMAL, INFO, NOTICE, SEVERITY_RANK, WARNING, finding
 from pump_test_bench.app.diagnosis.config import config_path, load_config
 from pump_test_bench.app.diagnosis.signals import Segment, find_steady, time_axis
 
-ALGORITHM_VERSION = "2.1"
+ALGORITHM_VERSION = "2.2"
 RESULT_NORMAL, RESULT_WARNING, RESULT_ABNORMAL, RESULT_INCONCLUSIVE = "normal", "warning", "abnormal", "inconclusive"
 
 
 # --------------------------------------------------------------------------- 分析（诊断与建基准共用）
-def _density(cfg: Dict, baseline: Optional[Dict], temperature: Optional[float], override: Optional[float]):
-    if override:
-        return float(override), "输入值"
-    model = (baseline or {}).get("density") or cfg.get("fuel") or {}
+def _density_model(cfg: Dict, baseline: Optional[Dict]) -> Dict:
+    return (baseline or {}).get("density") or cfg.get("fuel") or {}
+
+
+def _density(cfg: Dict, baseline: Optional[Dict], temperature: Optional[float], rho20: Optional[float]):
+    """返回 (密度, 来源说明)。rho20 = 当前燃油 20 ℃ 密度（合格证上的值），有则按油温修正后使用。"""
+    model = _density_model(cfg, baseline)
+    slope = model.get("slope", -0.7)
+    if rho20:
+        if temperature is None:
+            return float(rho20), f"设置的燃油密度 {rho20:.1f} kg/m³（20 ℃，缺少油温未修正）"
+        return float(rho20) + slope * (temperature - 20), f"设置的燃油密度 {rho20:.1f} kg/m³（20 ℃）按油温修正"
     if temperature is None or "rho15" not in model:
         return None, "无法计算（缺少温度）"
     rho = model["rho15"] + model["slope"] * (temperature - 15)
     return rho, "健康基准拟合" if (baseline or {}).get("density") else "配置（密度-温度模型）"
+
+
+def _valid_temperature(seg: pd.DataFrame, col: Optional[str], cfg: Dict) -> Optional[float]:
+    """稳定段油温均值；列不存在或读数超出合理范围（传感器故障）时返回 None。"""
+    if not col or col not in seg.columns:
+        return None
+    value = ck.mean_of(seg[col])
+    rule = ck.range_rule(col, cfg.get("sensor_ranges", []))
+    if value is not None and rule and not (rule["min"] <= value <= rule["max"]):
+        return None
+    return value
 
 
 def _meter_thresholds(cfg: Dict, base: Optional[Dict], flow: Optional[float] = None,
@@ -54,7 +74,9 @@ def _meter_thresholds(cfg: Dict, base: Optional[Dict], flow: Optional[float] = N
     return predict_bias(base, flow, temperature, ranges), warn, alarm
 
 
-def analyze(df: pd.DataFrame, cfg: Dict, baseline: Optional[Dict] = None, density_override: Optional[float] = None) -> Dict:
+def analyze(df: pd.DataFrame, cfg: Dict, baseline: Optional[Dict] = None,
+            fuel_density_20: Optional[float] = None) -> Dict:
+    """fuel_density_20：当前燃油 20 ℃ 密度（kg/m³），不填时用健康基准/配置的密度-温度模型。"""
     t = time_axis(df)
     th = cfg["thresholds"]
     bmeters = (baseline or {}).get("meters", {})
@@ -116,8 +138,9 @@ def analyze(df: pd.DataFrame, cfg: Dict, baseline: Optional[Dict] = None, densit
         diag_columns.update(cols)
         if mass_col:
             diag_columns.add(mass_col)
-        if loop.get("temperature_column"):
-            diag_columns.add(loop["temperature_column"])
+        for tc in (loop.get("temperature_column"), (mass_cfg or {}).get("temperature_column")):
+            if tc:
+                diag_columns.add(tc)
 
         # 3) 冗余比对
         means: Dict[str, float] = {}
@@ -159,10 +182,7 @@ def analyze(df: pd.DataFrame, cfg: Dict, baseline: Optional[Dict] = None, densit
 
         # 油温（密度修正、固有偏差模型都要用）；温度传感器读数不合理时不用
         temp_col = loop.get("temperature_column")
-        temperature = ck.mean_of(seg[temp_col]) if temp_col and temp_col in df.columns else None
-        temp_rule = ck.range_rule(temp_col or "", cfg.get("sensor_ranges", []))
-        if temperature is not None and temp_rule and not (temp_rule["min"] <= temperature <= temp_rule["max"]):
-            temperature = None  # 后面的传感器自检会报出来
+        temperature = _valid_temperature(seg, temp_col, cfg)  # 超量程时为 None，后面的传感器自检会报出来
         level = float(np.median(list(means.values()))) if means else None
         ranges = (baseline or {}).get("ranges")
 
@@ -287,41 +307,53 @@ def analyze(df: pd.DataFrame, cfg: Dict, baseline: Optional[Dict] = None, densit
                     + cause, loop["name"], loop["name"], "回油管路", corrected * 100,
                     f"预警 ±{bal_warn * 100:.1f}%，异常 ±{bal_alarm * 100:.1f}%"))
 
-        # 渐变：测试过程中单表偏差或供回油差持续变化（磨损、泄漏逐渐扩大）。只看有效的表
+        # 渐变：测试过程中单表偏差或供回油差持续变化（磨损、泄漏逐渐扩大）。只看有效的表。
+        # 先看供回油差：如果是一侧整体在变（泄漏扩大），单表只和同侧的表比，避免整侧变化被算到每只表头上
         if len(means) >= 3:
             wm = ck.window_means(seg[list(means)], seg_t, cfg["steady"]["window_s"])
             trend_warn = th["redundancy"]["warn"]
-            for col in means:
-                others = wm[[c for c in means if c != col]].median(axis=1)
-                change = ck.end_change((wm[col] - others) / others)
-                if change is not None and abs(change) > trend_warn:
-                    e = next(x for x in result["meters"] if x["column"] == col)
-                    findings.append(finding(
-                        "trend", WARNING, "流量计偏差在测试中持续变化",
-                        f"{e['label']}相对其他流量计的偏差，从测试开始到结束变化了 {change * 100:+.2f}%，"
-                        "说明故障正在发展（如叶轮/轴承逐渐磨损）",
-                        col, e["label"], e.get("component"), change * 100, f"±{trend_warn * 100:.1f}%"))
+            group_shift = False
             sup_c = [c for c in usable if group_of[c] == "供油"]
             ret_c = [c for c in usable if group_of[c] == "回油"]
             if sup_c and ret_c:
                 ws, wr = wm[sup_c].median(axis=1), wm[ret_c].median(axis=1)
                 change = ck.end_change((ws - wr) / wm.median(axis=1))
                 if change is not None and abs(change) > bal_warn:
+                    group_shift = True
                     findings.append(finding(
                         "trend", WARNING, "供回油差在测试中持续变化",
                         f"供油与回油之差从测试开始到结束变化了 {change * 100:+.2f}%，"
                         f"{'泄漏正在扩大' if change > 0 else '回油侧读数在逐渐增大'}",
                         loop["name"], loop["name"], "回油管路", change * 100, f"±{bal_warn * 100:.1f}%"))
+            for col in means:
+                peers = [c for c in means if c != col and (not group_shift or group_of[c] == group_of[col])]
+                if not peers:
+                    continue
+                others = wm[peers].median(axis=1)
+                change = ck.end_change((wm[col] - others) / others)
+                if change is not None and abs(change) > trend_warn:
+                    e = next(x for x in result["meters"] if x["column"] == col)
+                    findings.append(finding(
+                        "trend", WARNING, "流量计偏差在测试中持续变化",
+                        f"{e['label']}相对{'同侧' if group_shift else '其他'}流量计的偏差，从测试开始到结束变化了 "
+                        f"{change * 100:+.2f}%，说明故障正在发展（如叶轮/轴承逐渐磨损）",
+                        col, e["label"], e.get("component"), change * 100, f"±{trend_warn * 100:.1f}%"))
 
         # 5) 质量-体积校核
         if mass_col:
             mass_mean = ck.mean_of(seg[mass_col])
-            rho, rho_source = _density(cfg, baseline, temperature, density_override)
+            # 密度按质量流量计所在位置的油温修正（回油比供油高 1–4 ℃）；该测点不可用时退回管路油温
+            mass_temp_col = mass_cfg.get("temperature_column")
+            mass_temp = _valid_temperature(seg, mass_temp_col, cfg)
+            if mass_temp is None:
+                mass_temp, mass_temp_col = temperature, temp_col
+            rho, rho_source = _density(cfg, baseline, mass_temp, fuel_density_20)
             # 质量流量计与同一侧（如回油）的体积流量计比较；该侧没有可用的表时用整体共识值
             side = groups.get(mass_cfg.get("group", ""))
             ref_flow = float(np.median(side)) if side else consensus
             mass = {"column": mass_col, "label": mass_cfg["label"], "mean": mass_mean, "density": rho,
-                    "density_source": rho_source, "temperature": temperature, "severity": INFO}
+                    "density_source": rho_source, "temperature": mass_temp,
+                    "temperature_column": mass_temp_col, "severity": INFO}
             if mass_mean is None or ck.is_stuck(seg[mass_col]) or \
                     ck.longest_constant_run(seg[mass_col], seg_t) >= frozen_limit:
                 mass["severity"] = ABNORMAL
@@ -392,12 +424,31 @@ def analyze(df: pd.DataFrame, cfg: Dict, baseline: Optional[Dict] = None, densit
             + (f"；密度修正使用的是 {used}，油温每偏 1 ℃ 密度约偏 0.07%" if used else ""),
             used or a, used or a, None, diff, f"预警 {pair.get('warn', 3.0)} ℃，异常 {pair.get('alarm', 6.0)} ℃"))
 
-    # 8) 传感器量程自检（全部数值列；诊断用到的列影响结论，其余只作“注意”）
+    # 8) 燃油换批：设置的密度与建立健康基准时的油品相差较大
+    model = (baseline or {}).get("density")
+    if fuel_density_20 and model:
+        base20 = model["rho15"] + model["slope"] * 5
+        diff = (fuel_density_20 - base20) / base20
+        if abs(diff) > 0.01:
+            findings.append(finding(
+                "fuel", NOTICE, "燃油与健康基准的油品不同",
+                f"设置的燃油密度 {fuel_density_20:.1f} kg/m³，建立健康基准时的油品约 {base20:.1f} kg/m³（20 ℃），"
+                f"相差 {diff * 100:+.1f}%。质量-体积校核已按设置的密度计算；涡轮流量计的固有偏差与油品粘度有关，"
+                "长期使用新油品时建议用新油的正常数据重建健康基准", "fuel", "燃油", None, diff * 100))
+
+    # 9) 传感器量程自检（全部数值列；诊断用到的列影响结论，其余只作“注意”）。已知故障的测点不重复报警
+    ignored = {s["column"]: s.get("reason", "") for s in cfg.get("ignored_sensors", [])}
     for col in df.columns:
         rule = ck.range_rule(col, cfg.get("sensor_ranges", []))
         if not rule or df[col].dtype.kind != "f":
             continue
         ratio = ck.out_of_range_ratio(df[col], rule)
+        if col in ignored:
+            if ratio == 0 and not ck.is_stuck(df[col]):
+                findings.append(finding("sensor", NOTICE, "已屏蔽的测点读数恢复正常",
+                                        f"{col} 在已知故障清单中（{ignored[col] or '未注明原因'}），本次读数正常，"
+                                        "确认修复后可从 bench.json 的 ignored_sensors 中移除", col, col))
+            continue
         if ratio > 0.05:
             mean = ck.mean_of(df[col])
             sev = ABNORMAL if col in diag_columns else NOTICE
@@ -407,7 +458,8 @@ def analyze(df: pd.DataFrame, cfg: Dict, baseline: Optional[Dict] = None, densit
                                     f"[{rule['min']}, {rule['max']}]"))
 
     return {"segment": segment, "loops": results, "findings": findings,
-            "condition": _condition(seg, cfg, results)}
+            "condition": _condition(seg, cfg, results),
+            "ignored": [f"{c}（{r}）" if r else c for c, r in ignored.items() if c in df.columns]}
 
 
 def _condition(seg: pd.DataFrame, cfg: Dict, loops: List[Dict]) -> Dict:
@@ -448,30 +500,6 @@ def _simulation_findings(sim: Dict) -> List[Dict]:
     return out
 
 
-_ADVICE = {
-    "redundancy": "{label} 读数偏离其他流量计，建议对其校准或更换；处理前可暂以其他流量计读数为准。",
-    "sensor": "检查 {label} 的接线、供电与量程设置，确认传感器是否损坏或卡死。",
-    "balance": "供油与回油流量不平衡，检查管路接头与密封是否泄漏、旁通阀是否关闭严密。",
-    "mass_volume": "质量流量与体积流量不一致：各体积流量计互校正常时，优先检查 {label} 的零点与标定，并核对燃油密度。",
-    "zero": "无流量管路上 {label} 读数不为零，建议在停流状态下做零点校准。",
-    "noise": "{label} 读数波动过大，检查信号屏蔽与接地，排查管路中的气泡或脉动。",
-    "spike": "{label} 读数有突跳，检查信号线接触与干扰源。",
-    "simulation": "试验数据与仿真结果偏差较大，核对仿真模型参数（转速、阀开度）与实际工况是否一致。",
-    "dropout": "{label} 读数掉零：检查信号线与接插件是否脱落、前置放大器供电，停机后检查叶轮能否自由转动。",
-    "frozen": "{label} 读数冻结：检查叶轮是否卡滞（杂质、轴承损坏），以及变送器/采集通道是否死机。",
-    "trend": "{label} 的偏差在测试过程中持续变化，故障可能正在发展，建议尽快停机检查并缩短复检周期。",
-    "aeration": "回油流量大于供油流量：检查回油管路是否吸入空气（接头密封、油箱液位过低、回油背压过低），排气后复测。",
-    "temperature": "同位置两只温度传感器读数不一致：用标准温度计比对，检查 {label} 的安装深度与接线。",
-}
-
-_FAULT_NAME = {
-    "redundancy": "流量计读数偏离", "sensor": "传感器故障", "balance": "供回油流量不平衡",
-    "mass_volume": "质量-体积流量不一致", "zero": "零点偏移", "noise": "读数波动过大", "spike": "读数毛刺",
-    "simulation": "与仿真偏差较大", "dropout": "读数掉零", "frozen": "读数冻结", "trend": "偏差持续变化",
-    "aeration": "回油夹气", "temperature": "温度传感器不一致",
-}
-
-
 def _indicators(analysis: Dict) -> List[Dict]:
     seg = analysis["segment"]
     rows = [
@@ -480,6 +508,9 @@ def _indicators(analysis: Dict) -> List[Dict]:
          "value": f"{seg.start_s:.1f}–{seg.end_s:.1f} 秒（{seg.duration:.0f} 秒，{seg.end - seg.start} 行）"
          if seg.found else f"未识别到稳定段，使用全部数据（{seg.end - seg.start} 行）"},
     ]
+    if analysis.get("ignored"):
+        rows.append({"name": "已屏蔽测点", "reference": "bench.json ignored_sensors",
+                     "value": "、".join(analysis["ignored"])})
     for loop in analysis["loops"]:
         if not loop["active"]:
             continue
@@ -531,13 +562,22 @@ def build_report_body(analysis: Dict, simulation: Optional[Dict] = None,
     else:
         result = RESULT_NORMAL
 
+    causes = infer_causes(findings, analysis["loops"])
     if decisive:
-        names = list(dict.fromkeys(_FAULT_NAME.get(f["category"], f["title"]) for f in decisive))
-        locations = list(dict.fromkeys(f["label"] for f in decisive if f["label"]))
-        fault_name, location = "、".join(names), "、".join(locations[:6])
-        analysis_text = "\n".join(f"[{ck.SEVERITY_TEXT[f['severity']]}] {f['detail']}" for f in decisive)
-        advice = list(dict.fromkeys(_ADVICE.get(f["category"], "").format(label=f["label"]) for f in decisive))
-        summary = f"{'异常' if result == RESULT_ABNORMAL else '预警'}：{fault_name}（{location}）"
+        fault_name = "、".join(c["name"] for c in causes)
+        location = "、".join(dict.fromkeys(c["location"] for c in causes if c["location"]))
+        parts = []
+        for i, c in enumerate(causes, 1):
+            text = f"{i}. [{ck.SEVERITY_TEXT[c['severity']]}] {c['name']}：{c['explanation']}"
+            text += "".join(f"\n   依据：{e}" for e in c["evidence"])
+            if c["alternatives"]:
+                text += "\n   其他可能：" + "；".join(c["alternatives"])
+            parts.append(text)
+        analysis_text = "\n".join(parts)
+        advice = list(dict.fromkeys(c["advice"] for c in causes))
+        head = causes[0]["name"]
+        summary = f"{'异常' if result == RESULT_ABNORMAL else '预警'}：{head}" + (
+            f" 等 {len(causes)} 项" if len(causes) > 1 else "")
     elif result == RESULT_INCONCLUSIVE and not active:
         fault_name, location = "无法判定", "—"
         analysis_text = "所有管路都没有流量，无法诊断流量计。"
@@ -563,6 +603,7 @@ def build_report_body(analysis: Dict, simulation: Optional[Dict] = None,
         "summary": summary,
         "condition": analysis["condition"],
         "segment": analysis["segment"].as_dict(),
+        "causes": causes,
         "findings": findings,
         "loops": [_loop_summary(lp) for lp in analysis["loops"]],
         "indicators": _indicators(analysis),

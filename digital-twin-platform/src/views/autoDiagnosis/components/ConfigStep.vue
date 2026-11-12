@@ -40,10 +40,10 @@
         </el-row>
         <el-row :gutter="20">
           <el-col :span="8">
-            <el-form-item label="介质密度">
+            <el-form-item label="燃油密度(20℃)">
               <el-input 
                 v-model.number="localConfig.mediumDensity" 
-                placeholder="留空则按油温自动计算"
+                placeholder="留空：按健康基准的油品"
                 type="number"
                 clearable
               >

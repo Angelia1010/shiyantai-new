@@ -8,7 +8,9 @@
       "summary": "一句话结论",
       "product_info": {...},
       "condition": {...}, "segment": {...},
+      "causes": [{name, severity, location, target, component, explanation, evidence, alternatives, advice}],
       "findings": [{category, severity, title, detail, target, label, component, value, threshold}],
+      "history": {...}?   # 历次诊断的长期漂移检查（见 pump_test_bench/app/diagnosis/history.py）
       "loops": [...], "indicators": [{name, reference, value, abnormal?}],
       "diagnosis": {fault_name, location, analysis}, "repair_advice": str,
       "algorithm": {version, config, baseline}, "simulation": {...}?
@@ -97,7 +99,26 @@ def render_docx(report: Dict) -> bytes:
             f"分析数据段：{segment.get('start_s', 0):.1f}–{segment.get('end_s', 0):.1f} 秒，共 {segment.get('rows', 0)} 行"
             if segment.get("found") else f"分析数据段：未识别到稳定段，使用全部 {segment.get('rows', 0)} 行数据")
 
-    _heading(doc, "二、诊断发现")
+    _heading(doc, "二、原因分析")
+    causes = report.get("causes") or []
+    if causes:
+        for i, c in enumerate(causes, 1):
+            p = doc.add_paragraph()
+            r = p.add_run(f"{i}. [{SEVERITY_TEXT.get(c.get('severity'), '')}] {c.get('name', '')}")
+            r.bold = True
+            doc.add_paragraph(c.get("explanation", ""))
+            for e in c.get("evidence") or []:
+                doc.add_paragraph(f"依据：{e}", style="List Bullet")
+            if c.get("alternatives"):
+                doc.add_paragraph("其他可能：" + "；".join(c["alternatives"]), style="List Bullet")
+    else:
+        diagnosis = report.get("diagnosis") or {}
+        doc.add_paragraph(str(diagnosis.get("analysis", "")))
+    history = report.get("history") or {}
+    for item in history.get("findings") or []:
+        doc.add_paragraph(f"历史趋势：{item.get('detail', '')}", style="List Bullet")
+
+    _heading(doc, "三、诊断发现（检查项）")
     shown = [f for f in report.get("findings") or [] if f.get("severity") != "info"]
     if shown:
         table = doc.add_table(rows=len(shown) + 1, cols=4)
@@ -112,7 +133,7 @@ def render_docx(report: Dict) -> bytes:
     else:
         doc.add_paragraph("未发现需要关注的问题。")
 
-    _heading(doc, "三、检测明细")
+    _heading(doc, "四、检测明细")
     indicators = report.get("indicators") or []
     if indicators:
         table = doc.add_table(rows=len(indicators) + 1, cols=3)
@@ -126,12 +147,6 @@ def render_docx(report: Dict) -> bytes:
             row.cells[0].text = str(item.get("name", ""))
             row.cells[1].text = str(item.get("reference", ""))
             row.cells[2].text = value
-
-    _heading(doc, "四、诊断意见")
-    diagnosis = report.get("diagnosis") or {}
-    for label, key in (("问题类型", "fault_name"), ("问题位置", "location"), ("分析", "analysis")):
-        doc.add_paragraph(f"{label}：", style="List Bullet")
-        doc.add_paragraph(str(diagnosis.get(key, "")))
 
     _heading(doc, "五、处理建议")
     doc.add_paragraph(str(report.get("repair_advice", "")))

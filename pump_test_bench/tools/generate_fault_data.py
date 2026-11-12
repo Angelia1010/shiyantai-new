@@ -312,9 +312,8 @@ def diagnose(out: Path, rows: List[Dict]) -> None:
         _, df = read_table(out / r["文件"])
         rep = diagnose_frame(df, None, None, baseline)
         res = rep.get("result") or rep.get("diagnosis_result")
-        tops = [f for f in rep.get("findings", []) if f.get("severity") in ("warning", "abnormal")]
         r["实际结论"] = res
-        r["实际诊断"] = "；".join(f"{f.get('label') or f.get('target')}:{f['title']}" for f in tops[:3])
+        r["实际诊断"] = "；".join(c["name"] for c in rep.get("causes", [])) or rep.get("summary", "")
         r["是否符合"] = "是" if res == r["预期结论"] else ("偏严" if res == "abnormal" else "否")
 
 

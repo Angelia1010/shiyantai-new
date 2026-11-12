@@ -36,6 +36,8 @@ export function summarizeReport(taskId, fileName, report) {
     diagnosis: report.diagnosis || {},
     indicators: report.indicators || [],
     findings,
+    causes: report.causes || [],
+    history: report.history || null,
     loops: report.loops || [],
     repairAdvice: report.repair_advice || '',
     // 三维模型中需要告警闪烁的部件（异常优先）

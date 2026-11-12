@@ -39,6 +39,7 @@
           批量下载 ({{ selected.length }})
         </el-button>
         <el-button type="primary" size="small" @click="$router.push('/autoDiagnosis')">新建诊断</el-button>
+        <el-button size="small" icon="el-icon-data-line" @click="trendVisible = true">诊断趋势</el-button>
       </div>
 
       <el-table
@@ -98,6 +99,10 @@
       />
     </el-card>
 
+    <el-dialog title="诊断趋势" :visible.sync="trendVisible" width="80%" top="5vh" destroy-on-close>
+      <history-trend v-if="trendVisible" />
+    </el-dialog>
+
     <el-dialog title="诊断报告" :visible.sync="reportDialog.visible" width="70%" top="5vh">
       <div v-if="reportDialog.report" class="report-content">
         <el-descriptions title="基本信息" :column="3" border size="small" style="margin-bottom: 20px">
@@ -112,8 +117,11 @@
           <el-descriptions-item label="结论" :span="3">{{ reportDialog.report.summary || '—' }}</el-descriptions-item>
         </el-descriptions>
 
+        <div class="section-title">原因分析</div>
+        <cause-list :causes="reportDialog.report.causes || []" :history="reportDialog.report.history" style="margin-bottom: 20px" />
+
         <template v-if="shownFindings.length">
-          <div class="section-title">诊断发现</div>
+          <div class="section-title">检查项</div>
           <el-table :data="shownFindings" border size="small" style="margin-bottom: 20px">
             <el-table-column label="级别" width="70">
               <template slot-scope="{ row }">
@@ -137,15 +145,6 @@
           </el-table-column>
         </el-table>
 
-        <div class="section-title">诊断结论</div>
-        <el-descriptions :column="1" border size="small" style="margin-bottom: 20px">
-          <el-descriptions-item label="故障类型">{{ reportDialog.report.diagnosis.fault_name }}</el-descriptions-item>
-          <el-descriptions-item label="位置">{{ reportDialog.report.diagnosis.location }}</el-descriptions-item>
-          <el-descriptions-item label="分析说明">
-            <span style="white-space: pre-wrap">{{ reportDialog.report.diagnosis.analysis }}</span>
-          </el-descriptions-item>
-        </el-descriptions>
-
         <div class="section-title">处理建议</div>
         <el-card shadow="never" class="advice">{{ reportDialog.report.repair_advice }}</el-card>
         <div v-if="reportDialog.report.algorithm" class="algo-note">
@@ -165,6 +164,8 @@
 <script>
 import { deleteTasks, downloadReport, getReport, listTasks } from '@/api/tasks'
 import { RESULT_TAG, SEVERITY_LABELS, resultLabel } from '@/utils/report'
+import CauseList from '@/components/CauseList'
+import HistoryTrend from './HistoryTrend'
 
 const STATUS_LABELS = { Created: '待诊断', Completed: '已完成', Failed: '失败' }
 const MODE_LABELS = { auto: '自动诊断', realtime: '实时监控', file: '选择文件' }
@@ -174,6 +175,7 @@ const DAY_MS = 24 * 3600 * 1000
 
 export default {
   name: 'Tasks',
+  components: { CauseList, HistoryTrend },
   data() {
     return {
       STATUS_LABELS,
@@ -188,7 +190,8 @@ export default {
       pageSize: 20,
       loading: false,
       selected: [],
-      reportDialog: { visible: false, report: null, row: null }
+      reportDialog: { visible: false, report: null, row: null },
+      trendVisible: false
     }
   },
   computed: {

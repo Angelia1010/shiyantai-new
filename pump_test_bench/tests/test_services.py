@@ -219,3 +219,32 @@ def test_legacy_table_is_migrated(env):
     task = tasks.get_task("176280000000012345")
     assert task["status"] == "Completed" and task["result"] == "abnormal"
     assert task["created_at"] == 1762800000000 and task["mode"] == "file"
+
+
+def test_diagnosis_settings(task_client, token):
+    assert task_client.get("/diagnosis/settings", headers=auth(token)).get_json()["fuel_density_20"] is None
+    r = task_client.put("/diagnosis/settings", headers=auth(token), json={"fuel_density_20": 0.79})
+    assert r.status_code == 400  # 单位填成 g/cm³
+    r = task_client.put("/diagnosis/settings", headers=auth(token), json={"fuel_density_20": 801.5, "fuel_note": "批次 A"})
+    assert r.get_json() == {"fuel_density_20": 801.5, "fuel_note": "批次 A"}
+    assert task_client.get("/diagnosis/settings", headers=auth(token)).get_json()["fuel_density_20"] == 801.5
+
+
+def test_history_splits_mass_zero_drift(task_client, sample_dir, token):
+    """质量流量计零点漂移：多次不同流量的诊断后，历史分析能判断是零点而不是标定。"""
+    from pump_test_bench.tests.test_diagnosis import healthy_frame
+    report = None
+    for flow in (150, 300, 500):
+        df = healthy_frame(flow=flow, seed=flow)
+        df["回油质量流量2"] = df["回油质量流量2"] + 12.0
+        df.to_csv(sample_dir / f"mz{flow}.csv", index=False)
+        task_id = task_client.post("/tasks", headers=auth(token), json={
+            "path": str(sample_dir), "file_name": f"mz{flow}.csv", "mode": "file"}).get_json()["task_id"]
+        report = task_client.post(f"/tasks/{task_id}/diagnose", headers=auth(token), json={}).get_json()
+        assert report["result"] == "abnormal"
+    split = report["history"]["mass_split"]
+    assert split["kind"] == "零点漂移" and abs(split["zero_kg_h"] - 12) < 2
+    assert "零点漂移" in report["summary"]
+    hist = task_client.get("/diagnosis/history?source=file", headers=auth(token)).get_json()
+    assert [round(i["flow"], -1) for i in hist["items"]] == [150, 300, 500]
+    assert task_client.get("/diagnosis/history?source=live", headers=auth(token)).get_json()["items"] == []

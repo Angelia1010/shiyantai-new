@@ -49,28 +49,21 @@
               </el-descriptions-item>
             </el-descriptions>
 
-            <div v-if="shownFindings.length" class="diagnosis-section">
-              <h4>诊断发现</h4>
-              <div v-for="(f, i) in shownFindings" :key="i" :class="['finding', f.severity]">
-                <el-tag :type="SEVERITY_TAG[f.severity]" size="mini">{{ SEVERITY_LABELS[f.severity] }}</el-tag>
-                <span class="finding-title">{{ f.title }}</span>
-                <div class="finding-detail">{{ f.detail }}</div>
-              </div>
+            <div class="diagnosis-section">
+              <h4>原因分析</h4>
+              <cause-list :causes="diagnosisResult.causes || []" :history="diagnosisResult.history" />
             </div>
 
-            <div v-if="diagnosisResult.diagnosis" class="diagnosis-section">
-              <h4>诊断结论</h4>
-              <el-descriptions :column="1" border size="small">
-                <el-descriptions-item label="故障类型">
-                  {{ diagnosisResult.diagnosis.fault_name || '无' }}
-                </el-descriptions-item>
-                <el-descriptions-item label="故障位置">
-                  {{ diagnosisResult.diagnosis.location || '无' }}
-                </el-descriptions-item>
-                <el-descriptions-item label="分析说明">
-                  {{ diagnosisResult.diagnosis.analysis || '无' }}
-                </el-descriptions-item>
-              </el-descriptions>
+            <div v-if="shownFindings.length" class="diagnosis-section">
+              <el-collapse>
+                <el-collapse-item :title="`检查项明细（${shownFindings.length}）`">
+                  <div v-for="(f, i) in shownFindings" :key="i" :class="['finding', f.severity]">
+                    <el-tag :type="SEVERITY_TAG[f.severity]" size="mini">{{ SEVERITY_LABELS[f.severity] }}</el-tag>
+                    <span class="finding-title">{{ f.title }}</span>
+                    <div class="finding-detail">{{ f.detail }}</div>
+                  </div>
+                </el-collapse-item>
+              </el-collapse>
             </div>
 
             <div v-if="diagnosisResult.repairAdvice" class="repair-section">
@@ -162,11 +155,13 @@
 <script>
 import * as echarts from 'echarts'
 import { RESULT_TAG, SEVERITY_LABELS } from '@/utils/report'
+import CauseList from '@/components/CauseList'
 
 const SEVERITY_TAG = { info: 'info', notice: 'info', warning: 'warning', abnormal: 'danger' }
 
 export default {
   name: 'ResultDisplayStep',
+  components: { CauseList },
   props: {
     // utils/report.js summarizeReport() 的结果
     diagnosisResult: { type: Object, default: null },
@@ -276,8 +271,6 @@ export default {
   gap: 10px;
 }
 
-.result-info-card,
-.chart-card,
 .finding {
   padding: 6px 0;
   border-bottom: 1px dashed #ebeef5;

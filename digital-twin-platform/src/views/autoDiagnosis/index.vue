@@ -70,7 +70,7 @@ import DiagnosisExecStep from './components/DiagnosisExecStep.vue'
 import ResultDisplayStep from './components/ResultDisplayStep.vue'
 import { Cancelled, DiagnosisPipeline } from './pipeline'
 import { addDataDir, setAutoDiagnose, setWatchPath } from '@/api/files'
-import { downloadReport, getReport, listTasks } from '@/api/tasks'
+import { downloadReport, getDiagnosisSettings, getReport, listTasks, saveDiagnosisSettings } from '@/api/tasks'
 import { errorMessage } from '@/utils/request'
 import { createTicker } from '@/utils/backgroundTicker'
 import { MessageType, openChannel } from '@/utils/broadcastChannel'
@@ -96,7 +96,7 @@ export default {
         autoDiagnosis: true,
         enableSimulation: false,
         electricalSpeed: null,
-        mediumDensity: null, // 留空：后端按油温计算密度
+        mediumDensity: null, // 当前燃油 20 ℃ 密度；与工作台、自动诊断共用（诊断设置），留空按健康基准的油品
         groupSize: 5
       },
       // 试验变量 ↔ AMESim 仿真结果文件
@@ -129,6 +129,13 @@ export default {
     this.realtimeSince = 0
     this.handledTasks = new Set()
     this.announcedTasks = new Set()
+    this.savedDensity = null
+    getDiagnosisSettings().then(st => {
+      this.savedDensity = st.fuel_density_20
+      if (this.config.mediumDensity == null || this.config.mediumDensity === '') {
+        this.config.mediumDensity = st.fuel_density_20
+      }
+    }).catch(() => {})
   },
   beforeDestroy() {
     // 实时模式的诊断在后端进行，离开页面不关闭它，只停止本页的结果轮询
@@ -173,6 +180,17 @@ export default {
       } catch (error) {
         this.$message.error(errorMessage(error))
         return
+      }
+      // 燃油密度保存为诊断设置，后端自动诊断也用它
+      const density = this.config.mediumDensity === '' ? null : this.config.mediumDensity
+      if (density !== this.savedDensity) {
+        try {
+          const st = await saveDiagnosisSettings({ fuel_density_20: density })
+          this.savedDensity = st.fuel_density_20
+        } catch (error) {
+          this.$message.error(errorMessage(error))
+          return
+        }
       }
       if (this.config.diagnosisMode === 'file') {
         this.currentStep = 1

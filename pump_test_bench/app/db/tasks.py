@@ -241,3 +241,27 @@ def get_report_docx(task_id: str) -> Optional[bytes]:
     with _connect() as conn:
         row = conn.execute("SELECT report_docx FROM diagnosis_tasks WHERE task_id=?", (task_id,)).fetchone()
     return bytes(row["report_docx"]) if row and row["report_docx"] else None
+
+
+def list_reports(since: Optional[int] = None, limit: int = 500, exclude: Optional[str] = None) -> List[Dict]:
+    """已完成任务的报告，按诊断时间从早到晚：[{task_id, file_name, mode, updated_at, report}]（趋势分析用）。"""
+    where, params = ["status = ?", "report_json IS NOT NULL"], [STATUS_COMPLETED]
+    if since is not None:
+        where.append("updated_at >= ?")
+        params.append(since)
+    if exclude:
+        where.append("task_id != ?")
+        params.append(exclude)
+    with _connect() as conn:
+        rows = conn.execute(
+            f"SELECT task_id, file_name, mode, updated_at, report_json FROM diagnosis_tasks "
+            f"WHERE {' AND '.join(where)} ORDER BY updated_at DESC LIMIT ?", params + [limit]).fetchall()
+    out = []
+    for row in reversed(rows):
+        try:
+            report = json.loads(row["report_json"])
+        except ValueError:
+            continue
+        out.append({"task_id": row["task_id"], "file_name": row["file_name"], "mode": row["mode"],
+                    "updated_at": row["updated_at"], "report": report})
+    return out

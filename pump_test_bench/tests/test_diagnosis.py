@@ -171,3 +171,23 @@ def test_temperature_pair_mismatch():
     df["供油温度1-2"] = df["供油温度1-1"]
     body = diagnose_frame(_inject(df, gen.temp_offset, col="供油温度1-1", offset=8.0))
     assert any(f["category"] == "temperature" and f["severity"] == "abnormal" for f in decisive(body))
+
+
+def test_long_term_drift_from_history():
+    from pump_test_bench.app.diagnosis.history import analyze_history
+    cfg = load_config()
+    reports = [diagnose_frame(faults.drift(healthy_frame(seed=i), "回油流量1-2", -0.0017 * i), cfg=cfg)
+               for i in range(12)]
+    assert all(r["result"] == "normal" for r in reports)  # 每次都没超阈值
+    hist = analyze_history(reports[-1], reports[:-1], cfg)
+    assert [f["target"] for f in hist["findings"]] == ["回油流量1-2"]
+
+
+def test_causes_merge_symptoms():
+    body = diagnose_frame(_inject(healthy_frame(), gen.leak, "ramp", ratio=0.06))
+    assert body["causes"][0]["name"].startswith("供回油之间泄漏") and len(body["causes"]) == 1
+    body = diagnose_frame(_inject(healthy_frame(), gen.leak, ratio=0.04))
+    # 两只回油表同时偏低而质量流量计正常：不是泄漏
+    df = faults.drift(faults.drift(healthy_frame(), "回油流量1-1", -0.04), "回油流量1-2", -0.04)
+    names = [c["name"] for c in diagnose_frame(df)["causes"]]
+    assert names[0] == "两只回油流量计同时偏低", names

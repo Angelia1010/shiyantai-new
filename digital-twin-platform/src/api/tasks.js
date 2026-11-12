@@ -21,7 +21,7 @@ export function deleteTasks(taskIds) {
   return request({ url: `${BASE}/tasks/delete`, method: 'post', data: { task_ids: taskIds } })
 }
 
-/** 诊断（流量计互校、质量-体积校核、传感器自检），返回报告。density 留空时按油温计算 */
+/** 诊断（流量计互校、质量-体积校核、传感器自检），返回报告。density = 当前燃油 20 ℃ 密度，留空时用诊断设置里的值 */
 export function diagnoseTask(taskId, density) {
   return request({ url: `${BASE}/tasks/${encodeURIComponent(taskId)}/diagnose`, method: 'post', data: { density } })
 }
@@ -45,4 +45,21 @@ export function downloadReport(taskId) {
 
 export function saveLogs(source, logs) {
   return request({ url: `${BASE}/logs`, method: 'post', data: { source, logs }, silent: true })
+}
+
+/** 诊断设置：{ fuel_density_20: 当前燃油 20 ℃ 密度 kg/m³ | null, fuel_note } */
+export function getDiagnosisSettings() {
+  return request({ url: `${BASE}/diagnosis/settings`, method: 'get' })
+}
+
+export function saveDiagnosisSettings(data) {
+  return request({ url: `${BASE}/diagnosis/settings`, method: 'put', data })
+}
+
+/**
+ * 历次诊断的关键指标（趋势图）。source: live（试验台实时/自动诊断）| file（手动选择文件）| all
+ * 返回 { items: [{ task_id, file_name, mode, time, result, flow, temperature, meters: {列: 偏差}, labels, balance, mass }] }
+ */
+export function getDiagnosisHistory(days = 90, source = 'live') {
+  return request({ url: `${BASE}/diagnosis/history`, method: 'get', params: { days, source } })
 }
