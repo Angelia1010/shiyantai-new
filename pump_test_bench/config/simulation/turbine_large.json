@@ -1,0 +1,161 @@
+{
+  "_说明": "涡轮流量计模型（大流量管路）：边界条件为入口压力、出口质量流量，介质属性为温度、密度、黏度（密度、黏度由温度换算），输出该管路两只涡轮流量计的转速（Hz）。数据代理模型由正常数据拟合；接入 AMESim 涡轮流量计部件模型时补全 amesim 段。",
+  "id": "turbine_large",
+  "name": "涡轮流量计模型（大流量管路）",
+  "order": 2,
+  "description": "大流量管路两只涡轮流量计：入口压力（回油压力1-1）、出口质量流量（回油质量流量1）、温度 → 转速 Hz",
+  "components": [
+    "回油流量计1"
+  ],
+  "default_mode": "decisive",
+  "engine": {
+    "type": "surrogate"
+  },
+  "active_if": [
+    {
+      "column": "回油流量1-1",
+      "min": 20,
+      "note": "大流量管路工作"
+    }
+  ],
+  "inputs": [
+    {
+      "name": "入口压力",
+      "column": "回油压力1-1",
+      "unit": "MPa",
+      "grid": [
+        0.02,
+        0.06,
+        0.1,
+        0.16
+      ],
+      "valid": [
+        -0.5,
+        40
+      ]
+    },
+    {
+      "name": "出口质量流量",
+      "column": "回油质量流量2",
+      "unit": "kg/h",
+      "grid": [
+        100,
+        150,
+        200,
+        250,
+        300,
+        350,
+        400,
+        450
+      ],
+      "valid": [
+        1,
+        20000
+      ]
+    },
+    {
+      "name": "温度",
+      "column": "回油温度1-1",
+      "fallback_columns": [
+        "回油温度1-2"
+      ],
+      "unit": "℃",
+      "grid": [
+        15,
+        25,
+        35,
+        45,
+        50
+      ],
+      "valid": [
+        -40,
+        120
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "涡轮流量计转速",
+      "unit": "Hz",
+      "kind": "flow",
+      "columns": [
+        "回油流量1-1转速",
+        "回油流量1-2转速"
+      ],
+      "component": "回油流量计1",
+      "system": "回油系统（大流量管路）"
+    }
+  ],
+  "rules": {
+    "group_shift": {
+      "output": "涡轮流量计转速",
+      "min_columns": 2,
+      "meaning": "reference",
+      "component": "回油流量计1"
+    }
+  },
+  "thresholds": {
+    "sigma_warn": 3,
+    "sigma_alarm": 5,
+    "floor_warn": {
+      "flow": 0.02
+    },
+    "floor_alarm": {
+      "flow": 0.035
+    }
+  },
+  "media": {
+    "video": "videos/涡轮流量计仿真2.mp4",
+    "caption": "涡轮流量计 AMESim 仿真录屏（示意），不随本次计算变化"
+  },
+  "amesim": {
+    "_说明": "接入涡轮流量计 AMESim 部件模型时填写；油温行的 derive 可为 temperature、density、viscosity（按 signals.json 的介质物性换算）",
+    "url": "http://127.0.0.1:5003",
+    "model_file": "待填写.ame",
+    "stop_time_s": 10,
+    "steady_tail_s": 3,
+    "parameters": [
+      {
+        "input": "入口压力",
+        "kind": "component",
+        "params": [
+          "待填写@入口压力"
+        ]
+      },
+      {
+        "input": "出口质量流量",
+        "kind": "component",
+        "params": [
+          "待填写@出口质量流量"
+        ]
+      },
+      {
+        "input": "温度",
+        "kind": "global",
+        "derive": "temperature",
+        "params": [
+          "待填写_温度"
+        ]
+      },
+      {
+        "input": "温度",
+        "kind": "global",
+        "derive": "density",
+        "params": [
+          "待填写_密度"
+        ]
+      },
+      {
+        "input": "温度",
+        "kind": "global",
+        "derive": "viscosity",
+        "params": [
+          "待填写_黏度"
+        ]
+      }
+    ],
+    "variables": {
+      "涡轮流量计转速": "待填写"
+    }
+  }
+}

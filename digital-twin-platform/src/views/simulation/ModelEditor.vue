@@ -35,6 +35,35 @@
               <el-option label="关闭" value="off" />
             </el-select>
           </el-form-item>
+          <el-form-item label="适用条件">
+            <el-table :data="form.active_if" size="mini" border style="width: 100%">
+              <el-table-column label="测点" min-width="180">
+                <template slot-scope="{ row }">
+                  <el-select v-model="row.column" filterable allow-create size="mini" style="width: 100%">
+                    <el-option v-for="c in columns" :key="c" :label="c" :value="c" />
+                  </el-select>
+                </template>
+              </el-table-column>
+              <el-table-column label="不低于" width="100">
+                <template slot-scope="{ row }"><el-input v-model="row.min" size="mini" /></template>
+              </el-table-column>
+              <el-table-column label="不高于" width="100">
+                <template slot-scope="{ row }"><el-input v-model="row.max" size="mini" /></template>
+              </el-table-column>
+              <el-table-column label="说明" min-width="140">
+                <template slot-scope="{ row }"><el-input v-model.trim="row.note" size="mini" placeholder="如：大流量管路工作" /></template>
+              </el-table-column>
+              <el-table-column width="50">
+                <template slot-scope="{ $index }">
+                  <el-button type="text" icon="el-icon-delete" @click="form.active_if.splice($index, 1)" />
+                </template>
+              </el-table-column>
+            </el-table>
+            <el-button size="mini" icon="el-icon-plus" class="add" @click="form.active_if.push({ column: '', min: '', max: '', note: '' })">添加条件</el-button>
+            <el-tooltip placement="right" content="测点均值满足全部条件时模型才参与诊断、才用于标定（如小流量管路模型只在小流量管路有流量时适用）；不填则始终适用">
+              <i class="el-icon-question tip" />
+            </el-tooltip>
+          </el-form-item>
         </el-form>
       </el-tab-pane>
 
@@ -117,7 +146,26 @@
           <el-table-column label="单位" width="70">
             <template slot-scope="{ row }"><el-input v-model.trim="row.unit" size="mini" /></template>
           </el-table-column>
-          <el-table-column min-width="230">
+          <el-table-column label="所属系统" width="130">
+            <template slot-scope="{ row }">
+              <el-select v-model="row.system" filterable allow-create clearable size="mini">
+                <el-option v-for="name in SYSTEMS" :key="name" :label="name" :value="name" />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column width="80">
+            <template slot="header">
+              残差
+              <el-tooltip content="相对：偏差 ÷ 预期值，适合流量、转速等；绝对：直接相减，适合温度和接近 0 的量（如油箱压力）" placement="top"><i class="el-icon-question tip" /></el-tooltip>
+            </template>
+            <template slot-scope="{ row }">
+              <el-select v-model="row.residual" size="mini">
+                <el-option label="相对" value="relative" />
+                <el-option label="绝对" value="absolute" />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column min-width="200">
             <template slot="header">
               对应测点
               <el-tooltip content="同一处的多只表可以一起选，各自与同一个预期值比较" placement="top"><i class="el-icon-question tip" /></el-tooltip>
@@ -178,6 +226,13 @@
                                  controls-position="right" style="width: 100px" />
             <span class="unit">{{ kind === 'temperature' ? '℃（绝对偏差）' : '%（相对偏差）' }}</span>
           </el-form-item>
+          <el-form-item v-for="kind in absKinds" :key="`abs-${kind}`" :label="`${KIND_LABELS[kind]}绝对阈值下限`">
+            预警 <el-input-number v-model="form.floorsAbs[kind].warn" :min="0" :step="0.01" :precision="3"
+                                 controls-position="right" style="width: 110px" />
+            异常 <el-input-number v-model="form.floorsAbs[kind].alarm" :min="0" :step="0.01" :precision="3"
+                                 controls-position="right" style="width: 110px" />
+            <span class="unit">与测点同单位（残差为“绝对”的{{ KIND_LABELS[kind] }}输出使用）</span>
+          </el-form-item>
           <el-divider content-position="left">整体偏移</el-divider>
           <el-form-item label="启用">
             <el-switch v-model="form.groupEnabled" />
@@ -195,6 +250,14 @@
               <el-select v-model="form.group.meaning" style="width: 380px">
                 <el-option v-for="(label, value) in MEANING_LABELS" :key="value" :label="label" :value="value" />
               </el-select>
+            </el-form-item>
+            <el-form-item v-if="form.group.meaning === 'pump'" label="决定流量的输入">
+              <el-select v-model="form.group.driver" clearable placeholder="默认第一个输入">
+                <el-option v-for="i in form.inputs" :key="i.name" :label="i.name" :value="i.name" />
+              </el-select>
+              <el-tooltip placement="right" content="判断“实际流量变化”时沿这个输入求压力随流量的变化（如被试泵由电传转速决定流量）">
+                <i class="el-icon-question tip" />
+              </el-tooltip>
             </el-form-item>
             <el-form-item v-if="form.group.meaning === 'input'" label="对应的输入">
               <el-select v-model="form.group.input">
@@ -232,6 +295,15 @@
               <template slot-scope="{ row }">
                 <el-select v-model="row.input" size="mini">
                   <el-option v-for="i in form.inputs" :key="i.name" :label="i.name" :value="i.name" />
+                </el-select>
+              </template>
+            </el-table-column>
+            <el-table-column label="换算" width="110">
+              <template slot-scope="{ row }">
+                <el-select v-model="row.derive" clearable size="mini" placeholder="不换算">
+                  <el-option label="油温" value="temperature" />
+                  <el-option label="由油温算密度" value="density" />
+                  <el-option label="由油温算黏度" value="viscosity" />
                 </el-select>
               </template>
             </el-table-column>
@@ -278,8 +350,12 @@ import { COMPONENTS } from '@/views/dashboard/scene/components'
 import { KIND_LABELS, MEANING_LABELS, createModel, getColumns, updateModel } from '@/api/simulation'
 import { errorMessage } from '@/utils/request'
 
+// 标准台的系统划分（与 pump_test_bench/config/signals.json 一致），可在“所属系统”中另填
+const SYSTEMS = ['油箱系统', '离心泵驱动电机', '供油系统', '传动系统', '被试件', '回油系统（大流量管路）', '回油系统（小流量管路）']
+const DEFAULT_ABS_FLOORS = { flow: [5, 10], pressure: [0.02, 0.04], temperature: [3, 5], torque: [1, 2], speed: [20, 40], other: [1, 2] }
+
 const DEFAULT_FLOORS = {
-  flow: [2.5, 4], pressure: [4, 7], temperature: [3, 5], torque: [15, 25], other: [5, 8]
+  flow: [2.5, 4], pressure: [4, 7], temperature: [3, 5], torque: [15, 25], speed: [2, 4], other: [5, 8]
 }
 
 function toText(list) {
@@ -300,6 +376,12 @@ function toForm(cfg) {
       alarm: a === undefined ? DEFAULT_FLOORS[kind][1] : +(a * pct).toFixed(2)
     }
   }
+  const floorsAbs = {}
+  for (const kind of Object.keys(DEFAULT_ABS_FLOORS)) {
+    const w = (th.floor_warn_abs || {})[kind]
+    const a = (th.floor_alarm_abs || {})[kind]
+    floorsAbs[kind] = { warn: w === undefined ? DEFAULT_ABS_FLOORS[kind][0] : w, alarm: a === undefined ? DEFAULT_ABS_FLOORS[kind][1] : a }
+  }
   const ame = cfg.amesim || {}
   return {
     id: cfg.id || '',
@@ -308,6 +390,7 @@ function toForm(cfg) {
     engine: (cfg.engine && cfg.engine.type) || 'surrogate',
     components: [...(cfg.components || [])],
     default_mode: cfg.default_mode || 'decisive',
+    active_if: (cfg.active_if || []).map(c => ({ column: c.column || '', min: c.min === undefined ? '' : c.min, max: c.max === undefined ? '' : c.max, note: c.note || '' })),
     inputs: (cfg.inputs || []).map(i => ({
       name: i.name,
       source: i.derived === 'density' ? 'density' : (i.columns && i.columns.length ? 'multi' : 'single'),
@@ -324,6 +407,8 @@ function toForm(cfg) {
       kind: o.kind || 'other',
       unit: o.unit || '',
       columns: [...(o.columns || [])],
+      system: o.system || '',
+      residual: o.residual || (o.kind === 'temperature' ? 'absolute' : 'relative'),
       single: o.single || 'decisive',
       component: o.component || '',
       flow_dependent: !!o.flow_dependent,
@@ -334,12 +419,14 @@ function toForm(cfg) {
       outputs: rule ? (rule.outputs || [rule.output]) : [],
       meaning: (rule && rule.meaning) || 'pump',
       input: (rule && rule.input) || '',
+      driver: (rule && rule.driver) || '',
       min_columns: (rule && rule.min_columns) || 3,
       component: (rule && rule.component) || ''
     },
     sigma_warn: th.sigma_warn || 3,
     sigma_alarm: th.sigma_alarm || 5,
     floors,
+    floorsAbs,
     amesim: {
       model_file: ame.model_file && !String(ame.model_file).includes('待填写') ? ame.model_file : '',
       url: ame.url || 'http://127.0.0.1:5003',
@@ -365,6 +452,7 @@ export default {
       columns: [],
       saving: false,
       components: COMPONENTS,
+      SYSTEMS,
       KIND_LABELS,
       MEANING_LABELS
     }
@@ -375,6 +463,10 @@ export default {
     },
     usedKinds() {
       return [...new Set(this.form.outputs.map(o => o.kind))]
+    },
+    // 有“绝对”残差输出的类型（温度本来就是绝对偏差，用上面的下限）
+    absKinds() {
+      return [...new Set(this.form.outputs.filter(o => o.residual === 'absolute' && o.kind !== 'temperature').map(o => o.kind))]
     }
   },
   watch: {
@@ -399,7 +491,7 @@ export default {
       return { name: '', source: 'single', column: '', columns: [], temperature_column: '', fallback: '', unit: '', grid: '', valid: '' }
     },
     blankOutput() {
-      return { name: '', kind: 'pressure', unit: 'MPa', columns: [], single: 'decisive', component: '', flow_dependent: false }
+      return { name: '', kind: 'pressure', unit: 'MPa', columns: [], system: '', residual: 'relative', single: 'decisive', component: '', flow_dependent: false }
     },
     /** 表单 → 模型配置（保留表单不管的字段，如 media、order、ordiam 档位表） */
     toConfig() {
@@ -413,6 +505,13 @@ export default {
         engine: { ...(base.engine || {}), type: f.engine },
         components: f.components,
         default_mode: f.default_mode,
+        active_if: f.active_if.filter(c => c.column).map(c => {
+          const out = { column: c.column }
+          if (c.min !== '' && c.min !== null) out.min = Number(c.min)
+          if (c.max !== '' && c.max !== null) out.max = Number(c.max)
+          if (c.note) out.note = c.note
+          return out
+        }),
         inputs: f.inputs.map((i, k) => {
           const old = (base.inputs || [])[k] || {}
           const out = { ...old, name: i.name, unit: i.unit, grid: i.grid, valid: i.valid }
@@ -430,7 +529,8 @@ export default {
           return out
         }),
         outputs: f.outputs.map(o => {
-          const out = { name: o.name, kind: o.kind, unit: o.unit, columns: o.columns, single: o.single }
+          const out = { name: o.name, kind: o.kind, unit: o.unit, columns: o.columns, single: o.single, residual: o.residual }
+          if (o.system) out.system = o.system
           if (o.component) out.component = o.component
           if (o.flow_dependent && o.kind === 'pressure') out.flow_dependent = true
           if (o.component_by_column) out.component_by_column = o.component_by_column
@@ -442,6 +542,7 @@ export default {
             meaning: f.group.meaning,
             min_columns: f.group.min_columns,
             ...(f.group.meaning === 'input' ? { input: f.group.input } : {}),
+            ...(f.group.meaning === 'pump' && f.group.driver ? { driver: f.group.driver } : {}),
             ...(f.group.component ? { component: f.group.component } : {})
           }
         } : {},
@@ -450,7 +551,9 @@ export default {
           sigma_warn: f.sigma_warn,
           sigma_alarm: f.sigma_alarm,
           floor_warn: Object.fromEntries(this.usedKinds.map(k => [k, f.floors[k].warn / (k === 'temperature' ? 1 : 100)])),
-          floor_alarm: Object.fromEntries(this.usedKinds.map(k => [k, f.floors[k].alarm / (k === 'temperature' ? 1 : 100)]))
+          floor_alarm: Object.fromEntries(this.usedKinds.map(k => [k, f.floors[k].alarm / (k === 'temperature' ? 1 : 100)])),
+          floor_warn_abs: Object.fromEntries(this.absKinds.map(k => [k, f.floorsAbs[k].warn])),
+          floor_alarm_abs: Object.fromEntries(this.absKinds.map(k => [k, f.floorsAbs[k].alarm]))
         },
         amesim: {
           ...(base.amesim || {}),
@@ -458,7 +561,11 @@ export default {
           url: f.amesim.url,
           stop_time_s: f.amesim.stop_time_s,
           steady_tail_s: f.amesim.steady_tail_s,
-          parameters: f.amesim.parameters,
+          parameters: f.amesim.parameters.map(p => {
+            const out = { ...p }
+            if (!out.derive) delete out.derive
+            return out
+          }),
           variables: Object.fromEntries(f.outputs.map(o => [o.name, f.amesim.variables[o.name] || '']))
         }
       }

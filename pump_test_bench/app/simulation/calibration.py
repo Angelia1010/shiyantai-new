@@ -12,7 +12,7 @@ from typing import Callable, Dict, Iterable, List, Optional
 
 import numpy as np
 
-from pump_test_bench.app.simulation.condition import DensityFn, condition_of, measured_means
+from pump_test_bench.app.simulation.condition import DensityFn, applicable, condition_of, measured_means
 from pump_test_bench.app.simulation.config import residual_mode
 from pump_test_bench.app.simulation.models import SurrogateModel, make_model
 from pump_test_bench.app.simulation.table import build_table, predict
@@ -49,6 +49,8 @@ def collect_samples(paths: Iterable[Path], sim_cfg: Dict, density_fn: Optional[D
         if not seg_info.found:
             continue
         seg = df.iloc[seg_info.start:seg_info.end]
+        if not applicable(seg, sim_cfg)[0]:
+            continue
         cond, _ = condition_of(seg, sim_cfg, density_fn)
         if len(cond) < len(sim_cfg["inputs"]):
             continue
@@ -153,7 +155,14 @@ def build_reference(paths: List[Path], sim_cfg: Dict, kind: Optional[str] = None
     say("读取正常数据", 0, len(paths))
     samples = collect_samples(paths, sim_cfg)
     if len(samples) < MIN_FILES:
-        raise ValueError(f"可用的正常数据只有 {len(samples)} 个文件（需要有稳定段且工况完整），至少需要 {MIN_FILES} 个")
+        need = "；".join(c.get("note") or c["column"] for c in sim_cfg.get("active_if") or [])
+        raise ValueError(f"可用的正常数据只有 {len(samples)} 个文件（需要有稳定段、工况完整"
+                         + (f"、且{need}" if need else "") + f"），至少需要 {MIN_FILES} 个")
+    silent = [o["name"] for o in sim_cfg["outputs"]
+              if all(abs(s["outputs"].get(o["name"]) or 0) < 1e-6 for s in samples)]
+    if len(silent) == len(sim_cfg["outputs"]):
+        raise ValueError(f"正常数据中这个模型的输出（{'、'.join(silent)}）都没有信号（如该管路没有流量），"
+                         "无法用数据建立基准表；请用有流量的正常数据，或改用 AMESim 模型")
 
     if kind == "surrogate":
         groups = sorted({s["group"] for s in samples})

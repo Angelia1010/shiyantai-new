@@ -24,10 +24,11 @@ def print_summary(table) -> None:
           + " × ".join(f"{i['name']}{len(i['grid'])}" for i in table["inputs"])
           + f"；标定文件 {calib.get('files')} 个（{calib.get('method', '')}）")
     print(f"{'测点':<14}{'所属输出':<10}{'固有偏差':>10}{'离散σ':>10}")
+    units = {o["name"]: o.get("unit", "") for o in table["outputs"]}
     for col, c in calib.get("columns", {}).items():
-        unit = "℃" if c.get("mode") == "absolute" else "%"
-        k = 1 if unit == "℃" else 100
-        print(f"{col:<14}{c['output']:<10}{c['bias'] * k:>9.2f}{unit}{c['std'] * k:>9.2f}{unit}")
+        unit = units.get(c["output"], "") if c.get("mode") == "absolute" else "%"
+        k = 100 if unit == "%" else 1
+        print(f"{col:<14}{c['output']:<14}{c['bias'] * k:>10.3f} {unit:<5}{c['std'] * k:>9.3f} {unit}")
 
 
 def main(argv=None) -> int:
@@ -44,7 +45,11 @@ def main(argv=None) -> int:
         def progress(stage, done, total, name=mcfg["name"]):
             print(f"\r{name} {stage} {done}/{total}      ", end="", flush=True)
 
-        table = build_reference(files, mcfg, args.engine, progress, source=str(args.source))
+        try:
+            table = build_reference(files, mcfg, args.engine, progress, source=str(args.source))
+        except ValueError as exc:
+            print(f"\n{mcfg['name']}：未建立 —— {exc}")
+            continue
         print_summary(table)
         path = save_table(table, default_table_path(mcfg["id"]) if args.default else None)
         print(f"已保存：{path}")

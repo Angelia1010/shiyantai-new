@@ -32,9 +32,11 @@ class SurrogateModel(SimulationModel):
     label = "数据代理模型（由正常数据拟合）"
 
     def __init__(self, inputs: List[str], centers: List[float], scales: List[float], coef: Dict[str, List[float]],
-                 fit_info: Optional[Dict] = None):
+                 fit_info: Optional[Dict] = None, active: Optional[List[str]] = None):
         self.inputs, self.centers, self.scales, self.coef = inputs, centers, scales, coef
         self.fit_info = fit_info or {}
+        # 正常数据里几乎不变的输入（如恒定的压力）无法拟合出影响，不参与拟合，避免外推出错
+        self.active = active if active is not None else list(inputs)
 
     @staticmethod
     def _features(z: np.ndarray) -> np.ndarray:
@@ -44,8 +46,9 @@ class SurrogateModel(SimulationModel):
         return np.column_stack(cols)
 
     def _z(self, rows: Iterable[Dict[str, float]]) -> np.ndarray:
-        return np.array([[(r[name] - c) / s for name, c, s in zip(self.inputs, self.centers, self.scales)]
-                         for r in rows], dtype=float)
+        idx = [self.inputs.index(n) for n in self.active]
+        return np.array([[(r[self.inputs[i]] - self.centers[i]) / self.scales[i] for i in idx] for r in rows],
+                        dtype=float).reshape(-1, len(idx))
 
     @classmethod
     def fit(cls, samples: List[Dict], cfg: Dict) -> "SurrogateModel":
@@ -58,6 +61,10 @@ class SurrogateModel(SimulationModel):
             scales.append(max((max(grid) - min(grid)) / 2, 1e-9))
         model = cls(names, centers, scales, {})
         usable = [s for s in samples if all(n in s["condition"] for n in names)]
+        if usable:
+            spread = {n: np.ptp([s["condition"][n] for s in usable]) / sc for n, sc in zip(names, scales)}
+            model.active = [n for n in names if spread[n] > 0.05]
+        dropped = [n for n in names if n not in model.active]
         X = cls._features(model._z(s["condition"] for s in usable))
         if len(usable) < X.shape[1] + 3:
             raise ValueError(f"可用于拟合的正常数据只有 {len(usable)} 个工况，至少需要 {X.shape[1] + 3} 个")
@@ -69,7 +76,7 @@ class SurrogateModel(SimulationModel):
             y = np.array([v for _, v in rows])
             c, *_ = np.linalg.lstsq(X[idx], y, rcond=None)
             model.coef[out] = [float(v) for v in c]
-        model.fit_info = {"samples": len(usable)}
+        model.fit_info = {"samples": len(usable), "dropped_inputs": dropped}
         return model
 
     def run(self, condition: Dict[str, float]) -> Dict[str, float]:
@@ -78,11 +85,11 @@ class SurrogateModel(SimulationModel):
 
     def to_dict(self) -> Dict:
         return {"type": self.kind, "inputs": self.inputs, "centers": self.centers, "scales": self.scales,
-                "coef": self.coef, "fit_info": self.fit_info}
+                "coef": self.coef, "fit_info": self.fit_info, "active": self.active}
 
     @classmethod
     def from_dict(cls, d: Dict) -> "SurrogateModel":
-        return cls(d["inputs"], d["centers"], d["scales"], d["coef"], d.get("fit_info"))
+        return cls(d["inputs"], d["centers"], d["scales"], d["coef"], d.get("fit_info"), d.get("active"))
 
 
 # --------------------------------------------------------------------------- AMESim 模型
@@ -128,6 +135,9 @@ class AmesimModel(SimulationModel):
             value = condition.get(p["input"])
             if value is None:
                 continue
+            if p.get("derive"):  # 由输入换算的介质物性：temperature / density / viscosity
+                from pump_test_bench.app.signals import DERIVE
+                value = DERIVE[p["derive"]](value)
             if p["kind"] == "input_table":
                 client.write_input_data([value] * int(p.get("points", 150)))
                 continue

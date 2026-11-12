@@ -16,10 +16,14 @@ from typing import Dict, List, Optional, Tuple
 
 DEFAULT_SIM_DIR = Path(__file__).resolve().parents[2] / "config" / "simulation"
 ENGINES = ("surrogate", "amesim")
-KINDS = {"flow": "流量", "pressure": "压力", "temperature": "温度", "torque": "扭矩", "other": "其他"}
+KINDS = {"flow": "流量", "pressure": "压力", "temperature": "温度", "torque": "扭矩", "speed": "转速", "other": "其他"}
 DEFAULT_FLOORS = {  # 阈值下限：相对偏差（温度为绝对偏差 ℃）
     "flow": (0.025, 0.04), "pressure": (0.04, 0.07), "temperature": (3.0, 5.0), "torque": (0.15, 0.25),
-    "other": (0.05, 0.08),
+    "speed": (0.03, 0.05), "other": (0.05, 0.08),
+}
+DEFAULT_ABS_FLOORS = {  # 绝对偏差的阈值下限（按单位）：近零的量（无流量管路、恒定压力）用绝对偏差比较
+    "flow": (5.0, 10.0), "pressure": (0.02, 0.04), "temperature": (3.0, 5.0), "torque": (0.3, 0.6),
+    "speed": (50.0, 100.0), "other": (1.0, 2.0),
 }
 _lock = threading.Lock()
 _cache: Dict[str, Tuple[float, Dict]] = {}
@@ -199,6 +203,8 @@ def validate_model(data: Dict, existing_id: Optional[str] = None) -> Dict:
         o["columns"] = [c for c in o.get("columns") or [] if c]
         if not o["columns"]:
             raise ValueError(f"输出“{o['name']}”请选择对应的测点（同一处的多只表可以一起选）")
+        if o.get("residual") not in (None, "", "relative", "absolute"):
+            raise ValueError(f"输出“{o['name']}”的比较方式只能是 relative 或 absolute")
         o["residual"] = residual_mode(o)
         if o.get("single", "decisive") not in ("decisive", "notice"):
             raise ValueError(f"输出“{o['name']}”的单测点判定只能是 decisive 或 notice")
@@ -248,6 +254,8 @@ def validate_model(data: Dict, existing_id: Optional[str] = None) -> Dict:
         for p in ame.get("parameters") or []:
             if p.get("input") not in names:
                 raise ValueError(f"AMESim 参数映射引用了不存在的输入：{p.get('input')}")
+            if p.get("derive") not in (None, "", "temperature", "density", "viscosity"):
+                raise ValueError("AMESim 参数的换算只能是 temperature、density 或 viscosity")
             if p.get("kind") not in ("component", "global", "input_table"):
                 raise ValueError("AMESim 参数的设置方式只能是 component、global 或 input_table")
             if p["kind"] != "input_table":
@@ -256,6 +264,18 @@ def validate_model(data: Dict, existing_id: Optional[str] = None) -> Dict:
                 if not p["params"]:
                     raise ValueError(f"AMESim 参数映射（输入“{p['input']}”）请填写参数路径")
     cfg["amesim"] = ame
+    conds = []
+    for c in cfg.get("active_if") or []:
+        if not c.get("column"):
+            continue
+        item = {"column": c["column"]}
+        for key in ("min", "max"):
+            if c.get(key) not in (None, ""):
+                item[key] = float(c[key])
+        if c.get("note"):
+            item["note"] = str(c["note"])
+        conds.append(item)
+    cfg["active_if"] = conds
     return cfg
 
 

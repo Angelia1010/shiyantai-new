@@ -197,6 +197,11 @@ def infer_causes(findings: List[Dict], loops: List[Dict]) -> List[Dict]:
         loop_level = c["location"] in ("主油路",) or c["component"] in ("回油管路", "被试件2")
         return {c["target"]} | (loop_cols if loop_level else set())
 
+    def source_of(target: str) -> str:
+        """派生测点（如涡轮流量计转速 Hz）归到它的采集列，以便与互校结论合并。"""
+        from ..signals import derived_specs
+        return (derived_specs().get(target) or {}).get("source", target)
+
     def attach(host: Dict, items: List[Dict]) -> None:
         host["evidence"] += [f"{x.get('model_name', '模型')}：{x['detail']}" for x in items]
         host["severity"] = _worst([{"severity": host["severity"]}] + items)
@@ -205,8 +210,9 @@ def infer_causes(findings: List[Dict], loops: List[Dict]) -> List[Dict]:
     ref = take(lambda x: x["category"] == "model_reference")
     if ref:
         # 先并入质量流量计的原因；有泄漏、夹气这类整条油路的原因时，参考量偏差是它们的结果，也并入
+        # 两只回油流量计同时偏低时，涡轮流量计模型（以质量流量为参考）的整体偏差正是它的证据
         host = next((c for c in causes if c["target"] in mass_cols), None) or \
-            next((c for c in causes if c["location"] == "主油路"), None)
+            next((c for c in causes if c["location"] in ("主油路", "回油流量计")), None)
         if host:
             attach(host, ref)
         else:
@@ -229,16 +235,16 @@ def infer_causes(findings: List[Dict], loops: List[Dict]) -> List[Dict]:
         "pressure": ("压力测点偏离", "该压力测点没有冗余表可以互校；与模型在同一工况下的预期相比偏离较大，其他测点正常，"
                      "更可能是该压力传感器零点或量程漂移", "用标准压力表比对 {label}，停机泄压后检查零点。",
                      ["该处管路阻力变化（滤网堵塞、阀开度变化）"]),
-        "temperature": ("温度测点偏离", "与温控链路模型的预期相比偏离较大，而同一链路上的其他温度正常，更可能是该温度传感器偏差",
+        "temperature": ("温度测点偏离", "与仿真模型的预期相比偏离较大，而其他温度正常，更可能是该温度传感器偏差",
                         "用标准温度计比对 {label}，检查热电阻安装深度与接线。", ["该段管路散热或加热条件变化"]),
-        "flow": ("与流量计模型不符", "与涡轮流量计模型按质量流量、密度给出的预期流量相比偏离较大",
+        "flow": ("与流量计模型不符", "与涡轮流量计模型按入口压力、质量流量、油温（密度、黏度）给出的预期转速相比偏离较大",
                  "对 {label} 进行校准；处理前可暂以其他流量计读数为准。", ["多只流量计同时漂移（互校难以发现）"]),
     }
     for f in [f for f in pool if f["category"] == "model_single"]:
         if f not in pool:
             continue
         items = take(lambda x, t=f["target"]: x["target"] == t and x["category"] == "model_single")
-        host = next((c for c in causes if f["target"] in related(c)), None)
+        host = next((c for c in causes if source_of(f["target"]) in related(c) or f["target"] in related(c)), None)
         if host:
             attach(host, items)
             continue

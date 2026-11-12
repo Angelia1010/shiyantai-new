@@ -15,18 +15,26 @@ import pandas as pd
 
 from pump_test_bench.app.diagnosis.checks import ABNORMAL, INFO, NOTICE, WARNING, finding, grade
 from pump_test_bench.app.simulation.calibration import bias_at, residual
-from pump_test_bench.app.simulation.condition import DensityFn, condition_of, measured_means
+from pump_test_bench.app.simulation.condition import DensityFn, applicable, condition_of, measured_means
 from pump_test_bench.app.simulation.config import residual_mode
 from pump_test_bench.app.simulation.table import predict, sensitivity
 
 GROUP_CATEGORY = {"pump": "model_system", "reference": "model_reference", "input": "model_input"}
 
 
-def thresholds(th: Dict, kind: str, std: Optional[float], sigma: Optional[Dict] = None):
+def thresholds(th: Dict, kind: str, std: Optional[float], sigma: Optional[Dict] = None, mode: str = "relative"):
+    """返回 (预警, 异常) 阈值 = max(下限, 倍数 × 标定离散)。绝对偏差的下限在 floor_warn_abs / floor_alarm_abs
+    （温度沿用 floor_warn，单位 ℃），相对偏差的下限在 floor_warn / floor_alarm。"""
     sw = (sigma or {}).get("sigma_warn") or th.get("sigma_warn", 3)
     sa = (sigma or {}).get("sigma_alarm") or th.get("sigma_alarm", 5)
-    fw = th.get("floor_warn", {}).get(kind, 0.05)
-    fa = th.get("floor_alarm", {}).get(kind, 0.08)
+    if mode == "absolute":
+        from pump_test_bench.app.simulation.config import DEFAULT_ABS_FLOORS
+        dw, da = DEFAULT_ABS_FLOORS.get(kind, (1.0, 2.0))
+        fw = th.get("floor_warn_abs", {}).get(kind, th.get("floor_warn", {}).get(kind, dw) if kind == "temperature" else dw)
+        fa = th.get("floor_alarm_abs", {}).get(kind, th.get("floor_alarm", {}).get(kind, da) if kind == "temperature" else da)
+    else:
+        fw = th.get("floor_warn", {}).get(kind, 0.05)
+        fa = th.get("floor_alarm", {}).get(kind, 0.08)
     if std:
         return max(fw, sw * std), max(fa, sa * std)
     return fw, fa
@@ -59,6 +67,9 @@ def model_check(seg: pd.DataFrame, mcfg: Dict, table: Dict, flagged: Optional[Se
     model_label = (table.get("model") or {}).get("label", "")
     base = {"id": mcfg["id"], "name": mcfg["name"], "model": model_label, "table_created": table.get("created"),
             "condition": cond, "notes": notes}
+    ok, why = applicable(seg, mcfg)
+    if not ok:
+        return {**base, "available": False, "notes": [why] + notes, "rows": [], "findings": []}
     if len(cond) < len(table["inputs"]):
         return {**base, "available": False, "rows": [], "findings": []}
     pred, outside = predict(table, cond)
@@ -78,10 +89,11 @@ def model_check(seg: pd.DataFrame, mcfg: Dict, table: Dict, flagged: Optional[Se
                 continue
             c = calib.get(col, {})
             b = bias_at(c, mcfg, cond) if c else 0.0
-            warn, alarm = thresholds(th, o["kind"], c.get("std"), sigma)
+            warn, alarm = thresholds(th, o["kind"], c.get("std"), sigma, mode)
             r = residual(measured[col], p, mode) - b
             expected = p + b if mode == "absolute" else p * (1 + b)
-            rows.append({"column": col, "output": o["name"], "kind": o["kind"], "unit": o.get("unit", ""),
+            rows.append({"column": col, "output": o["name"], "system": o.get("system", ""), "kind": o["kind"],
+                         "unit": o.get("unit", ""),
                          "mode": mode, "measured": measured[col], "expected": expected, "residual": r,
                          "warn": warn, "alarm": alarm, "severity": grade(r, warn, alarm),
                          "single": o.get("single", "decisive"), "flow_dependent": bool(o.get("flow_dependent")),
@@ -143,12 +155,13 @@ def _group_finding(rule, mcfg, table, cond, cond_text, pred, rows, members, rq, 
              "columns": [r["column"] for r in members]}
     direction = "低" if rq < 0 else "高"
     if meaning == "pump":
-        out_name = rule["output"]
+        out_name = rule.get("output") or rule["outputs"][0]
         follow, checked = 0, 0
         for r in rows:
             if not r["flow_dependent"]:
                 continue
-            e = sensitivity(table, cond, r["output"], out_name, mcfg["inputs"][0]["name"])
+            # 沿决定流量的输入（如电传转速）求“压力随流量”的弹性
+            e = sensitivity(table, cond, r["output"], out_name, rule.get("driver") or mcfg["inputs"][0]["name"])
             if e is None:
                 continue
             expect = e * rq
@@ -169,7 +182,7 @@ def _group_finding(rule, mcfg, table, cond, cond_text, pred, rows, members, rq, 
     elif meaning == "reference":
         detail = (f"在 {cond_text} 下，{len(members)} 只流量计相对{mcfg['name']}一致偏{direction} {shift}，"
                   "各表彼此一致，说明是模型的参考量（质量流量计读数或燃油密度）偏了，而不是这些流量计")
-        title, target = "流量计模型的参考量偏差", rule["output"]
+        title, target = "流量计模型的参考量偏差", rule.get("output") or rule["outputs"][0]
     else:
         inp = rule.get("input", mcfg["inputs"][0]["name"])
         spec = next((i for i in mcfg["inputs"] if i["name"] == inp), {})

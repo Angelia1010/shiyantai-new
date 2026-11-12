@@ -78,7 +78,8 @@ def model_status(mcfg: Dict, profile: Dict) -> Dict:
         setting = profile.get(mcfg["id"], {})
         columns = []
         for col, c in calib.get("columns", {}).items():
-            warn, alarm = thresholds(mcfg.get("thresholds", {}), kinds.get(c["output"], "flow"), c.get("std"), setting)
+            warn, alarm = thresholds(mcfg.get("thresholds", {}), kinds.get(c["output"], "flow"), c.get("std"), setting,
+                                     c.get("mode", "relative"))
             columns.append({"column": col, "output": c["output"], "mode": c.get("mode", "relative"),
                             "unit": units.get(c["output"], ""), "bias": c["bias"], "bias_slope": c.get("bias_slope", 0),
                             "std": c["std"], "warn": warn, "alarm": alarm, "n": c.get("n")})

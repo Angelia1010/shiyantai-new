@@ -4,6 +4,7 @@
 - column（+ fallback_columns）：单个测点的均值，主测点无效时用备用测点；
 - columns + aggregate：多个测点的中位数（如多只流量计的共识值）；
 - derived = density：由油温按燃油密度模型计算（需要调用方提供 density_fn）。
+测点也可以是派生测点（config/signals.json 的 derived），如由涡轮流量计流量换算的转速 Hz。
 """
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -14,9 +15,15 @@ DensityFn = Callable[[float], Optional[float]]
 
 
 def _mean(seg: pd.DataFrame, col: str) -> Optional[float]:
-    if col not in seg.columns:
-        return None
-    values = pd.to_numeric(seg[col], errors="coerce").dropna()
+    """测点均值；不是采集列时按派生测点（config/signals.json 的 derived，如涡轮流量计转速 Hz）换算。"""
+    if col in seg.columns:
+        series = pd.to_numeric(seg[col], errors="coerce")
+    else:
+        from pump_test_bench.app.signals import derived_series
+        series = derived_series(seg, col)
+        if series is None:
+            return None
+    values = series.dropna()
     return float(values.mean()) if len(values) else None
 
 
@@ -80,3 +87,14 @@ def input_columns(cfg: Dict) -> List[str]:
         cols += spec.get("columns", []) or [c for c in [spec.get("column"), spec.get("temperature_column")] if c]
         cols += spec.get("fallback_columns", [])
     return cols
+
+
+def applicable(seg: pd.DataFrame, cfg: Dict) -> Tuple[bool, str]:
+    """模型的适用条件（active_if）：如“大流量管路工作”= 回油流量1-1 ≥ 20 L/h。不满足时不做该模型的对比。"""
+    for cond in cfg.get("active_if") or []:
+        value = _mean(seg, cond["column"])
+        lo, hi = cond.get("min", float("-inf")), cond.get("max", float("inf"))
+        if value is None or not lo <= value <= hi:
+            what = cond.get("note") or f"{cond['column']} 在 {lo}–{hi} 之间"
+            return False, f"不在模型适用范围（需要{what}）"
+    return True, ""

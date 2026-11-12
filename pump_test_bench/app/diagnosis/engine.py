@@ -649,7 +649,7 @@ def _loop_summary(loop: Dict) -> Dict:
 def _model_summary(model: Dict) -> Dict:
     """报告中的一个模型对比（可序列化）。"""
     keep = ("column", "output", "kind", "unit", "mode", "measured", "expected", "residual", "warn", "alarm",
-            "severity", "excluded", "component")
+            "severity", "excluded", "component", "system")
     return {"id": model["id"], "name": model["name"], "mode": model.get("mode"), "available": model["available"],
             "model": model["model"], "table_created": model.get("table_created"), "condition": model["condition"],
             "notes": model["notes"], "outside": model.get("outside", []), "group": model.get("group"),

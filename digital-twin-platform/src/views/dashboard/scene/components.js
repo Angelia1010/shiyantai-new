@@ -17,31 +17,36 @@
  * 测点与部件的对应关系是按部件名称推断的，如与实际管路不符，直接修改这里即可。
  */
 export const COMPONENTS = {
+  // 被试件（高压泵）：电传驱动
   被试件1高低压双联泵: {
-    label: '被试件 1 · 高低压双联泵',
+    label: '被试件（高压泵）',
     material: 'testPiece',
-    runBy: '燃油泵实际转速',
-    fields: ['燃油泵实际转速', 'P1进口压力', 'P2低压出口压力', 'P3高压出口压力', 'T3进口温度', 'T4高压出口温度', '振动传感器1-1']
+    runBy: '电传实际转速',
+    fields: ['P1进口压力', 'P5低压压力', '齿轮流量计', 'T3进口温度', 'T4高压出口温度', '振动传感器1-1'],
+    colorBy: { pressure: ['P5低压压力'] }
   },
+  // 传动系统：电传
   被试件2: {
-    label: '被试件 2',
+    label: '传动系统（电传）',
     material: 'testPiece',
     runBy: '电传实际转速',
     fields: ['电传实际转速', '电传扭矩', '振动传感器2-1', '振动传感器3-1']
   },
   被试件2周边管路: {
-    label: '被试件 2 周边管路',
+    label: '被试件进口管路',
     material: 'supplyPipe',
     flowFrom: '循环油箱',
     flowBy: ['供油流量1-1', '供油流量1-2'],
-    fields: ['T5出口温度']
+    fields: ['P1进口压力', 'T5出口温度'],
+    colorBy: { pressure: ['P1进口压力'] }
   },
+  // 供油系统
   供油管路: {
-    label: '供油管路',
+    label: '供油系统',
     material: 'supplyPipe',
     flowFrom: '循环油箱',
     flowBy: ['供油流量1-1', '供油流量1-2'],
-    fields: ['供油压力1-1', '供油压力1-2', '供油温度1-1', '供油温度1-2', '供油流量1-1', '供油流量1-2'],
+    fields: ['供油压力1-1', '供油压力1-2', '供油流量1-1', '供油流量1-2', '供油温度1-1', '供油温度1-2'],
     colorBy: { temperature: ['供油温度1-1', '供油温度1-2'], pressure: ['供油压力1-1', '供油压力1-2'] }
   },
   回油管路: {
@@ -49,20 +54,25 @@ export const COMPONENTS = {
     material: 'returnPipe',
     flowFrom: '被试件1高低压双联泵',
     flowBy: ['回油流量1-1', '回油流量1-2'],
-    fields: ['回油压力1-1', '回油压力1-2', '回油压力2-1', '回油压力2-2', '回油温度1-1', '回油温度1-2'],
+    fields: ['回油温度1-1', '回油温度1-2', '回油温度2-1', '回油温度2-2'],
     colorBy: { temperature: ['回油温度1-1', '回油温度1-2'], pressure: ['回油压力1-1', '回油压力1-2'] }
   },
+  // 回油系统：大流量管路（涡轮流量计 1-1、1-2 + 质量流量计）
+  // 注：按数据，大流量管路的质量流量计对应采集列“回油质量流量2”（与表格命名相反，见 signals.json）
   回油流量计1: {
-    label: '回路 1 流量计',
+    label: '回油系统 · 大流量管路',
     material: 'instrument',
-    fields: ['回油流量1-1', '回油温度1-1', '回油压力1-1'],
-    colorBy: { temperature: ['回油温度1-1'], pressure: ['回油压力1-1'] }
+    flowBy: ['回油流量1-1', '回油流量1-2'],
+    fields: ['回油压力1-1', '回油压力1-2', '回油流量1-1', '回油流量1-2', '回油质量流量2', '回油流量1-1转速', '回油流量1-2转速'],
+    colorBy: { temperature: ['回油温度1-1', '回油温度1-2'], pressure: ['回油压力1-2'] }
   },
+  // 回油系统：小流量管路（涡轮流量计 2-1、2-2 + 质量流量计）
   回油流量计2: {
-    label: '回路 2 流量计',
+    label: '回油系统 · 小流量管路',
     material: 'instrument',
-    fields: ['回油流量1-2', '回油温度1-2', '回油压力1-2'],
-    colorBy: { temperature: ['回油温度1-2'], pressure: ['回油压力1-2'] }
+    flowBy: ['回油流量2-1', '回油流量2-2'],
+    fields: ['回油压力2-1', '回油压力2-2', '回油流量2-1', '回油流量2-2', '回油质量流量1', '回油流量2-1转速', '回油流量2-2转速'],
+    colorBy: { temperature: ['回油温度2-1', '回油温度2-2'], pressure: ['回油压力2-1', '回油压力2-2'] }
   },
   供油油箱温度传感器: { label: '供油油箱温度传感器', material: 'instrument', fields: ['T20加热出口温度'] },
   管道式加热器: {
@@ -72,8 +82,15 @@ export const COMPONENTS = {
     colorBy: { temperature: ['T20加热出口温度'] }
   },
   温控系统_板式换热器: { label: '温控系统 · 板式换热器', material: 'equipment', fields: [] },
-  离心泵_油路块: { label: '离心泵 · 油路块', material: 'equipment', fields: [] },
-  循环油箱: { label: '循环油箱', material: 'tank', fields: [] },
+  // 离心泵驱动电机
+  离心泵_油路块: {
+    label: '离心泵驱动电机',
+    material: 'equipment',
+    runBy: '燃油泵实际转速',
+    fields: ['燃油泵实际转速']
+  },
+  // 油箱系统
+  循环油箱: { label: '油箱系统', material: 'tank', fields: ['P13燃油油箱压力', 'YW1燃油油箱液位'] },
   循环油路: { label: '循环油路', material: 'loopPipe', flowFrom: '循环油箱', fields: [] },
   底座支架: { label: '底座支架', material: 'frame', fields: [], selectable: false, explode: false }
 }

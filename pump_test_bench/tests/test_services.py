@@ -244,27 +244,28 @@ def test_simulation_endpoints(task_client, env, token):
     from pump_test_bench.tests.conftest import REPO_ROOT
     st = task_client.get("/simulation/status", headers=auth(token)).get_json()
     ids = [m["id"] for m in st["models"]]
-    assert ids == ["bench", "turbine", "thermal"]
+    assert ids == ["bench", "turbine_large", "turbine_small"]
+    assert st["models"][2]["table"] is None  # 小流量管路没有正常数据，没有默认基准表
     bench = st["models"][0]
     assert bench["table"]["is_default"] and bench["setting"]["mode"] == "decisive"
     assert st["models"][1]["engine"] == "surrogate" and st["models"][1]["media"]["video"]
     assert [e["type"] for e in st["models"][1]["engines"]] == ["surrogate", "amesim"]
 
     pred = task_client.post("/simulation/models/bench/predict", headers=auth(token),
-                            json={"condition": {"电传转速": 2000, "进口压力": 0.15, "油温": 36}}).get_json()
-    flow = next(e for e in pred["expected"] if e["name"] == "系统流量")
+                            json={"condition": {"电机转速": 1000, "电传转速": 2000, "油温": 36}}).get_json()
+    flow = next(e for e in pred["expected"] if e["name"] == "回油流量（大流量管路）")
     assert 350 < flow["value"] < 390 and pred["outside"] == []
-    turb = task_client.post("/simulation/models/turbine/predict", headers=auth(token),
-                            json={"condition": {"质量流量": 290, "燃油密度": 782}}).get_json()
-    assert 350 < turb["expected"][0]["value"] < 390
+    turb = task_client.post("/simulation/models/turbine_large/predict", headers=auth(token),
+                            json={"condition": {"入口压力": 0.048, "出口质量流量": 290, "温度": 36}}).get_json()
+    assert 1100 < turb["expected"][0]["value"] < 1300  # Hz
     assert task_client.post("/simulation/models/bench/predict", headers=auth(token), json={"condition": {}}).status_code == 400
 
     st = task_client.put("/simulation/profile", headers=auth(token),
-                         json={"models": {"thermal": {"mode": "reference", "sigma_warn": 4}}}).get_json()
-    thermal = next(m for m in st["models"] if m["id"] == "thermal")
+                         json={"models": {"turbine_large": {"mode": "reference", "sigma_warn": 4}}}).get_json()
+    thermal = next(m for m in st["models"] if m["id"] == "turbine_large")
     assert thermal["setting"] == {"mode": "reference", "sigma_warn": 4, "sigma_alarm": 5}
     assert task_client.put("/simulation/profile", headers=auth(token),
-                           json={"models": {"thermal": {"mode": "maybe"}}}).status_code == 400
+                           json={"models": {"turbine_large": {"mode": "maybe"}}}).status_code == 400
 
     src = REPO_ROOT / "标准台性能录取数据" / "标准台性能录取数据"
     healthy = env / "healthy"

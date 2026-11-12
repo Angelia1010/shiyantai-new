@@ -17,8 +17,25 @@ export const MONITORED_FIELDS = [
   'T20加热出口温度', 'T3进口温度', 'T4高压出口温度', 'T5出口温度',
   '供油温度1-1', '供油温度1-2',
   '回油温度1-1', '回油温度1-2', '回油温度2-1', '回油温度2-2',
-  '振动传感器1-1', '振动传感器2-1', '振动传感器3-1'
+  '振动传感器1-1', '振动传感器2-1', '振动传感器3-1',
+  'P13燃油油箱压力', 'YW1燃油油箱液位', 'P5低压压力'
 ]
+
+/**
+ * 派生测点：涡轮流量计转速（叶片频率 Hz），由回油流量（L/h）按 q = 0.304921·f + 0.210230 反算，小于 0 取 0。
+ * 与后端 pump_test_bench/config/signals.json 的 derived 一致，K 系数变化时两处一起改。
+ */
+export const DERIVED_FIELDS = {
+  '回油流量1-1转速': { source: '回油流量1-1', scale: 3.279538, offset: -0.689456, min: 0 },
+  '回油流量1-2转速': { source: '回油流量1-2', scale: 3.279538, offset: -0.689456, min: 0 },
+  '回油流量2-1转速': { source: '回油流量2-1', scale: 3.279538, offset: -0.689456, min: 0 },
+  '回油流量2-2转速': { source: '回油流量2-2', scale: 3.279538, offset: -0.689456, min: 0 }
+}
+
+function deriveValue(spec, v) {
+  const x = v * spec.scale + spec.offset
+  return spec.min !== undefined ? Math.max(spec.min, x) : x
+}
 
 function toNumbers(values) {
   const result = []
@@ -58,6 +75,12 @@ export function buildFeatureFrames(columns, fields, groupSize) {
       }
       frame[field] = { max, min, avg: sum / group.length }
     }
+    // 线性换算单调递增，max/min/avg 直接换算即可
+    for (const [name, spec] of Object.entries(DERIVED_FIELDS)) {
+      const src = frame[spec.source]
+      if (!src) continue
+      frame[name] = { max: deriveValue(spec, src.max), min: deriveValue(spec, src.min), avg: deriveValue(spec, src.avg) }
+    }
     if (Object.keys(frame).length) frames.push(frame)
   }
   return frames
@@ -82,7 +105,9 @@ export function mean(values) {
 /** 根据测点名称推断单位（试验台导出数据不带单位，这里按命名约定）。 */
 export function fieldUnit(name) {
   if (!name) return ''
+  if (DERIVED_FIELDS[name]) return 'Hz'
   if (name.includes('转速')) return 'rpm'
+  if (name.includes('液位')) return 'mm'
   if (name.includes('扭矩')) return 'N·m'
   if (name.includes('压力')) return 'MPa'
   if (name.includes('温度')) return '°C'

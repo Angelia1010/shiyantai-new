@@ -55,7 +55,7 @@ export function getColumns() {
 }
 
 export const ENGINE_LABELS = { surrogate: '数据代理模型', amesim: 'AMESim 模型' }
-export const KIND_LABELS = { flow: '流量', pressure: '压力', temperature: '温度', torque: '扭矩', other: '其他' }
+export const KIND_LABELS = { flow: '流量', pressure: '压力', temperature: '温度', torque: '扭矩', speed: '转速', other: '其他' }
 export const MEANING_LABELS = {
   pump: '实际流量变化（被试泵出力，再看压力是否同步）',
   reference: '参考量偏差（如质量流量计、燃油密度）',

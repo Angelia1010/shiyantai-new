@@ -110,7 +110,7 @@
       <div class="panel-title">
         关键测点
         <span class="group-legend">
-          <span v-for="group in metricGroups" :key="group.title" :class="['tag', group.key]">{{ group.title }}</span>
+          <span v-for="group in metricGroups" :key="group.title" class="tag" :style="{ '--group-color': group.color }">{{ group.title }}</span>
         </span>
       </div>
       <div class="metric-grid">
@@ -118,7 +118,8 @@
           <div
             v-for="field in group.fields"
             :key="field"
-            :class="['metric', group.key, { empty: !featureMap[field] }]"
+            :class="['metric', { empty: !featureMap[field] }]"
+            :style="{ '--group-color': group.color }"
             :title="field"
           >
             <svg class="spark" viewBox="0 0 100 24" preserveAspectRatio="none">
@@ -282,16 +283,22 @@ const LIVE_STATE_TEXT = { off: '未配置', waiting: '等待数据', live: '采�
 const MAX_RECORDS = 100
 const RECORDS_POLL_MS = 5000 // 诊断记录刷新间隔
 
+// 按标准台系统分组（与 pump_test_bench/config/signals.json 一致）
 const METRIC_GROUPS = [
-  { key: 'pump', title: '被试件', fields: ['燃油泵实际转速', '电传实际转速', '电传扭矩'] },
-  { key: 'supply', title: '供油', fields: ['供油压力1-1', '供油压力1-2', '供油温度1-1', '供油流量1-1'] },
-  { key: 'return', title: '回油', fields: ['回油压力1-1', '回油压力1-2', '回油温度1-1', '回油流量1-1', '回油流量1-2'] }
+  { key: 'tank', color: '#94a3b8', title: '油箱系统', fields: ['P13燃油油箱压力', 'YW1燃油油箱液位'] },
+  { key: 'motor', color: '#34d399', title: '离心泵驱动电机', fields: ['燃油泵实际转速'] },
+  { key: 'supply', color: '#38bdf8', title: '供油系统', fields: ['供油压力1-1', '供油压力1-2', '供油流量1-1', '供油流量1-2'] },
+  { key: 'drive', color: '#f472b6', title: '传动系统', fields: ['电传实际转速'] },
+  { key: 'pump', color: '#a78bfa', title: '被试件（高压泵）', fields: ['P1进口压力', '齿轮流量计', 'P5低压压力'] },
+  { key: 'returnLarge', color: '#fbbf24', title: '回油 · 大流量管路', fields: ['回油压力1-1', '回油压力1-2', '回油流量1-1', '回油流量1-2', '回油质量流量2', '回油流量1-1转速', '回油流量1-2转速'] },
+  { key: 'returnSmall', color: '#fb923c', title: '回油 · 小流量管路', fields: ['回油压力2-1', '回油压力2-2', '回油流量2-1', '回油流量2-2', '回油质量流量1', '回油流量2-1转速', '回油流量2-2转速'] }
 ]
 
 const TREND_GROUPS = {
-  pressure: { label: '压力', unit: 'MPa', fields: ['供油压力1-1', '供油压力1-2', '回油压力1-1', '回油压力1-2', 'P1进口压力'] },
+  pressure: { label: '压力', unit: 'MPa', fields: ['供油压力1-1', '供油压力1-2', 'P1进口压力', 'P5低压压力', '回油压力1-2'] },
   temperature: { label: '温度', unit: '°C', fields: ['供油温度1-1', '供油温度1-2', '回油温度1-1', '回油温度1-2', 'T20加热出口温度'] },
   flow: { label: '流量', unit: 'L/h', fields: ['供油流量1-1', '供油流量1-2', '回油流量1-1', '回油流量1-2', '齿轮流量计'] },
+  turbine: { label: '涡轮转速', unit: 'Hz', fields: ['回油流量1-1转速', '回油流量1-2转速', '回油流量2-1转速', '回油流量2-2转速'] },
   speed: { label: '转速', unit: 'rpm', fields: ['燃油泵实际转速', '电传实际转速'] }
 }
 
@@ -782,10 +789,6 @@ $warn: #f59e0b;
 }
 
 /* ---------- 关键测点 ---------- */
-$pump: #a78bfa;
-$supply: #38bdf8;
-$return: #fbbf24;
-
 .metrics {
   grid-area: metrics;
   display: flex;
@@ -793,7 +796,8 @@ $return: #fbbf24;
 }
 .group-legend {
   display: flex;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 4px 10px;
   font-weight: normal;
   letter-spacing: 0;
 }
@@ -809,9 +813,7 @@ $return: #fbbf24;
     height: 3px;
     border-radius: 2px;
   }
-  &.pump::before { background: $pump; }
-  &.supply::before { background: $supply; }
-  &.return::before { background: $return; }
+  &::before { background: var(--group-color); }
 }
 .metric-grid {
   flex: 1;
@@ -833,9 +835,6 @@ $return: #fbbf24;
   border: 1px solid rgba(56, 189, 248, 0.1);
   border-top: 2px solid var(--group-color);
   transition: border-color 0.15s, background 0.15s;
-  &.pump { --group-color: #{$pump}; }
-  &.supply { --group-color: #{$supply}; }
-  &.return { --group-color: #{$return}; }
   &:hover { background: rgba(56, 189, 248, 0.08); }
   &.empty .metric-value { color: #4d6380; }
 }

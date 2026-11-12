@@ -30,8 +30,8 @@ def healthy_frame(seconds=30, flow=300.0, temp=30.0, seed=0, biases=None, ramp_s
     data["回油流量2-1"] = np.zeros(n)
     data["回油流量2-2"] = np.zeros(n)
     data["回油质量流量1"] = np.round(rng.normal(7, 3, n), 3)  # 没有流量的支路：零点附近
+    # 合成数据的流量与转速不符合真实试验台的关系，不给离心泵电机转速，仿真模型因缺少工况输入而不参与
     data["电传实际转速"] = np.full(n, 2010.0)
-    data["燃油泵实际转速"] = np.full(n, 1000.0)
     return pd.DataFrame(data)
 
 
@@ -54,7 +54,7 @@ def test_meter_drift_is_located():
     assert body["result"] == "abnormal"
     found = decisive(body)
     assert {f["target"] for f in found} == {"回油流量1-2"}
-    assert found[0]["component"] == "回油流量计2" and found[0]["category"] == "redundancy"
+    assert found[0]["component"] == "回油流量计1" and found[0]["category"] == "redundancy"
 
 
 def test_stuck_meter():
@@ -78,7 +78,7 @@ def test_mass_meter_drift():
     found = {(f["category"], f["target"]) for f in decisive(body)}
     assert found - {("model_reference", "预期体积流量")} == {("mass_volume", "回油质量流量2")}
     # 涡轮流量计模型的“参考量偏差”与质量-体积校核指向同一原因
-    assert [c["name"] for c in body["causes"]] == ["回油质量流量计2 零点或标定漂移"]
+    assert [c["name"] for c in body["causes"]] == ["回油质量流量1（大流量管路） 零点或标定漂移"]
 
 
 def test_noise_and_spikes_are_warnings():
@@ -213,10 +213,13 @@ def _real():
 def test_model_check_on_healthy_file():
     body = diagnose_frame(_real())
     assert body["result"] == "normal"
-    assert [m["id"] for m in body["models"]] == ["bench", "turbine", "thermal"]
+    # 小流量管路的涡轮流量计模型没有基准表（正常数据中小流量管路没有流量），不参与
+    assert [m["id"] for m in body["models"]] == ["bench", "turbine_large"]
     for model in body["models"]:
         assert model["available"] and model["group"] is None, model["id"]
         assert all(abs(r["residual"]) < r["warn"] for r in model["rows"]), model["id"]
+    systems = {r["system"] for r in body["models"][0]["rows"]}
+    assert {"油箱系统", "供油系统", "被试件", "回油系统（大流量管路）", "回油系统（小流量管路）"} <= systems
 
 
 def test_pump_wear_found_only_by_model():
@@ -231,7 +234,7 @@ def test_pump_wear_found_only_by_model():
     bench = next(m for m in body["models"] if m["id"] == "bench")
     assert bench["group"]["pressures_follow"] is True
     # 涡轮流量计模型：质量流量也同比例减少，各表与公式一致，不应报
-    turbine = next(m for m in body["models"] if m["id"] == "turbine")
+    turbine = next(m for m in body["models"] if m["id"] == "turbine_large")
     assert turbine["group"] is None
     # 诊断方案：泵-管路模型设为“仅作参考”时不影响结论
     from pump_test_bench.app.diagnosis.settings import profile
@@ -290,17 +293,24 @@ def test_turbine_model_reference_shift_on_mass_meter_fault():
     df = _real()
     df["回油质量流量2"] = pd.to_numeric(df["回油质量流量2"]) * 1.05
     body = diagnose_frame(df)
-    turbine = next(m for m in body["models"] if m["id"] == "turbine")
+    turbine = next(m for m in body["models"] if m["id"] == "turbine_large")
     assert turbine["group"]["meaning"] == "reference"
-    assert len(body["causes"]) == 1 and "回油质量流量计2" in body["causes"][0]["name"]
+    assert len(body["causes"]) == 1 and "回油质量流量1（大流量管路）" in body["causes"][0]["name"]
     assert any("涡轮流量计模型" in e for e in body["causes"][0]["evidence"])
 
 
-def test_thermal_model_input_sensor_shift():
-    """汇流温度传感器偏 +7 ℃：温控链路模型的各温度一致偏低 → 判为模型输入测点偏差。"""
+def test_small_line_model_not_applicable_and_turbine_hz():
+    """大流量管路工作时，小流量管路模型不适用；涡轮流量计转速（Hz）由流量换算后与模型比较。"""
+    from pump_test_bench.app.simulation.condition import _mean
     df = _real()
-    df["T9冷热油汇流后温度"] = pd.to_numeric(df["T9冷热油汇流后温度"]) + 7
-    assert diagnose_frame(df, sims=None)["result"] == "normal"
+    hz = _mean(df, "回油流量1-1转速")
+    q = float(pd.to_numeric(df["回油流量1-1"]).mean())
+    assert hz == pytest.approx((q - 0.210230) / 0.304921, rel=1e-4)
     body = diagnose_frame(df)
-    assert body["result"] != "normal"
-    assert body["causes"][0]["name"] == "T9冷热油汇流后温度 测点偏差"
+    turbine = next(m for m in body["models"] if m["id"] == "turbine_large")
+    assert {r["column"] for r in turbine["rows"]} == {"回油流量1-1转速", "回油流量1-2转速"}
+    # 回油流量1-2 偏 -4%：大流量管路涡轮流量计模型与互校指向同一只表
+    df["回油流量1-2"] = pd.to_numeric(df["回油流量1-2"]) * 0.96
+    body = diagnose_frame(df)
+    assert body["causes"][0]["name"].startswith("回油流量1-2（大流量管路） 计量偏差")
+    assert any("涡轮流量计模型（大流量管路）" in e for e in body["causes"][0]["evidence"])

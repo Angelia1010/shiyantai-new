@@ -4,26 +4,27 @@
   "loops": [
     {
       "name": "主油路",
-      "description": "供油 → 被试件 → 回油流量计 → 回油，同一路油上串联多个流量计，可互相校核",
+      "description": "按标准台原理图：供油系统 → 被试件（高压泵）→ 回油系统大流量管路，同一路油上串联多个流量计，可互相校核。测点与物理量的对应见 config/signals.json",
       "meters": [
-        {"column": "回油流量1-1", "label": "回油流量计1-1", "group": "回油", "component": "回油流量计1"},
-        {"column": "回油流量1-2", "label": "回油流量计1-2", "group": "回油", "component": "回油流量计2"},
-        {"column": "供油流量1-1", "label": "供油流量计1-1", "group": "供油", "component": "供油管路"},
-        {"column": "供油流量1-2", "label": "供油流量计1-2", "group": "供油", "component": "供油管路"},
-        {"column": "齿轮流量计", "label": "齿轮流量计", "group": "供油", "component": "离心泵_油路块"}
+        {"column": "回油流量1-1", "label": "回油流量1-1（大流量管路）", "group": "回油", "component": "回油流量计1"},
+        {"column": "回油流量1-2", "label": "回油流量1-2（大流量管路）", "group": "回油", "component": "回油流量计1"},
+        {"column": "供油流量1-1", "label": "供油流量1-1", "group": "供油", "component": "供油管路"},
+        {"column": "供油流量1-2", "label": "供油流量1-2", "group": "供油", "component": "供油管路"},
+        {"column": "齿轮流量计", "label": "总流量计", "group": "供油", "component": "被试件1高低压双联泵"}
       ],
-      "mass_meter": {"column": "回油质量流量2", "label": "回油质量流量计2", "group": "回油"},
+      "mass_meter": {"column": "回油质量流量2", "label": "回油质量流量1（大流量管路）", "group": "回油",
+                     "_说明": "原理图中大流量管路的是回油质量流量1，数据中对应“回油质量流量2”列（见 signals.json）"},
       "temperature_column": "供油温度1-1",
       "_说明_温度": "质量流量计可单独指定 temperature_column（其所在位置的油温）。2026-11 数据比较过：用回油温度1-1 修正密度时质量-体积残差 0.27%，用供油温度1-1 为 0.24%，故沿用供油温度"
     },
     {
-      "name": "回油支路2",
-      "description": "第二路回油（2026-11 数据中没有流量）",
+      "name": "小流量管路",
+      "description": "回油系统小流量管路（2026-11 数据中没有流量）",
       "meters": [
-        {"column": "回油流量2-1", "label": "回油流量计2-1", "group": "回油", "component": "回油管路"},
-        {"column": "回油流量2-2", "label": "回油流量计2-2", "group": "回油", "component": "回油管路"}
+        {"column": "回油流量2-1", "label": "回油流量2-1（小流量管路）", "group": "回油", "component": "回油流量计2"},
+        {"column": "回油流量2-2", "label": "回油流量2-2（小流量管路）", "group": "回油", "component": "回油流量计2"}
       ],
-      "mass_meter": {"column": "回油质量流量1", "label": "回油质量流量计1"},
+      "mass_meter": {"column": "回油质量流量1", "label": "回油质量流量2（小流量管路）"},
       "temperature_column": "回油温度2-1"
     }
   ],

@@ -1,0 +1,83 @@
+{
+  "_说明": "标准台测点映射：按原理图的系统划分，每个物理量对应采集文件中的哪一列、显示在三维模型的哪个部件。诊断模型（bench.json）、仿真模型（simulation/*.json）、三维与工作台都按这里的物理量组织。confirmed=false 的是按 2026-11 数据推断、与原理图名称不一致或尚未核实的，请对照现场接线确认后修改。",
+
+  "systems": [
+    {
+      "name": "油箱系统", "component": "循环油箱",
+      "signals": [
+        {"name": "油箱供油压力", "column": "P13燃油油箱压力", "unit": "MPa", "kind": "pressure", "confirmed": false,
+         "note": "2026-11 数据中恒为 -0.375 MPa，疑似未接入或量程设置错误"},
+        {"name": "油箱液位", "column": "YW1燃油油箱液位", "unit": "", "kind": "other", "confirmed": true}
+      ]
+    },
+    {
+      "name": "离心泵驱动电机", "component": "离心泵_油路块",
+      "signals": [
+        {"name": "电机转速", "column": "燃油泵实际转速", "unit": "rpm", "kind": "speed", "role": "input", "confirmed": true,
+         "note": "与 P1进口压力 相关系数 0.99：离心泵转速决定被试件进口压力"}
+      ]
+    },
+    {
+      "name": "供油系统", "component": "供油管路",
+      "signals": [
+        {"name": "供油压力1-1", "column": "供油压力1-1", "unit": "MPa", "kind": "pressure", "confirmed": true},
+        {"name": "供油压力1-2", "column": "供油压力1-2", "unit": "MPa", "kind": "pressure", "confirmed": true},
+        {"name": "供油流量1-1", "column": "供油流量1-1", "unit": "L/h", "kind": "flow", "confirmed": true},
+        {"name": "供油流量1-2", "column": "供油流量1-2", "unit": "L/h", "kind": "flow", "confirmed": true}
+      ]
+    },
+    {
+      "name": "传动系统", "component": "被试件2",
+      "signals": [
+        {"name": "电传实际转速", "column": "电传实际转速", "unit": "rpm", "kind": "speed", "role": "input", "confirmed": true}
+      ]
+    },
+    {
+      "name": "被试件", "component": "被试件1高低压双联泵",
+      "signals": [
+        {"name": "P1进口压力", "column": "P1进口压力", "unit": "MPa", "kind": "pressure", "confirmed": true},
+        {"name": "总流量计", "column": "齿轮流量计", "unit": "L/h", "kind": "flow", "confirmed": false,
+         "note": "数据中没有名为“总流量计”的列；齿轮流量计读数与供、回油流量一致（相关系数 1.00），按被试件出口总流量计处理"},
+        {"name": "被试件出口压力", "column": "P5低压压力", "unit": "MPa", "kind": "pressure", "confirmed": false,
+         "note": "P2低压出口/P3高压出口/P4泵后压力 在 2026-11 数据中都约为 0；P5低压压力 随流量变化（0.05–0.16 MPa），暂作出口压力"}
+      ]
+    },
+    {
+      "name": "回油系统（大流量管路）", "component": "回油流量计1",
+      "signals": [
+        {"name": "回油压力1-1", "column": "回油压力1-1", "unit": "MPa", "kind": "pressure", "confirmed": false,
+         "note": "数据中恒为约 0.048 MPa、不随流量变化，而下游的 回油压力1-2 随流量变化且更高，两者位置或名称可能对调"},
+        {"name": "回油压力1-2", "column": "回油压力1-2", "unit": "MPa", "kind": "pressure", "confirmed": true},
+        {"name": "回油流量1-1", "column": "回油流量1-1", "unit": "L/h", "kind": "flow", "confirmed": true},
+        {"name": "回油流量1-2", "column": "回油流量1-2", "unit": "L/h", "kind": "flow", "confirmed": true},
+        {"name": "回油质量流量1", "column": "回油质量流量2", "unit": "kg/h", "kind": "flow", "confirmed": false,
+         "note": "原理图中大流量管路是“回油质量流量1”，但数据中随大流量管路变化的是“回油质量流量2”列（相关系数 1.00），“回油质量流量1”列只有 4–10 kg/h。按数据把两列对调，请确认采集通道名称"}
+      ]
+    },
+    {
+      "name": "回油系统（小流量管路）", "component": "回油流量计2",
+      "signals": [
+        {"name": "回油压力2-1", "column": "回油压力2-1", "unit": "MPa", "kind": "pressure", "confirmed": true},
+        {"name": "回油压力2-2", "column": "回油压力2-2", "unit": "MPa", "kind": "pressure", "confirmed": true},
+        {"name": "回油流量2-1", "column": "回油流量2-1", "unit": "L/h", "kind": "flow", "confirmed": true},
+        {"name": "回油流量2-2", "column": "回油流量2-2", "unit": "L/h", "kind": "flow", "confirmed": true},
+        {"name": "回油质量流量2", "column": "回油质量流量1", "unit": "kg/h", "kind": "flow", "confirmed": false,
+         "note": "见大流量管路的说明：按数据两列对调。2026-11 数据中小流量管路没有流量"}
+      ]
+    }
+  ],
+
+  "derived": {
+    "_说明": "派生测点：由采集列线性换算得到。涡轮流量计转速（叶片频率 Hz）按原涡轮流量计公式 q = 0.304921·f + 0.210230（L/h）反算，f = (q − 0.210230) / 0.304921，小于 0 时取 0。如各表 K 系数不同，按表分别修改。",
+    "回油流量1-1转速": {"source": "回油流量1-1", "scale": 3.279538, "offset": -0.689456, "min": 0, "unit": "Hz"},
+    "回油流量1-2转速": {"source": "回油流量1-2", "scale": 3.279538, "offset": -0.689456, "min": 0, "unit": "Hz"},
+    "回油流量2-1转速": {"source": "回油流量2-1", "scale": 3.279538, "offset": -0.689456, "min": 0, "unit": "Hz"},
+    "回油流量2-2转速": {"source": "回油流量2-2", "scale": 3.279538, "offset": -0.689456, "min": 0, "unit": "Hz"}
+  },
+
+  "fuel_properties": {
+    "_说明": "介质物性（AMESim 模型需要密度、黏度时由油温换算）。密度用诊断设置里的 20 ℃ 密度或健康基准拟合；运动黏度 ν = nu20·exp(k·(T − 20))，系数为 RP-3 航空煤油的典型值，请按实际油品修改",
+    "nu20_mm2s": 1.25,
+    "nu_k": -0.0155
+  }
+}
