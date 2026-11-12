@@ -116,7 +116,7 @@
         </el-form-item>
         <el-form-item label="正常数据目录">
           <el-autocomplete v-model="build.path" :fetch-suggestions="suggestDirs" placeholder="设备正常时采集的数据目录" style="width: 100%" />
-          <div class="muted small">用于{{ build.model === 'surrogate' ? '拟合代理模型并' : '' }}标定；目录需已在“数据目录”中登记，子目录会一起读取</div>
+          <div class="muted small">用于{{ build.model === 'surrogate' ? '拟合代理模型并' : '' }}标定；填写完整路径，会自动登记为数据目录，子目录会一起读取</div>
         </el-form-item>
       </el-form>
       <span slot="footer">
@@ -129,7 +129,7 @@
 
 <script>
 import * as echarts from 'echarts'
-import { getDataDirs } from '@/api/files'
+import { addDataDir, getDataDirs } from '@/api/files'
 import { buildSimulationTable, getSimulationStatus, predictSimulation, resetSimulationTable } from '@/api/simulation'
 import { errorMessage } from '@/utils/request'
 
@@ -215,7 +215,10 @@ export default {
     },
     async startBuild() {
       try {
-        this.job = await buildSimulationTable(this.build.path, this.build.model)
+        // 填写的目录先登记为数据目录（已登记的直接通过），与“自动诊断”页一致
+        const { path } = await addDataDir(this.build.path.trim(), true)
+        this.build.path = path
+        this.job = await buildSimulationTable(path, this.build.model)
         this.build.visible = false
         this.$message.info('已开始建立仿真基准表')
         this.prediction = null
