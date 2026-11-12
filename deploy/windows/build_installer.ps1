@@ -72,21 +72,25 @@ New-Item -ItemType Directory -Force -Path $Cache, $Build, $Out | Out-Null
 
 # ---------------------------------------------------------------- 0. 检查工具
 Step "检查打包工具"
+# 优先使用 get_tools.ps1 下载到项目里的工具（deploy\windows\tools）
+$localNode = Join-Path $Here "tools\node"
+if (Test-Path (Join-Path $localNode "node.exe")) { $env:Path = "$localNode;$env:Path" }
 $iscc = $null
 if (-not $NoInstaller) {
     $candidates = @(
+        (Join-Path $Here "tools\innosetup\ISCC.exe"),
         "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
         "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
         "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
     )
     $iscc = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
     if (-not $iscc) { $cmd = Get-Command iscc -ErrorAction SilentlyContinue; if ($cmd) { $iscc = $cmd.Source } }
-    if (-not $iscc) { Fail "没有找到 Inno Setup 6（ISCC.exe）。请从 https://jrsoftware.org/isdl.php 下载安装后重试。" }
+    if (-not $iscc) { Fail "没有找到 Inno Setup（ISCC.exe）。请先运行：powershell -ExecutionPolicy Bypass -File deploy\windows\get_tools.ps1" }
     Write-Host "Inno Setup：$iscc"
 }
 if (-not $SkipFrontend) {
     $node = Get-Command node -ErrorAction SilentlyContinue
-    if (-not $node) { Fail "没有找到 Node.js。请安装 Node.js 18 LTS（https://nodejs.org）后重试，或用 -SkipFrontend 使用已编译的前端。" }
+    if (-not $node) { Fail "没有找到 Node.js。请先运行：powershell -ExecutionPolicy Bypass -File deploy\windows\get_tools.ps1" }
     $nodeMajor = [int]((& node --version).TrimStart("v").Split(".")[0])
     Write-Host "Node.js：$(& node --version)"
 }

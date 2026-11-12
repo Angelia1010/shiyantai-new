@@ -9,16 +9,7 @@
 
 ### 第一部分：生成安装包（能上网的 Windows 电脑）
 
-**第 1 步：装两个工具（只装一次）**
-
-| 软件 | 下载地址 | 安装时注意 |
-|---|---|---|
-| Node.js 18 LTS | https://nodejs.org/zh-cn/download | 一路默认即可 |
-| Inno Setup 6 | https://jrsoftware.org/isdl.php | 一路默认即可 |
-
-Python 不用装，打包脚本会自己下载。
-
-**第 2 步：拿到最新代码**
+**第 1 步：拿到最新代码**
 
 如果这台电脑上已经有代码，在代码目录里运行：
 
@@ -28,11 +19,25 @@ git pull
 
 如果没有，先用 `git clone` 把仓库下载下来。
 
-**第 3 步：运行打包脚本**
+**第 2 步：打开 PowerShell**
 
 1. 打开代码所在的文件夹（能看到 `deploy`、`pump_test_bench` 这些文件夹的那一层）。
-2. 在文件夹空白处按住 Shift 点右键，选“在此处打开 PowerShell 窗口”。
-3. 复制下面这条命令，粘贴进去回车：
+2. 在文件夹空白处按住 Shift 点右键，选“在此处打开 PowerShell 窗口”。后面的命令都在这个窗口里运行。
+
+**第 3 步：下载打包工具（只需一次）**
+
+复制下面这条命令，粘贴进去回车：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy\windows\get_tools.ps1
+```
+
+它会把 Node.js 18（免安装版）和 Inno Setup 6 下载到项目里的 `deploy\windows\tools`，不需要另外安装，也不会改动电脑上的其他软件。
+Python 不用装，打包脚本会自己下载。看到“两个工具都已就绪”就可以进行下一步。
+
+**第 4 步：运行打包脚本**
+
+复制下面这条命令，粘贴进去回车：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File deploy\windows\build_installer.ps1 -PipIndex https://pypi.tuna.tsinghua.edu.cn/simple -NpmRegistry https://registry.npmmirror.com
@@ -40,7 +45,7 @@ powershell -ExecutionPolicy Bypass -File deploy\windows\build_installer.ps1 -Pip
 
 脚本会自动下载、安装依赖、编译前端、生成安装包，第一次大约需要 10–20 分钟。最后出现绿色的“完成”就成功了。
 
-**第 4 步：拿到安装包**
+**第 5 步：拿到安装包**
 
 安装包在 `deploy\windows\output\BenchCheck-Setup-1.0.0.exe`。
 
@@ -57,7 +62,7 @@ powershell -ExecutionPolicy Bypass -File deploy\windows\build_installer.ps1 -Pip
 
 ### 以后怎么做
 
-- **发新版本**：把 `deploy\windows\VERSION` 里的版本号改一下（比如改成 `1.0.1`），再执行一次第 3 步的命令，然后在目标电脑上直接运行新安装包。原来的密码、设置、诊断记录都会保留。
+- **发新版本**：把 `deploy\windows\VERSION` 里的版本号改一下（比如改成 `1.0.1`），再执行一次第 4 步的命令，然后在目标电脑上直接运行新安装包。原来的密码、设置、诊断记录都会保留。
 - **服务出问题**：开始菜单“标准台校验系统”里有“服务状态”“重启服务”；日志在 `C:\ProgramData\BenchCheck\logs`。
 - **打包报错**：窗口里出现红色的 **[失败]** 时，把整个 PowerShell 窗口的内容截图或复制下来，按提示处理或反馈。
 
@@ -109,14 +114,15 @@ powershell -ExecutionPolicy Bypass -File deploy\windows\build_installer.ps1 `
 
 | 文件 | 作用 |
 |---|---|
-| `build_installer.ps1` | 一键打包脚本 |
+| `get_tools.ps1` | 下载打包工具（Node.js、Inno Setup）到 `tools\` |
+| `build_installer.ps1` | 一键打包脚本（优先使用 `tools\` 中的工具） |
 | `setup.iss` | 安装包脚本（Inno Setup）：安装向导、组件、快捷方式、卸载 |
 | `installer_tools.py` | 安装后的配置与服务管理：写配置、注册开机运行、启动/停止、卸载 |
 | `requirements-runtime.txt` | 安装包内 Python 的依赖 |
 | `scripts\*.bat` | 安装后放在程序目录：启动 / 停止 / 重启服务、查看状态 |
 | `VERSION` | 版本号 |
 
-`build\`、`cache\`、`output\` 是打包过程的中间文件与产物，不提交到 git。
+`tools\`、`build\`、`cache\`、`output\` 是打包工具、中间文件与产物，不提交到 git。
 
 ## 二、安装（目标电脑）
 
