@@ -176,7 +176,13 @@ $isccDir = Split-Path $iscc
 $chs = Join-Path $isccDir "Languages\ChineseSimplified.isl"
 if (-not (Test-Path $chs)) {
     $chs = Join-Path $Cache "ChineseSimplified.isl"
-    if (-not (Download "https://raw.githubusercontent.com/jrsoftware/issrc/main/Files/Languages/Unofficial/ChineseSimplified.isl" $chs -Optional)) { $chs = "" }
+    $ok = $false
+    foreach ($u in @("https://cdn.jsdelivr.net/gh/jrsoftware/issrc@main/Files/Languages/Unofficial/ChineseSimplified.isl",
+                     "https://fastly.jsdelivr.net/gh/jrsoftware/issrc@main/Files/Languages/Unofficial/ChineseSimplified.isl",
+                     "https://raw.githubusercontent.com/jrsoftware/issrc/main/Files/Languages/Unofficial/ChineseSimplified.isl")) {
+        if (Download $u $chs -Optional) { $ok = $true; break }
+    }
+    if (-not $ok) { $chs = "" }
 }
 $isccArgs = @("/Q", "/DAppVersion=$Version", "/DStageDir=$Stage", "/DOutputDir=$Out")
 if ($chs -and (Test-Path $chs)) { $isccArgs += "/DChineseIsl=$chs" } else { Write-Host "没有中文语言文件，安装向导将使用英文界面" -ForegroundColor Yellow }

@@ -6,18 +6,24 @@
   只需运行一次：
       powershell -ExecutionPolicy Bypass -File deploy\windows\get_tools.ps1
   - Node.js：下载免安装版（zip）解压到 tools\node，不修改系统环境变量；
-  - Inno Setup：静默安装到 tools\innosetup（当前用户，不需要管理员权限）。
+  - Inno Setup：优先从 npm 国内镜像获取（npm 包 innosetup-compiler 自带 ISCC.exe，不需要访问 GitHub），
+    放到 tools\innosetup；不行时再尝试官方安装程序（GitHub）与 winget；
+  - 安装向导的中文语言文件：从 jsDelivr 等地址获取，放到 tools\innosetup\Languages。
   build_installer.ps1 会优先使用这里的工具。tools 目录不提交到 git。
   默认先从国内镜像下载 Node.js，失败再从官网下载。
 
 .PARAMETER NodeVersion
   Node.js 版本，默认 18.20.8（前端用的 vue-cli 4 在 18 上验证过）。
 .PARAMETER InnoVersion
-  Inno Setup 6 的备用版本号（默认 6.7.4）。脚本会先从 GitHub 自动查找 Inno Setup 6 的最新版，找不到时才用这个版本号。
+  从 GitHub 下载官方安装程序时的备用版本号（默认 6.7.4）。
+.PARAMETER NpmRegistry
+  npm 镜像，默认 https://registry.npmmirror.com。
 #>
 param(
     [string]$NodeVersion = "18.20.8",
-    [string]$InnoVersion = "6.7.4"
+    [string]$InnoVersion = "6.7.4",
+    [string]$NpmInnoVersion = "6.3.1",
+    [string]$NpmRegistry = "https://registry.npmmirror.com"
 )
 
 $ErrorActionPreference = "Stop"
@@ -40,6 +46,11 @@ function Test-Download($file, $kind) {
     try { $b = New-Object byte[] 2; [void]$fs.Read($b, 0, 2) } finally { $fs.Close() }
     $sig = [System.Text.Encoding]::ASCII.GetString($b)
     return ($kind -eq "exe" -and $sig -eq "MZ") -or ($kind -eq "zip" -and $sig -eq "PK")
+}
+
+function Test-Isl($file) {
+    if (-not (Test-Path $file) -or (Get-Item $file).Length -lt 5KB) { return $false }
+    return (Get-Content $file -Raw -Encoding UTF8) -match "\[LangOptions\]"
 }
 
 function Get-File([string[]]$urls, $file, $kind, [switch]$Optional) {
@@ -104,6 +115,27 @@ $innoDir = Join-Path $Tools "innosetup"
 if (Test-Path (Join-Path $innoDir "ISCC.exe")) {
     Write-Host "Inno Setup 已存在：$innoDir" -ForegroundColor Green
 } else {
+    $installed = $false
+    $localNpm = Join-Path $nodeDir "npm.cmd"
+    if (Test-Path $localNpm) {
+        Write-Host "从 npm 镜像获取 Inno Setup（innosetup-compiler@$NpmInnoVersion，$NpmRegistry）"
+        $npmTmp = Join-Path $Cache "inno-npm"
+        if (Test-Path $npmTmp) { Remove-Item $npmTmp -Recurse -Force }
+        New-Item -ItemType Directory -Force -Path $npmTmp | Out-Null
+        $env:Path = "$nodeDir;$env:Path"
+        & $localNpm install "innosetup-compiler@$NpmInnoVersion" --prefix $npmTmp --registry $NpmRegistry --no-audit --no-fund --loglevel error
+        $bin = Join-Path $npmTmp "node_modules\innosetup-compiler\bin"
+        if (Test-Path (Join-Path $bin "ISCC.exe")) {
+            if (Test-Path $innoDir) { Remove-Item $innoDir -Recurse -Force }
+            Copy-Item $bin $innoDir -Recurse
+            $installed = Test-Path (Join-Path $innoDir "ISCC.exe")
+        }
+        Remove-Item $npmTmp -Recurse -Force -ErrorAction SilentlyContinue
+        if (-not $installed) { Write-Host "从 npm 获取失败，改用官方安装程序" -ForegroundColor Yellow }
+    }
+    if ($installed) { Write-Host "Inno Setup 就绪（来自 npm）：$innoDir" -ForegroundColor Green }
+}
+if (-not (Test-Path (Join-Path $innoDir "ISCC.exe"))) {
     $exe = Join-Path $Cache "innosetup-6-setup.exe"
     $tag = "is-" + ($InnoVersion -replace '\.', '_')
     $urls = @(
@@ -111,7 +143,6 @@ if (Test-Path (Join-Path $innoDir "ISCC.exe")) {
         "https://github.com/jrsoftware/issrc/releases/download/$tag/innosetup-$InnoVersion.exe",
         "https://files.jrsoftware.org/is/6/innosetup-$InnoVersion.exe"
     )
-    $installed = $false
     if (Get-File $urls $exe "exe" -Optional) {
         Write-Host "安装到 $innoDir（静默安装，约 1 分钟）"
         $innoArgs = @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/CURRENTUSER", "/NOICONS", "/DIR=`"$innoDir`"")
@@ -130,6 +161,37 @@ if (Test-Path (Join-Path $innoDir "ISCC.exe")) {
               "双击安装，安装位置选：$innoDir ，装好后重新运行本脚本。")
     }
     Write-Host "Inno Setup 就绪：$innoDir" -ForegroundColor Green
+}
+
+# ---------------------------------------------------------------- 安装向导的中文语言文件
+$langDir = Join-Path $innoDir "Languages"
+$isl = Join-Path $langDir "ChineseSimplified.isl"
+if (Test-Isl $isl) {
+    Write-Host "中文语言文件已存在" -ForegroundColor Green
+} else {
+    New-Item -ItemType Directory -Force -Path $langDir | Out-Null
+    $path = "jrsoftware/issrc@main/Files/Languages/Unofficial/ChineseSimplified.isl"
+    $islUrls = @("https://cdn.jsdelivr.net/gh/$path", "https://fastly.jsdelivr.net/gh/$path", "https://gcore.jsdelivr.net/gh/$path",
+                 "https://raw.githubusercontent.com/jrsoftware/issrc/main/Files/Languages/Unofficial/ChineseSimplified.isl")
+    foreach ($url in $islUrls) {
+        Write-Host "下载中文语言文件 $url"
+        try { Invoke-WebRequest -Uri $url -OutFile "$isl.part" -UseBasicParsing -UserAgent "Mozilla/5.0" } catch {
+            Write-Host "  失败：$($_.Exception.Message)" -ForegroundColor Yellow; continue }
+        if (Test-Isl "$isl.part") { Move-Item "$isl.part" $isl -Force; break }
+        Remove-Item "$isl.part" -ErrorAction SilentlyContinue
+    }
+    if (-not (Test-Isl $isl) -and (Test-Path (Join-Path $nodeDir "npm.cmd"))) {
+        # 备用：npm 包 innosetup-compiler-cn 带有中文语言文件
+        $npmTmp = Join-Path $Cache "isl-npm"
+        New-Item -ItemType Directory -Force -Path $npmTmp | Out-Null
+        $env:Path = "$nodeDir;$env:Path"
+        & (Join-Path $nodeDir "npm.cmd") install innosetup-compiler-cn --prefix $npmTmp --registry $NpmRegistry --no-audit --no-fund --loglevel error
+        $found = Get-ChildItem $npmTmp -Recurse -Filter "ChineseSimplified.isl" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($found -and (Test-Isl $found.FullName)) { Copy-Item $found.FullName $isl -Force }
+        Remove-Item $npmTmp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    if (Test-Isl $isl) { Write-Host "中文语言文件就绪" -ForegroundColor Green }
+    else { Write-Host "没有拿到中文语言文件：安装包仍可正常生成，只是安装向导的按钮等为英文" -ForegroundColor Yellow }
 }
 
 Write-Host "`n两个工具都已就绪，接下来运行打包脚本：" -ForegroundColor Cyan
