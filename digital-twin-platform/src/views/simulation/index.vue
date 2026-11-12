@@ -50,7 +50,7 @@
             <el-dropdown trigger="click" @command="onMore">
               <el-button size="small" icon="el-icon-more" aria-label="更多操作" />
               <el-dropdown-menu slot="dropdown">
-                <el-dropdown-item command="reset" :disabled="!current.table || current.table.is_default || running">恢复随代码提供的结果</el-dropdown-item>
+                <el-dropdown-item command="reset" :disabled="!current.table || current.table.is_default || running">恢复默认结果</el-dropdown-item>
                 <el-dropdown-item command="restore" :disabled="current.source !== 'override'">恢复内置配置</el-dropdown-item>
                 <el-dropdown-item command="delete" divided class="danger-item">删除模型</el-dropdown-item>
               </el-dropdown-menu>
@@ -261,7 +261,6 @@
                   <template slot-scope="{ row }"><span v-if="row.warning" class="warn small">{{ row.warning }}</span></template>
                 </el-table-column>
               </el-table>
-              <p class="source-line">来源：{{ current.table.is_default ? '随代码提供（2026-11 正常数据）' : current.table.source }}</p>
             </template>
             <el-empty v-else description="还没有模型结果，点右上角“建立模型”" :image-size="64" />
           </el-tab-pane>
@@ -695,7 +694,7 @@ export default {
     },
     async reset(m) {
       try {
-        await this.$confirm(`删除“${m.name}”重建的结果，恢复使用随代码提供的结果？`, '恢复随代码提供的结果', { type: 'warning' })
+        await this.$confirm(`删除“${m.name}”重建的结果，恢复使用默认结果？`, '恢复默认结果', { type: 'warning' })
       } catch (e) {
         return
       }
