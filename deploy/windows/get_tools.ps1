@@ -8,7 +8,7 @@
   - Node.js：下载免安装版（zip）解压到 tools\node，不修改系统环境变量；
   - Inno Setup：优先从 npm 国内镜像获取（npm 包 innosetup-compiler 自带 ISCC.exe，不需要访问 GitHub），
     放到 tools\innosetup；不行时再尝试官方安装程序（GitHub）与 winget；
-  - 安装向导的中文语言文件：从 jsDelivr 等地址获取，放到 tools\innosetup\Languages。
+  - 安装向导的中文界面文字随项目提供（ChineseSimplified-partial.isl），不需要下载。
   build_installer.ps1 会优先使用这里的工具。tools 目录不提交到 git。
   默认先从国内镜像下载 Node.js，失败再从官网下载。
 
@@ -48,10 +48,6 @@ function Test-Download($file, $kind) {
     return ($kind -eq "exe" -and $sig -eq "MZ") -or ($kind -eq "zip" -and $sig -eq "PK")
 }
 
-function Test-Isl($file) {
-    if (-not (Test-Path $file) -or (Get-Item $file).Length -lt 5KB) { return $false }
-    return (Get-Content $file -Raw -Encoding UTF8) -match "\[LangOptions\]"
-}
 
 function Get-File([string[]]$urls, $file, $kind, [switch]$Optional) {
     if (Test-Download $file $kind) { Write-Host "使用已下载的文件：$file"; return $true }
@@ -161,37 +157,6 @@ if (-not (Test-Path (Join-Path $innoDir "ISCC.exe"))) {
               "双击安装，安装位置选：$innoDir ，装好后重新运行本脚本。")
     }
     Write-Host "Inno Setup 就绪：$innoDir" -ForegroundColor Green
-}
-
-# ---------------------------------------------------------------- 安装向导的中文语言文件
-$langDir = Join-Path $innoDir "Languages"
-$isl = Join-Path $langDir "ChineseSimplified.isl"
-if (Test-Isl $isl) {
-    Write-Host "中文语言文件已存在" -ForegroundColor Green
-} else {
-    New-Item -ItemType Directory -Force -Path $langDir | Out-Null
-    $path = "jrsoftware/issrc@main/Files/Languages/Unofficial/ChineseSimplified.isl"
-    $islUrls = @("https://cdn.jsdelivr.net/gh/$path", "https://fastly.jsdelivr.net/gh/$path", "https://gcore.jsdelivr.net/gh/$path",
-                 "https://raw.githubusercontent.com/jrsoftware/issrc/main/Files/Languages/Unofficial/ChineseSimplified.isl")
-    foreach ($url in $islUrls) {
-        Write-Host "下载中文语言文件 $url"
-        try { Invoke-WebRequest -Uri $url -OutFile "$isl.part" -UseBasicParsing -UserAgent "Mozilla/5.0" } catch {
-            Write-Host "  失败：$($_.Exception.Message)" -ForegroundColor Yellow; continue }
-        if (Test-Isl "$isl.part") { Move-Item "$isl.part" $isl -Force; break }
-        Remove-Item "$isl.part" -ErrorAction SilentlyContinue
-    }
-    if (-not (Test-Isl $isl) -and (Test-Path (Join-Path $nodeDir "npm.cmd"))) {
-        # 备用：npm 包 innosetup-compiler-cn 带有中文语言文件
-        $npmTmp = Join-Path $Cache "isl-npm"
-        New-Item -ItemType Directory -Force -Path $npmTmp | Out-Null
-        $env:Path = "$nodeDir;$env:Path"
-        & (Join-Path $nodeDir "npm.cmd") install innosetup-compiler-cn --prefix $npmTmp --registry $NpmRegistry --no-audit --no-fund --loglevel error
-        $found = Get-ChildItem $npmTmp -Recurse -Filter "ChineseSimplified.isl" -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($found -and (Test-Isl $found.FullName)) { Copy-Item $found.FullName $isl -Force }
-        Remove-Item $npmTmp -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    if (Test-Isl $isl) { Write-Host "中文语言文件就绪" -ForegroundColor Green }
-    else { Write-Host "没有拿到中文语言文件：安装包仍可正常生成，只是安装向导的按钮等为英文" -ForegroundColor Yellow }
 }
 
 Write-Host "`n两个工具都已就绪，接下来运行打包脚本：" -ForegroundColor Cyan

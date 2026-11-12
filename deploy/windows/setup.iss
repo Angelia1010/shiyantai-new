@@ -39,7 +39,8 @@ CloseApplications=no
 #ifdef ChineseIsl
 Name: "chs"; MessagesFile: "{#ChineseIsl}"
 #else
-Name: "en"; MessagesFile: "compiler:Default.isl"
+; 没有完整的中文语言文件时，用英文为底加上项目自带的中文界面文字
+Name: "chs"; MessagesFile: "compiler:Default.isl,ChineseSimplified-partial.isl"
 #endif
 
 [Types]
