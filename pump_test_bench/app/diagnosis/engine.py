@@ -6,7 +6,8 @@
 2. 供回油平衡：供油组与回油组的中位数之差，持续偏离说明泄漏或分流；
 3. 质量-体积校核：质量流量 ÷ 密度（按温度修正）与体积流量共识值比较，校核质量流量计；
 4. 零点：没有流量的管路上，流量计读数应接近 0；
-5. 传感器自检：卡死、超量程、噪声、毛刺；
+5. 传感器自检：卡死/冻结、掉零、超量程、噪声、毛刺，同位置温度传感器互校；
+   渐变检查：单表偏差或供回油差在测试过程中持续变化；
 6. 原经验公式（质量流量→涡轮转速→理论流量）只作参考，不参与判定；
 7. AMESim 仿真对比（有仿真数据时）作为辅助证据。
 
@@ -25,7 +26,7 @@ from pump_test_bench.app.diagnosis.checks import ABNORMAL, INFO, NOTICE, SEVERIT
 from pump_test_bench.app.diagnosis.config import config_path, load_config
 from pump_test_bench.app.diagnosis.signals import Segment, find_steady, time_axis
 
-ALGORITHM_VERSION = "2.0"
+ALGORITHM_VERSION = "2.1"
 RESULT_NORMAL, RESULT_WARNING, RESULT_ABNORMAL, RESULT_INCONCLUSIVE = "normal", "warning", "abnormal", "inconclusive"
 
 
@@ -120,9 +121,14 @@ def analyze(df: pd.DataFrame, cfg: Dict, baseline: Optional[Dict] = None, densit
 
         # 3) 冗余比对
         means: Dict[str, float] = {}
+        seg_level = float(item["consensus"].iloc[segment.start:segment.end].mean())
+        frozen_limit = max(th.get("frozen", {}).get("min_s", 2.0),
+                           th.get("frozen", {}).get("min_ratio", 0.2) * segment.duration)
         for m in meters_cfg:
             col = m["column"]
             entry = {**m, "mean": ck.mean_of(seg[col]), "severity": INFO}
+            zero = ck.zero_fraction(seg[col], seg_level) if entry["mean"] is not None else 0.0
+            frozen = ck.longest_constant_run(seg[col], seg_t) if entry["mean"] is not None else 0.0
             if entry["mean"] is None:
                 entry["severity"] = ABNORMAL
                 findings.append(finding("sensor", ABNORMAL, "流量计无有效数据", f"{m['label']}在稳定段内没有有效读数",
@@ -133,6 +139,20 @@ def analyze(df: pd.DataFrame, cfg: Dict, baseline: Optional[Dict] = None, densit
                 findings.append(finding("sensor", ABNORMAL, "流量计读数卡死",
                                         f"{m['label']}在 {segment.duration:.0f} 秒内读数始终为 {entry['mean']:.3f}",
                                         col, m["label"], m.get("component"), entry["mean"]))
+            elif zero >= th.get("dropout_ratio", 0.1):
+                entry["severity"] = ABNORMAL
+                entry["dropout"] = True
+                findings.append(finding("dropout", ABNORMAL, "流量计读数掉零",
+                                        f"管路流量约 {seg_level:.0f} L/h，{m['label']}有 {zero * 100:.0f}% 的时间读数接近 0，"
+                                        "可能是信号线断开、接插件脱落或叶轮卡死不转",
+                                        col, m["label"], m.get("component"), zero * 100))
+            elif frozen >= frozen_limit:
+                entry["severity"] = ABNORMAL
+                entry["stuck"] = True
+                findings.append(finding("frozen", ABNORMAL, "流量计读数冻结",
+                                        f"{m['label']}有 {frozen:.1f} 秒读数完全不变（正常时传感器约每 0.1 秒更新一次，"
+                                        "最长不变约 0.2 秒），可能是叶轮卡滞或变送器死机",
+                                        col, m["label"], m.get("component"), frozen, f"<{frozen_limit:.1f} 秒"))
             else:
                 means[col] = entry["mean"]
             result["meters"].append(entry)
@@ -255,12 +275,43 @@ def analyze(df: pd.DataFrame, cfg: Dict, baseline: Optional[Dict] = None, densit
             result["balance"] = {"raw": raw, "bias": bal_bias, "corrected": corrected, "warn": bal_warn,
                                  "alarm": bal_alarm, "severity": sev}
             if sev != INFO:
+                if corrected > 0:
+                    cause = "，可能存在泄漏或分流"
+                else:
+                    cause = ("。回油比供油多，不可能是泄漏：常见原因是回油侧夹气/气穴（涡轮表把气泡体积也计入），"
+                             "或供油侧流量计整体偏低")
                 findings.append(finding(
-                    "balance", sev, "供回油流量不平衡",
+                    "balance" if corrected > 0 else "aeration", sev, "供回油流量不平衡",
                     f"供油流量比回油流量{'多' if corrected > 0 else '少'} {abs(corrected) * 100:.2f}%"
                     + ("，供油侧与回油侧的流量计各自一致、两侧整体相差" if leak_ratio is not None else "")
-                    + "，可能存在泄漏或分流", loop["name"], loop["name"], "回油管路", corrected * 100,
+                    + cause, loop["name"], loop["name"], "回油管路", corrected * 100,
                     f"预警 ±{bal_warn * 100:.1f}%，异常 ±{bal_alarm * 100:.1f}%"))
+
+        # 渐变：测试过程中单表偏差或供回油差持续变化（磨损、泄漏逐渐扩大）。只看有效的表
+        if len(means) >= 3:
+            wm = ck.window_means(seg[list(means)], seg_t, cfg["steady"]["window_s"])
+            trend_warn = th["redundancy"]["warn"]
+            for col in means:
+                others = wm[[c for c in means if c != col]].median(axis=1)
+                change = ck.end_change((wm[col] - others) / others)
+                if change is not None and abs(change) > trend_warn:
+                    e = next(x for x in result["meters"] if x["column"] == col)
+                    findings.append(finding(
+                        "trend", WARNING, "流量计偏差在测试中持续变化",
+                        f"{e['label']}相对其他流量计的偏差，从测试开始到结束变化了 {change * 100:+.2f}%，"
+                        "说明故障正在发展（如叶轮/轴承逐渐磨损）",
+                        col, e["label"], e.get("component"), change * 100, f"±{trend_warn * 100:.1f}%"))
+            sup_c = [c for c in usable if group_of[c] == "供油"]
+            ret_c = [c for c in usable if group_of[c] == "回油"]
+            if sup_c and ret_c:
+                ws, wr = wm[sup_c].median(axis=1), wm[ret_c].median(axis=1)
+                change = ck.end_change((ws - wr) / wm.median(axis=1))
+                if change is not None and abs(change) > bal_warn:
+                    findings.append(finding(
+                        "trend", WARNING, "供回油差在测试中持续变化",
+                        f"供油与回油之差从测试开始到结束变化了 {change * 100:+.2f}%，"
+                        f"{'泄漏正在扩大' if change > 0 else '回油侧读数在逐渐增大'}",
+                        loop["name"], loop["name"], "回油管路", change * 100, f"±{bal_warn * 100:.1f}%"))
 
         # 5) 质量-体积校核
         if mass_col:
@@ -271,7 +322,8 @@ def analyze(df: pd.DataFrame, cfg: Dict, baseline: Optional[Dict] = None, densit
             ref_flow = float(np.median(side)) if side else consensus
             mass = {"column": mass_col, "label": mass_cfg["label"], "mean": mass_mean, "density": rho,
                     "density_source": rho_source, "temperature": temperature, "severity": INFO}
-            if mass_mean is None or ck.is_stuck(seg[mass_col]):
+            if mass_mean is None or ck.is_stuck(seg[mass_col]) or \
+                    ck.longest_constant_run(seg[mass_col], seg_t) >= frozen_limit:
                 mass["severity"] = ABNORMAL
                 findings.append(finding("sensor", ABNORMAL, "质量流量计无有效读数或卡死",
                                         f"{mass_cfg['label']}在稳定段内没有变化的有效读数", mass_col, mass_cfg["label"]))
@@ -320,7 +372,27 @@ def analyze(df: pd.DataFrame, cfg: Dict, baseline: Optional[Dict] = None, densit
                                         "建议补充该工况的健康数据后重建基准", loop["name"], loop["name"]))
         results.append(result)
 
-    # 7) 传感器量程自检（全部数值列；诊断用到的列影响结论，其余只作“注意”）
+    # 7) 同位置温度传感器互校（油温决定密度修正，偏了会把质量-体积校核带偏）
+    for pair in cfg.get("temperature_pairs", []):
+        a, b = pair["columns"]
+        if a not in df.columns or b not in df.columns:
+            continue
+        rule = ck.range_rule(a, cfg.get("sensor_ranges", [])) or {"min": -1e9, "max": 1e9}
+        ta, tb = ck.mean_of(seg[a]), ck.mean_of(seg[b])
+        if ta is None or tb is None or not all(rule["min"] <= x <= rule["max"] for x in (ta, tb)):
+            continue  # 超量程由下面的量程自检报出
+        diff = abs(ta - tb)
+        sev = ck.grade(diff, pair.get("warn", 3.0), pair.get("alarm", 6.0))
+        if sev == INFO:
+            continue
+        used = a in diag_columns and a or (b in diag_columns and b) or None
+        findings.append(finding(
+            "temperature", sev if used else NOTICE, "同位置温度传感器不一致",
+            f"{a} {ta:.1f} ℃，{b} {tb:.1f} ℃，相差 {diff:.1f} ℃（健康数据中不超过约 1.5 ℃），至少一只有偏差"
+            + (f"；密度修正使用的是 {used}，油温每偏 1 ℃ 密度约偏 0.07%" if used else ""),
+            used or a, used or a, None, diff, f"预警 {pair.get('warn', 3.0)} ℃，异常 {pair.get('alarm', 6.0)} ℃"))
+
+    # 8) 传感器量程自检（全部数值列；诊断用到的列影响结论，其余只作“注意”）
     for col in df.columns:
         rule = ck.range_rule(col, cfg.get("sensor_ranges", []))
         if not rule or df[col].dtype.kind != "f":
@@ -385,12 +457,18 @@ _ADVICE = {
     "noise": "{label} 读数波动过大，检查信号屏蔽与接地，排查管路中的气泡或脉动。",
     "spike": "{label} 读数有突跳，检查信号线接触与干扰源。",
     "simulation": "试验数据与仿真结果偏差较大，核对仿真模型参数（转速、阀开度）与实际工况是否一致。",
+    "dropout": "{label} 读数掉零：检查信号线与接插件是否脱落、前置放大器供电，停机后检查叶轮能否自由转动。",
+    "frozen": "{label} 读数冻结：检查叶轮是否卡滞（杂质、轴承损坏），以及变送器/采集通道是否死机。",
+    "trend": "{label} 的偏差在测试过程中持续变化，故障可能正在发展，建议尽快停机检查并缩短复检周期。",
+    "aeration": "回油流量大于供油流量：检查回油管路是否吸入空气（接头密封、油箱液位过低、回油背压过低），排气后复测。",
+    "temperature": "同位置两只温度传感器读数不一致：用标准温度计比对，检查 {label} 的安装深度与接线。",
 }
 
 _FAULT_NAME = {
     "redundancy": "流量计读数偏离", "sensor": "传感器故障", "balance": "供回油流量不平衡",
     "mass_volume": "质量-体积流量不一致", "zero": "零点偏移", "noise": "读数波动过大", "spike": "读数毛刺",
-    "simulation": "与仿真偏差较大",
+    "simulation": "与仿真偏差较大", "dropout": "读数掉零", "frozen": "读数冻结", "trend": "偏差持续变化",
+    "aeration": "回油夹气", "temperature": "温度传感器不一致",
 }
 
 

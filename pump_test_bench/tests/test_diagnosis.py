@@ -126,3 +126,48 @@ def test_baseline_removes_fixed_meter_bias(tmp_path):
     # 扣除固有偏差后，再漂移 3% 仍能查出来
     drifted = diagnose_frame(faults.drift(df, "回油流量1-2", 0.03), baseline=base)
     assert drifted["result"] == "abnormal" and {f["target"] for f in decisive(drifted)} == {"回油流量1-2"}
+
+
+# ---------------------------------------------------------------- 物理故障模型（tools/generate_fault_data）
+from pump_test_bench.tools import generate_fault_data as gen  # noqa: E402
+
+
+def _inject(df, fn, prof="const", at=0.4, **kw):
+    t = np.arange(len(df)) / 100
+    cols = {c: pd.to_numeric(df[c]).to_numpy(dtype=float) for c in METERS + ["回油质量流量2", "供油温度1-1"]}
+    out = df.copy()
+    for c, v in fn(cols, gen.profile(prof, t, at), np.random.default_rng(0), **kw).items():
+        out[c] = np.round(v, 3)
+    return out
+
+
+def test_partial_freeze_detected():
+    body = diagnose_frame(_inject(healthy_frame(), gen.freeze, "step", col="回油流量1-1"))
+    assert body["result"] == "abnormal"
+    assert any(f["category"] == "frozen" and f["target"] == "回油流量1-1" for f in decisive(body))
+
+
+def test_dropout_detected():
+    body = diagnose_frame(_inject(healthy_frame(), gen.drop_zero, "step", 0.5, col="供油流量1-1"))
+    found = decisive(body)
+    assert body["result"] == "abnormal"
+    assert {f["category"] for f in found} == {"dropout"}
+
+
+def test_gradual_wear_reports_trend():
+    body = diagnose_frame(_inject(healthy_frame(), gen.k_factor, "ramp", col="回油流量1-1", ratio=-0.08))
+    cats = {(f["category"], f["target"]) for f in decisive(body)}
+    assert ("trend", "回油流量1-1") in cats
+
+
+def test_return_more_than_supply_is_not_called_leak():
+    body = diagnose_frame(_inject(healthy_frame(), gen.aeration, ratio=0.04))
+    assert any(f["category"] == "aeration" for f in decisive(body))
+    assert not any(f["category"] == "balance" for f in decisive(body))
+
+
+def test_temperature_pair_mismatch():
+    df = healthy_frame()
+    df["供油温度1-2"] = df["供油温度1-1"]
+    body = diagnose_frame(_inject(df, gen.temp_offset, col="供油温度1-1", offset=8.0))
+    assert any(f["category"] == "temperature" and f["severity"] == "abnormal" for f in decisive(body))

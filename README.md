@@ -79,6 +79,7 @@ python -m pump_test_bench.tools.replay_data pump_test_bench/samples/标准台样
 ```bash
 python -m pump_test_bench.tools.build_baseline 健康数据目录 --save      # 保存到 pump_test_bench/data/baseline.json
 python -m pump_test_bench.tools.validate_diagnosis 健康数据目录          # 故障注入验证：检出率、定位准确率、误报率
+python -m pump_test_bench.tools.generate_fault_data 健康数据目录 --out 故障数据  # 生成 15 类物理故障的异常数据文件（原格式）+ 故障清单.csv
 ```
 
 ## 快速开始## 快速开始（Windows）
@@ -114,7 +115,7 @@ pump_test_bench/
   app/services/             三个 HTTP 服务
   samples/                  样例数据（测试也用它）；标准台样例/ 为试验台实际导出格式（含无表头、末行未写完）
   tools/                    replay_data（回放数据模拟试验台）、build_baseline（建立健康基准）、
-                            validate_diagnosis（故障注入验证）
+                            validate_diagnosis（故障注入验证）、generate_fault_data（生成异常数据文件）
   tests/                    后端测试
 AMESim_server/              AMESim 仿真服务与 Python/Java 客户端示例
 DeepSeek-model/             本地大模型部署说明与可选的独立推理接口

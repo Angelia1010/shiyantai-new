@@ -3,6 +3,7 @@ import time
 
 import pytest
 
+from pump_test_bench.app.diagnosis.engine import ALGORITHM_VERSION
 from pump_test_bench.tests.conftest import SAMPLE_XLSX
 
 
@@ -51,7 +52,7 @@ def test_task_lifecycle(task_client, sample_dir, token):
     diag = task_client.post(f"/tasks/{task_id}/diagnose", headers=auth(token), json={"density": 850})
     assert diag.status_code == 200, diag.get_json()
     assert diag.get_json()["result"] in ("normal", "warning", "abnormal", "inconclusive")
-    assert diag.get_json()["algorithm"]["version"] == "2.0"
+    assert diag.get_json()["algorithm"]["version"] == ALGORITHM_VERSION
 
     task = task_client.get(f"/tasks/{task_id}", headers=auth(token)).get_json()
     assert task["status"] == "Completed" and task["result"] == diag.get_json()["result"]

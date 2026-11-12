@@ -41,6 +41,40 @@ def is_stuck(series: pd.Series) -> bool:
     return len(values) > 10 and values.nunique() <= 1
 
 
+def longest_constant_run(series: pd.Series, t: np.ndarray) -> float:
+    """读数连续不变的最长时长（秒）。健康数据中流量计最长约 0.2 秒（10 Hz 更新），远超此值说明读数冻结。"""
+    v = pd.to_numeric(series, errors="coerce").to_numpy(dtype=float)
+    if len(v) < 2:
+        return 0.0
+    change = np.r_[True, v[1:] != v[:-1]]
+    starts = np.flatnonzero(change)
+    ends = np.r_[starts[1:], len(v)] - 1
+    return float(np.max(t[ends] - t[starts]))
+
+
+def zero_fraction(series: pd.Series, level: float, ratio: float = 0.02) -> float:
+    """读数接近 0（低于 level 的 ratio）的比例：断线、叶轮卡死不转时读数掉零。"""
+    v = pd.to_numeric(series, errors="coerce").dropna()
+    if not len(v) or level <= 0:
+        return 0.0
+    return float((v.abs() < level * ratio).mean())
+
+
+def window_means(frame: pd.DataFrame, t: np.ndarray, window: float = 1.0) -> pd.DataFrame:
+    """按时间窗求各列均值（行 = 时间窗）。"""
+    ids = np.floor((t - t[0]) / window).astype(int)
+    return frame.apply(pd.to_numeric, errors="coerce").groupby(ids).mean()
+
+
+def end_change(values: pd.Series, part: float = 0.25) -> Optional[float]:
+    """后 part 段中位数减前 part 段中位数，表示测试过程中的持续变化（渐变故障）。"""
+    v = values.dropna().to_numpy(dtype=float)
+    k = int(len(v) * part)
+    if k < 3:
+        return None
+    return float(np.median(v[-k:]) - np.median(v[:k]))
+
+
 def window_cv(series: pd.Series, t: np.ndarray, window: float = 1.0) -> Optional[float]:
     """各时间窗内变异系数的中位数，表示读数的短时波动（噪声）水平。"""
     values = pd.to_numeric(series, errors="coerce").to_numpy(dtype=float)
