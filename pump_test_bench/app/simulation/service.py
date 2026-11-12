@@ -1,19 +1,22 @@
-"""仿真模型的服务层（供任务服务的 /simulation/* 接口使用）：模型列表与状态、后台重建基准表、工况试算、诊断方案。"""
+"""仿真模型的服务层（供任务服务的 /simulation/* 接口使用）：模型列表与状态、后台建立模型、预览拟合、工况试算、
+派生测点设置。只做编排，算法在 surrogate / builders / calibration / table 中。"""
 import logging
 import threading
 import time
 from typing import Dict, List, Optional
 
-from pump_test_bench.app.simulation.calibration import build_reference
+from pump_test_bench.app.simulation.builders import ROLES, list_builders
+from pump_test_bench.app.simulation.calibration import MIN_FILES, build_reference, collect_samples
 from pump_test_bench.app.simulation.check import thresholds
 from pump_test_bench.app.simulation.config import (
-    KINDS, builtin_ids, delete_user_model, deleted_builtins, list_models, load_model_cfg, save_user_model,
-    set_builtin_hidden, validate_model
+    KINDS, SURROGATE, builtin_ids, delete_user_model, deleted_builtins, is_surrogate, list_models, load_model_cfg,
+    save_user_model, set_builtin_hidden, validate_model
 )
+from pump_test_bench.app.simulation.models import ENGINE_LABELS as GRID_ENGINE_LABELS
 from pump_test_bench.app.simulation.table import delete_user_table, is_stale, load_table, predict, save_table, table_path
 
 logger = logging.getLogger(__name__)
-ENGINE_LABELS = {"surrogate": "数据代理模型（由正常数据拟合）", "amesim": "AMESim 模型"}
+ENGINE_LABELS = {SURROGATE: "数据代理模型", **GRID_ENGINE_LABELS}
 
 _job_lock = threading.Lock()
 _job: Dict = {"state": "idle"}
@@ -60,12 +63,18 @@ def start_build(model_id: str, paths, engine: str, source: str, operator: str) -
 
 
 def _engines(mcfg: Dict) -> List[Dict]:
-    """可选的引擎：数据代理模型 + AMESim（amesim 段补全后可用）。"""
-    out = []
-    for kind in ("surrogate", "amesim"):
-        ready = kind != "amesim" or "待填写" not in str(mcfg.get("amesim", {}))
-        out.append({"type": kind, "label": ENGINE_LABELS.get(kind, kind), "ready": ready,
-                    "note": "" if ready else f"{mcfg['id']}.json 的 amesim 段还有“待填写”项"})
+    """建立模型时可选的引擎：模型自己的方式（仿真软件的配置补全后才可用）。"""
+    kind = mcfg["engine"]["type"]
+    ready = kind == SURROGATE or "待填写" not in str(mcfg.get(kind, {}))
+    return [{"type": kind, "label": ENGINE_LABELS.get(kind, kind), "ready": ready,
+             "note": "" if ready else f"请先在“编辑配置”中补全 {ENGINE_LABELS.get(kind, kind)} 的设置"}]
+
+
+def _formula_summary(table: Dict) -> Dict:
+    out = {}
+    for name, f in (table.get("formulas") or {}).items():
+        out[name] = {k: f.get(k) for k in ("method", "expression", "coefficients", "display", "info", "fitted_from_data",
+                                           "assessment")}
     return out
 
 
@@ -82,17 +91,21 @@ def model_status(mcfg: Dict, profile: Dict) -> Dict:
             warn, alarm = thresholds(mcfg.get("thresholds", {}), kinds.get(c["output"], "flow"), c.get("std"), setting,
                                      c.get("mode", "relative"))
             columns.append({"column": col, "output": c["output"], "mode": c.get("mode", "relative"),
-                            "unit": units.get(c["output"], ""), "bias": c["bias"], "bias_slope": c.get("bias_slope", 0),
-                            "std": c["std"], "warn": warn, "alarm": alarm, "n": c.get("n")})
+                            "unit": units.get(c["output"], ""), "bias": c["bias"], "std": c["std"], "warn": warn,
+                            "alarm": alarm, "n": c.get("n"), "warning": c.get("warning")})
         info = {"created": table.get("created"), "model": table.get("model", {}), "source": table.get("source", ""),
-                "is_default": bool(table.get("_default")), "stale": is_stale(table, mcfg),
-                "inputs": table["inputs"], "outputs": table["outputs"],
-                "calibration": {"files": calib.get("files"), "method": calib.get("method"), "columns": columns}}
+                "kind": table.get("kind", "grid"), "is_default": bool(table.get("_default")),
+                "stale": is_stale(table, mcfg), "inputs": table["inputs"], "outputs": table["outputs"],
+                "roles": table.get("roles"), "formulas": _formula_summary(table),
+                "calibration": {"files": calib.get("files"), "method": calib.get("method"), "columns": columns,
+                                "failed_outputs": calib.get("failed_outputs") or {}}}
+    methods = sorted({o.get("method", "autofit") for o in mcfg["outputs"]}) if is_surrogate(mcfg) else []
     return {
         "id": mcfg["id"], "name": mcfg["name"], "description": mcfg.get("description", ""),
         "source": mcfg.get("_source", "builtin"),
         "config": {k: v for k, v in mcfg.items() if not k.startswith("_")},
         "components": mcfg.get("components", []), "engine": mcfg["engine"]["type"], "engines": _engines(mcfg),
+        "methods": methods,
         "inputs": [{k: i.get(k) for k in ("name", "column", "columns", "derived", "temperature_column", "unit", "grid")}
                    for i in mcfg["inputs"]],
         "outputs": [{k: o.get(k) for k in ("name", "unit", "kind", "columns", "single")} for o in mcfg["outputs"]],
@@ -105,8 +118,8 @@ def status() -> Dict:
     from pump_test_bench.app.diagnosis.settings import MODES, profile
     prof = profile()
     return {"models": [model_status(m, prof) for m in list_models()], "deleted_builtins": deleted_builtins(),
-            "job": job_status(), "modes": MODES,
-            "kinds": KINDS, "engine_labels": ENGINE_LABELS}
+            "job": job_status(), "modes": MODES, "kinds": KINDS, "engine_labels": ENGINE_LABELS,
+            "builders": list_builders(), "roles": ROLES}
 
 
 def save_model(data: Dict, model_id: Optional[str] = None) -> Dict:
@@ -183,6 +196,38 @@ def reset_table(model_id: str) -> bool:
         path.unlink()
         return True
     return False
+
+
+def preview(data: Dict, path_text: str, outputs: Optional[List[str]] = None) -> Dict:
+    """不保存：按提交的配置用某个正常数据目录拟合并评估（编辑页的“验证公式”“试拟合”）。"""
+    cfg = validate_model(dict(data, id=data.get("id") or "preview"), data.get("id") or "preview")
+    if not is_surrogate(cfg):
+        raise ValueError("只有数据代理模型可以预览拟合")
+    from pump_test_bench.app.simulation.surrogate import fit_model
+    _, files = resolve_source(path_text)
+    samples = collect_samples(files, cfg)
+    if len(samples) < MIN_FILES:
+        need = "；".join(c.get("note") or c["column"] for c in cfg.get("active_if") or [])
+        raise ValueError(f"可用的正常数据只有 {len(samples)} 个文件（需要有稳定段、变量齐全"
+                         + (f"、且{need}" if need else "") + f"），至少需要 {MIN_FILES} 个")
+    fitted = fit_model(samples, cfg, outputs)
+    result = {}
+    for name, r in fitted["outputs"].items():
+        result[name] = {k: v for k, v in r.items() if not k.startswith("_") and k != "refit"}
+    return {"files": len(samples), "groups": sorted({str(g) for g in fitted["data"]["groups"]}),
+            "roles": fitted["roles"], "ranges": fitted["ranges"], "outputs": result,
+            "excluded": cfg.get("exclude_files", [])}
+
+
+def derived_settings() -> List[Dict]:
+    from pump_test_bench.app.signals import derived_specs
+    return [{"name": k, **v} for k, v in derived_specs().items()]
+
+
+def save_derived(items: List[Dict]) -> List[Dict]:
+    from pump_test_bench.app.signals import save_derived_override
+    save_derived_override(items)
+    return derived_settings()
 
 
 def resolve_source(path_text: Optional[str]):

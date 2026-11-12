@@ -20,22 +20,36 @@ from pump_test_bench.app.simulation.table import default_table_path, save_table
 
 def print_summary(table) -> None:
     calib = table.get("calibration", {})
-    print(f"\n{table['model_name']}：{table['model']['label']}；网格 "
-          + " × ".join(f"{i['name']}{len(i['grid'])}" for i in table["inputs"])
-          + f"；标定文件 {calib.get('files')} 个（{calib.get('method', '')}）")
+    if table.get("kind") == "formula":
+        head = "；变量 " + "、".join(f"{i['name']}（{i.get('role') or '-'}）" for i in table["inputs"])
+    else:
+        head = "；网格 " + " × ".join(f"{i['name']}{len(i['grid'])}" for i in table["inputs"])
+    print(f"\n{table['model_name']}：{table['model']['label']}{head}；标定文件 {calib.get('files')} 个（{calib.get('method', '')}）")
+    for name, f in (table.get("formulas") or {}).items():
+        a = f["assessment"]
+        k = 100 if a["mode"] == "relative" else 1
+        unit = "%" if a["mode"] == "relative" else a.get("unit", "")
+        cv = "—" if a["cv_error"] is None else f"{a['cv_error'] * k:.3g}{unit}"
+        const = "—" if a["const_error"] is None else f"{a['const_error'] * k:.3g}{unit}"
+        print(f"  {name}：{f['display'][:110]}")
+        print(f"      交叉验证误差 {cv}（用平均值 {const}）" + "".join(f"；{x}" for x in a["suggestions"])
+              + (f"；可疑样本 {len(a['outliers'])} 个" if a["outliers"] else ""))
     print(f"{'测点':<14}{'所属输出':<10}{'固有偏差':>10}{'离散σ':>10}")
     units = {o["name"]: o.get("unit", "") for o in table["outputs"]}
     for col, c in calib.get("columns", {}).items():
         unit = units.get(c["output"], "") if c.get("mode") == "absolute" else "%"
         k = 100 if unit == "%" else 1
-        print(f"{col:<14}{c['output']:<14}{c['bias'] * k:>10.3f} {unit:<5}{c['std'] * k:>9.3f} {unit}")
+        print(f"{col:<14}{c['output']:<14}{c['bias'] * k:>10.3f} {unit:<5}{c['std'] * k:>9.3f} {unit}"
+              + (f"  ⚠ {c['warning']}" if c.get("warning") else ""))
+    for name, err in (calib.get("failed_outputs") or {}).items():
+        print(f"  {name}：未建立 —— {err}")
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="建立仿真基准表")
     parser.add_argument("source", type=Path, help="正常（健康）数据文件或目录")
     parser.add_argument("--model", help="模型 id（默认全部）：" + "、".join(m["id"] for m in list_models()))
-    parser.add_argument("--engine", choices=("surrogate", "amesim"), help="引擎，默认按模型配置")
+    parser.add_argument("--engine", help="引擎，默认按模型配置")
     parser.add_argument("--default", action="store_true", help="写入 config/simulation_tables/（随代码提供的默认表）")
     args = parser.parse_args(argv)
 

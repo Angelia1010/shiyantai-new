@@ -23,13 +23,34 @@ export const MONITORED_FIELDS = [
 
 /**
  * 派生测点：涡轮流量计转速（叶片频率 Hz），由回油流量（L/h）按 q = 0.304921·f + 0.210230 反算，小于 0 取 0。
- * 与后端 pump_test_bench/config/signals.json 的 derived 一致，K 系数变化时两处一起改。
+ * 默认值与后端 pump_test_bench/config/signals.json 一致；页面打开时用后端设置覆盖（setDerivedFields）。
  */
 export const DERIVED_FIELDS = {
   '回油流量1-1转速': { source: '回油流量1-1', scale: 3.279538, offset: -0.689456, min: 0 },
   '回油流量1-2转速': { source: '回油流量1-2', scale: 3.279538, offset: -0.689456, min: 0 },
   '回油流量2-1转速': { source: '回油流量2-1', scale: 3.279538, offset: -0.689456, min: 0 },
   '回油流量2-2转速': { source: '回油流量2-2', scale: 3.279538, offset: -0.689456, min: 0 }
+}
+
+let derivedLoaded = null
+
+/** 从后端取派生测点设置（只取一次；失败时沿用默认值） */
+export function loadDerivedFields() {
+  if (!derivedLoaded) {
+    derivedLoaded = import('@/api/simulation')
+      .then(api => api.getDerived())
+      .then(r => setDerivedFields(r.items))
+      .catch(() => { derivedLoaded = null })
+  }
+  return derivedLoaded
+}
+
+/** 用后端的派生测点设置（“仿真模型”页可修改）覆盖默认值 */
+export function setDerivedFields(items) {
+  for (const it of items || []) {
+    if (!it || !it.name || !it.source || !it.scale) continue
+    DERIVED_FIELDS[it.name] = { source: it.source, scale: Number(it.scale), offset: Number(it.offset || 0), min: it.min }
+  }
 }
 
 function deriveValue(spec, v) {

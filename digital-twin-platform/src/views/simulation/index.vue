@@ -9,6 +9,7 @@
             <el-dropdown-item v-for="d in deletedBuiltins" :key="d.id" :command="d">{{ d.name }}</el-dropdown-item>
           </el-dropdown-menu>
         </el-dropdown>
+        <el-button size="small" icon="el-icon-setting" @click="openDerived">派生测点</el-button>
         <el-button size="small" type="primary" icon="el-icon-plus" @click="openEditor(null)">新建模型</el-button>
       </div>
     </div>
@@ -38,11 +39,14 @@
           </template>
         </el-table-column>
         <el-table-column label="方式" width="110">
-          <template slot-scope="{ row }">{{ ENGINE_LABELS[row.engine] || row.engine }}</template>
-        </el-table-column>
-        <el-table-column label="输入 / 输出" width="150">
           <template slot-scope="{ row }">
-            {{ row.config.inputs.length }} 个输入 / {{ outputColumns(row.config).length }} 个测点
+            {{ ENGINE_LABELS[row.engine] || row.engine }}
+            <div v-if="row.methods && row.methods.length" class="muted small">{{ row.methods.map(m => METHOD_LABELS[m] || m).join(' + ') }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="变量 / 输出" width="150">
+          <template slot-scope="{ row }">
+            {{ row.config.inputs.length }} 个变量 / {{ outputColumns(row.config).length }} 个测点
             <div class="muted small">{{ systemsOf(row.config).join('、') }}</div>
           </template>
         </el-table-column>
@@ -134,7 +138,7 @@
               <el-descriptions-item label="阈值" :span="2">{{ thresholdText(current.config) }}</el-descriptions-item>
             </el-descriptions>
 
-            <div class="section-head sub">输入（工况）</div>
+            <div class="section-head sub">变量</div>
             <el-table :data="current.config.inputs" size="mini" border>
               <el-table-column prop="name" label="名称" width="110" />
               <el-table-column label="取法 / 测点" min-width="220">
@@ -143,8 +147,19 @@
               <el-table-column label="备用测点" width="130">
                 <template slot-scope="{ row }">{{ (row.fallback_columns || []).join('、') || '—' }}</template>
               </el-table-column>
+              <el-table-column label="单位换算" width="130">
+                <template slot-scope="{ row }">{{ convText(row) }}</template>
+              </el-table-column>
               <el-table-column prop="unit" label="单位" width="70" />
-              <el-table-column label="网格" min-width="160">
+              <el-table-column v-if="current.engine === 'surrogate'" label="角色" width="110">
+                <template slot-scope="{ row }">
+                  {{ ROLE_LABELS[row.role || 'auto'] }}
+                  <span v-if="(row.role || 'auto') === 'auto' && current.table && current.table.roles && current.table.roles[row.name]" class="muted">
+                    （{{ ROLE_LABELS[current.table.roles[row.name]] }}）
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column v-else label="网格" min-width="160">
                 <template slot-scope="{ row }">{{ (row.grid || []).join(' / ') }}</template>
               </el-table-column>
               <el-table-column label="有效范围" width="110">
@@ -158,6 +173,9 @@
                 <template slot-scope="{ row }">{{ row.system || '—' }}</template>
               </el-table-column>
               <el-table-column prop="name" label="名称" min-width="120" />
+              <el-table-column v-if="current.engine === 'surrogate'" label="计算方式" width="90">
+                <template slot-scope="{ row }">{{ METHOD_LABELS[row.method || 'autofit'] || row.method }}</template>
+              </el-table-column>
               <el-table-column label="类型" width="60">
                 <template slot-scope="{ row }">{{ KIND_LABELS[row.kind] || row.kind }}</template>
               </el-table-column>
@@ -200,6 +218,34 @@
                 </el-descriptions-item>
               </el-descriptions>
             </template>
+          </el-tab-pane>
+
+          <!-- 模型公式 -->
+          <el-tab-pane v-if="current.table && current.table.kind === 'formula'" label="模型公式" name="formulas">
+            <div class="formula-head muted small">
+              每个输出的公式与检验结果（{{ current.table.calibration.files }} 个正常数据文件，{{ current.table.calibration.method }}）。
+              <template v-if="excludedFiles.length">
+                已排除 {{ excludedFiles.length }} 个文件：
+                <el-tag v-for="f in excludedFiles" :key="f" size="mini" closable class="excluded" @close="includeFile(f)">{{ f }}</el-tag>
+              </template>
+            </div>
+            <div v-for="o in current.config.outputs" :key="o.name" class="formula-card">
+              <div class="formula-card-head">
+                <b>{{ o.name }}</b> <span class="muted">{{ o.unit }}</span>
+                <span v-if="o.system" class="muted small">· {{ o.system }}</span>
+                <span class="grow" />
+                <el-button v-if="formulaOf(o.name) && formulaOf(o.name).method !== 'formula'" size="mini" type="text"
+                           @click="toCustomFormula(o.name)">转为自定义公式</el-button>
+              </div>
+              <fit-result v-if="formulaOf(o.name)" :result="formulaOf(o.name)" selectable @pick="onPick(o.name, $event)" />
+              <el-alert v-else-if="current.table.calibration.failed_outputs[o.name]" type="error" :closable="false"
+                        :title="`未建立：${current.table.calibration.failed_outputs[o.name]}`" />
+              <span v-else class="muted small">没有该输出的结果（配置修改后请重建）</span>
+            </div>
+            <div v-if="pickedCount" class="exclude-bar">
+              已选 {{ pickedCount }} 个可疑样本
+              <el-button size="mini" type="warning" @click="excludePicked">排除这些样本并重建</el-button>
+            </div>
           </el-tab-pane>
 
           <!-- 基准表与标定 -->
@@ -248,6 +294,9 @@
                 <el-table-column label="预警 / 异常" width="170" align="right">
                   <template slot-scope="{ row }">±{{ val(row.warn, row) }} / ±{{ val(row.alarm, row) }}</template>
                 </el-table-column>
+                <el-table-column label="提示" min-width="160">
+                  <template slot-scope="{ row }"><span v-if="row.warning" class="warn small">{{ row.warning }}</span></template>
+                </el-table-column>
               </el-table>
             </template>
             <el-empty v-else description="还没有基准表，点击右上角“建立基准表”" :image-size="70" />
@@ -266,6 +315,12 @@
                     <el-button type="primary" @click="runPredict(current)">计算预期值</el-button>
                   </el-form-item>
                 </el-form>
+                <div v-if="current.table.inputs.length > 1" class="small muted">
+                  曲线横轴：
+                  <el-select v-model="curveVar" size="mini" style="width: 130px" @change="drawCurve(current)">
+                    <el-option v-for="i in current.table.inputs" :key="i.name" :label="i.name" :value="i.name" />
+                  </el-select>
+                </div>
                 <div ref="curve" class="curve" />
               </el-col>
               <el-col :span="14">
@@ -309,7 +364,34 @@
       </span>
     </el-dialog>
 
-    <model-editor :visible="editor.visible" :model="editor.model" @close="editor.visible = false" @saved="onSaved" />
+    <model-editor :visible="editor.visible" :model="editor.model" :builders="builders" @close="editor.visible = false" @saved="onSaved" />
+
+    <el-dialog title="派生测点" :visible.sync="derived.visible" width="760px" append-to-body>
+      <div class="muted small derived-hint">
+        派生测点由采集列换算得到，如涡轮流量计转速 f（Hz）由流量 q（L/h）按 q = K·f + q0 反算。修改后，用到这些测点的模型需要重建；三维与工作台刷新页面后生效。
+      </div>
+      <el-table :data="derived.items" size="mini" border>
+        <el-table-column prop="name" label="派生测点" width="150" />
+        <el-table-column prop="source" label="源测点" width="110" />
+        <el-table-column width="150">
+          <template slot="header">K（每 {{ derived.items[0] ? derived.items[0].unit || '单位' : '' }}）</template>
+          <template slot-scope="{ row }"><el-input v-model="row.K" size="mini" /></template>
+        </el-table-column>
+        <el-table-column label="q0" width="120">
+          <template slot-scope="{ row }"><el-input v-model="row.q0" size="mini" /></template>
+        </el-table-column>
+        <el-table-column label="下限" width="80">
+          <template slot-scope="{ row }"><el-input v-model="row.min" size="mini" /></template>
+        </el-table-column>
+        <el-table-column label="换算">
+          <template slot-scope="{ row }"><span class="small">({{ row.source }} − {{ row.q0 }}) ÷ {{ row.K }}</span></template>
+        </el-table-column>
+      </el-table>
+      <span slot="footer">
+        <el-button @click="derived.visible = false">取消</el-button>
+        <el-button type="primary" :loading="derived.saving" @click="saveDerivedItems">保存</el-button>
+      </span>
+    </el-dialog>
   </div>
 </template>
 
@@ -317,27 +399,32 @@
 import * as echarts from 'echarts'
 import { addDataDir, getDataDirs } from '@/api/files'
 import {
-  ENGINE_LABELS, KIND_LABELS, MEANING_LABELS, MODE_LABELS, buildModelTable, deleteModel, getSimulationStatus, predictModel,
-  resetModelTable, restoreBuiltinModel, saveDiagnosisProfile
+  ENGINE_LABELS, KIND_LABELS, MEANING_LABELS, METHOD_LABELS, MODE_LABELS, ROLE_LABELS, buildModelTable, deleteModel,
+  getDerived, getSimulationStatus, predictModel, resetModelTable, restoreBuiltinModel, saveDerived, saveDiagnosisProfile,
+  updateModel
 } from '@/api/simulation'
+import { setDerivedFields } from '@/utils/features'
 import { errorMessage } from '@/utils/request'
 import { COMPONENTS } from '@/views/dashboard/scene/components'
+import FitResult from './FitResult'
 import ModelEditor from './ModelEditor'
 
 const SOURCE_LABELS = { builtin: '内置', custom: '自定义', override: '内置·已修改' }
 const DERIVE_LABELS = { temperature: '油温', density: '由油温算密度', viscosity: '由油温算黏度' }
 
-// 工况试算的初始值（没有的输入取网格中点）
-const DEFAULT_CONDITION = { 电传转速: 2000, 进口压力: 0.15, 油温: 36, 质量流量: 290, 燃油密度: 782, 汇流温度: 36, 流量: 370 }
 
 export default {
   name: 'Simulation',
-  components: { ModelEditor },
+  components: { FitResult, ModelEditor },
   data() {
     return {
       loading: true,
       models: [],
       deletedBuiltins: [],
+      builders: [],
+      derived: { visible: false, items: [], saving: false },
+      curveVar: '',
+      picks: {},
       job: { state: 'idle' },
       profile: {},
       profileDirty: false,
@@ -350,6 +437,8 @@ export default {
       MODE_LABELS,
       SOURCE_LABELS,
       ENGINE_LABELS,
+      METHOD_LABELS,
+      ROLE_LABELS,
       KIND_LABELS,
       MEANING_LABELS,
       DERIVE_LABELS
@@ -364,6 +453,12 @@ export default {
     },
     current() {
       return this.models.find(m => m.id === this.detail.id) || null
+    },
+    excludedFiles() {
+      return (this.current && this.current.config.exclude_files) || []
+    },
+    pickedCount() {
+      return new Set(Object.values(this.picks).flat()).size
     },
     notReady() {
       return this.build.model ? this.build.model.engines.filter(e => !e.ready) : []
@@ -418,6 +513,101 @@ export default {
     },
     openDetail(row) {
       this.detail = { visible: true, id: row.id, tab: 'info' }
+      this.picks = {}
+      this.curveVar = ''
+    },
+    convText(i) {
+      const parts = []
+      if (i.scale !== undefined && i.scale !== 1) parts.push(`× ${Number(i.scale).toPrecision(6).replace(/\.?0+$/, '')}`)
+      if (i.offset) parts.push(`${i.offset > 0 ? '+' : '−'} ${Math.abs(i.offset)}`)
+      return parts.join(' ') || '—'
+    },
+    formulaOf(name) {
+      const t = this.current && this.current.table
+      return t && t.formulas ? t.formulas[name] : null
+    },
+    onPick(output, keys) {
+      this.$set(this.picks, output, keys)
+    },
+    async saveConfig(m, cfg, message) {
+      try {
+        await updateModel(m.id, cfg)
+        this.applyStatus(await getSimulationStatus(), true)
+        this.$message.success(message)
+        return true
+      } catch (e) {
+        this.$message.error(errorMessage(e))
+        return false
+      }
+    },
+    /** 自动拟合的结果转为自定义公式（系数固定），之后可在编辑页手工修改 */
+    async toCustomFormula(name) {
+      const m = this.current
+      const f = this.formulaOf(name)
+      try {
+        await this.$confirm(`把“${name}”的自动拟合结果转为自定义公式（系数固定）？之后可以在“编辑配置”中修改公式，需要重建模型后生效。`,
+          '转为自定义公式', { type: 'info' })
+      } catch (e) {
+        return
+      }
+      const cfg = JSON.parse(JSON.stringify(m.config))
+      const o = cfg.outputs.find(x => x.name === name)
+      o.method = 'formula'
+      o.formula = {
+        expression: f.expression,
+        coefficients: Object.fromEntries(Object.entries(f.coefficients).map(([k, v]) => [k, { value: v, fit: false }]))
+      }
+      if (await this.saveConfig(m, cfg, '已转为自定义公式，请重建模型')) this.openBuild(this.current)
+    },
+    async excludePicked() {
+      const m = this.current
+      const keys = [...new Set(Object.values(this.picks).flat())]
+      const cfg = JSON.parse(JSON.stringify(m.config))
+      cfg.exclude_files = [...new Set([...(cfg.exclude_files || []), ...keys])]
+      if (await this.saveConfig(m, cfg, `已排除 ${keys.length} 个文件，请重建模型`)) {
+        this.picks = {}
+        this.openBuild(this.current)
+      }
+    },
+    async includeFile(file) {
+      const m = this.current
+      const cfg = JSON.parse(JSON.stringify(m.config))
+      cfg.exclude_files = (cfg.exclude_files || []).filter(f => f !== file)
+      await this.saveConfig(m, cfg, `已恢复 ${file}，请重建模型`)
+    },
+    async openDerived() {
+      try {
+        const { items } = await getDerived()
+        this.derived.items = items.map(i => ({
+          ...i,
+          K: +(1 / i.scale).toPrecision(8),
+          q0: +(-(i.offset || 0) / i.scale).toPrecision(8),
+          min: i.min === undefined ? '' : i.min
+        }))
+        this.derived.visible = true
+      } catch (e) {
+        this.$message.error(errorMessage(e))
+      }
+    },
+    async saveDerivedItems() {
+      this.derived.saving = true
+      try {
+        const items = this.derived.items.map(i => {
+          const K = Number(i.K)
+          const q0 = Number(i.q0 || 0)
+          if (!K) throw new Error(`${i.name} 的 K 不能为 0`)
+          return { name: i.name, source: i.source, scale: 1 / K, offset: -q0 / K, min: i.min === '' ? undefined : Number(i.min) }
+        })
+        const saved = await saveDerived(items)
+        setDerivedFields(saved.items)
+        this.derived.visible = false
+        this.applyStatus(await getSimulationStatus(), true)
+        this.$message.success('已保存；用到这些测点的模型已标记为需要重建')
+      } catch (e) {
+        this.$message.error(errorMessage(e))
+      } finally {
+        this.derived.saving = false
+      }
     },
     onDetailClosed() {
       if (this.chart) {
@@ -456,15 +646,19 @@ export default {
     fmt(v, unit) {
       return `${unit === 'MPa' ? v.toFixed(3) : v.toFixed(1)} ${unit}`
     },
+    /** 试算输入的步长与小数位按数据范围定（如 kg/s 的质量流量只有 0.03–0.12） */
     stepOf(i) {
-      return i.unit === 'MPa' ? 0.01 : i.unit === 'rpm' ? 100 : i.unit === '℃' ? 1 : 10
+      const span = i.grid.length ? Math.max(...i.grid) - Math.min(...i.grid) : 0
+      const mag = Math.max(span, ...i.grid.map(Math.abs)) || 1
+      return Number((10 ** Math.floor(Math.log10(mag / 20))).toPrecision(1))
     },
     precisionOf(i) {
-      return i.unit === 'MPa' ? 3 : 0
+      return Math.max(0, -Math.floor(Math.log10(this.stepOf(i))))
     },
     applyStatus(st, keepProfile = false) {
       this.models = st.models
       this.deletedBuiltins = st.deleted_builtins || []
+      if (st.builders) this.builders = st.builders
       this.job = st.job || { state: 'idle' }
       const p = {}
       for (const m of st.models) {
@@ -478,7 +672,7 @@ export default {
         if (!m.table || this.conditions[m.id]) continue
         const c = {}
         for (const i of m.table.inputs) {
-          c[i.name] = i.name in DEFAULT_CONDITION ? DEFAULT_CONDITION[i.name] : i.grid[Math.floor(i.grid.length / 2)]
+          c[i.name] = i.grid.length ? +((Math.min(...i.grid) + Math.max(...i.grid)) / 2).toPrecision(4) : 0
         }
         this.$set(this.conditions, m.id, c)
       }
@@ -586,7 +780,9 @@ export default {
     },
     /** 第一个输出随第一个输入变化的模型曲线（其余输入取当前值） */
     async drawCurve(m) {
-      const x = m.table.inputs[0]
+      const x = m.table.inputs.find(i => i.name === this.curveVar) ||
+        m.table.inputs.find(i => i.role === 'main') || m.table.inputs[0]
+      if (!this.curveVar) this.curveVar = x.name
       const out = m.table.outputs[0]
       const lo = Math.min(...x.grid)
       const hi = Math.max(...x.grid)
@@ -735,6 +931,38 @@ export default {
   width: 100%;
   height: 240px;
   margin-top: 12px;
+}
+.formula-head {
+  margin-bottom: 8px;
+}
+.excluded {
+  margin: 0 4px 4px 0;
+}
+.formula-card {
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+.formula-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.grow {
+  flex: 1;
+}
+.exclude-bar {
+  position: sticky;
+  bottom: 0;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+.derived-hint {
+  margin-bottom: 8px;
 }
 .video {
   max-width: 720px;

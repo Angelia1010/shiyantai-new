@@ -66,3 +66,39 @@ export const MEANING_LABELS = {
   reference: '参考量偏差（如质量流量计、燃油密度）',
   input: '模型输入测点偏差'
 }
+
+/** 预览拟合（不保存）：config = 编辑中的模型配置，path = 正常数据目录，outputs = 只看这些输出（可省略） */
+export function previewModel(config, path, outputs) {
+  return request({ url: `${BASE}/preview`, method: 'post', data: { config, path, outputs }, timeout: 120000 })
+}
+
+/** 派生测点（如涡轮转速 Hz = 回油流量 × scale + offset） */
+export function getDerived() {
+  return request({ url: `${BASE}/derived`, method: 'get' })
+}
+
+export function saveDerived(items) {
+  return request({ url: `${BASE}/derived`, method: 'put', data: { items } })
+}
+
+export const METHOD_LABELS = { autofit: '自动拟合', formula: '自定义公式' }
+export const ROLE_LABELS = { auto: '自动', main: '主变量', secondary: '次变量', environment: '环境变量', off: '不使用' }
+export const FUNCTION_HELP = {
+  exp: 'e 的 x 次方', log: '自然对数', log10: '常用对数', sqrt: '平方根', abs: '绝对值',
+  min: '最小值 min(a, b)', max: '最大值 max(a, b)', clip: '限幅 clip(x, 下限, 上限)', if: '条件 if(条件, 成立时, 不成立时)'
+}
+const FUNCTION_NAMES = new Set(['exp', 'log', 'ln', 'log10', 'sqrt', 'abs', 'min', 'max', 'clip', 'if', 'where'])
+
+/** 公式中不是变量、不是函数的名字 = 系数（与后端 formula.py 的规则一致） */
+export function coefficientNames(expression, variables) {
+  const text = String(expression || '').replace(/^[^=<>!()]*?(?<![<>=!])=(?!=)/, '')
+  const vars = new Set(variables || [])
+  const names = []
+  const re = /(?<![A-Za-z0-9_.一-鿿])([A-Za-z_一-鿿][A-Za-z0-9_一-鿿]*)/g
+  let m
+  while ((m = re.exec(text)) !== null) {
+    const n = m[1]
+    if (!vars.has(n) && !FUNCTION_NAMES.has(n) && !names.includes(n)) names.push(n)
+  }
+  return names
+}

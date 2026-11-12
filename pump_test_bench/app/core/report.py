@@ -152,6 +152,21 @@ def render_docx(report: Dict) -> bytes:
     _heading(doc, "五、处理建议")
     doc.add_paragraph(str(report.get("repair_advice", "")))
 
+    reviews = report.get("reviews") or []
+    if reviews:  # 扩展推理插件（如大模型智能体）的独立意见，不改变上面的结论
+        _heading(doc, "附：扩展分析意见（仅供参考，不改变诊断结论）")
+        for rv in reviews:
+            p = doc.add_paragraph()
+            p.add_run(f"{rv.get('label', rv.get('name', ''))}：{rv.get('title') or ''}").bold = True
+            if rv.get("status") != "done":
+                doc.add_paragraph(f"未完成：{rv.get('error', '')}")
+                continue
+            for text in (rv.get("summary"), rv.get("details")):
+                if text:
+                    doc.add_paragraph(str(text))
+            for sug in rv.get("suggestions") or []:
+                doc.add_paragraph(str(sug), style="List Bullet")
+
     algo = report.get("algorithm") or {}
     if algo:
         base = algo.get("baseline") or {}

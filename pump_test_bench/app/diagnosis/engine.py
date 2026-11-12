@@ -678,8 +678,18 @@ def diagnose_frame(df: pd.DataFrame, density: Optional[float] = None, baseline: 
         sims = load_sims()
     if sims and profile is None:
         profile = current_profile()
-    body = build_report_body(analyze(df, cfg, baseline, density, sims, profile), baseline)
+    analysis = analyze(df, cfg, baseline, density, sims, profile)
+    # 扩展插件（diagnosis/plugins.py）：分析器的发现参与结论；推理器（如大模型智能体）在结论后给出独立意见
+    from pump_test_bench.app.diagnosis import plugins
+    seg = analysis["segment"]
+    ctx = plugins.DiagnosisContext(df, df.iloc[seg.start:seg.end], cfg, analysis, baseline, density,
+                                   list(sims or []), profile or {})
+    analysis["findings"].extend(plugins.run_analyzers(ctx))
+    body = build_report_body(analysis, baseline)
     body["profile"] = profile or {}
+    reviews = plugins.run_reasoners(body, ctx)
+    if reviews:
+        body["reviews"] = reviews
     return body
 
 

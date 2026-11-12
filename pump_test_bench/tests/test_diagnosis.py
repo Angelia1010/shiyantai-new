@@ -219,7 +219,7 @@ def test_model_check_on_healthy_file():
         assert model["available"] and model["group"] is None, model["id"]
         assert all(abs(r["residual"]) < r["warn"] for r in model["rows"]), model["id"]
     systems = {r["system"] for r in body["models"][0]["rows"]}
-    assert {"油箱系统", "供油系统", "被试件", "回油系统（大流量管路）", "回油系统（小流量管路）"} <= systems
+    assert {"油箱系统", "供油系统", "被试件", "回油系统（大流量管路）"} <= systems
 
 
 def test_pump_wear_found_only_by_model():
@@ -314,3 +314,49 @@ def test_small_line_model_not_applicable_and_turbine_hz():
     body = diagnose_frame(df)
     assert body["causes"][0]["name"].startswith("回油流量1-2（大流量管路） 计量偏差")
     assert any("涡轮流量计模型（大流量管路）" in e for e in body["causes"][0]["evidence"])
+
+
+def test_diagnosis_plugins_extend_without_engine_changes():
+    """扩展插件：分析器的发现参与结论与原因；推理器（如大模型智能体）给出独立意见；插件出错不影响诊断。"""
+    from pump_test_bench.app.core.report import build_report, render_docx
+    from pump_test_bench.app.diagnosis import plugins
+    from pump_test_bench.app.diagnosis.checks import WARNING, finding
+
+    class VibrationCheck(plugins.Analyzer):
+        name, label = "test_vibration", "振动检查（测试）"
+
+        def analyze(self, ctx):
+            means = ctx.segment_means()
+            assert "电传实际转速" in means and ctx.sims  # 插件能拿到稳定段数据与仿真模型
+            return [finding("vibration", WARNING, "振动偏大", "振动传感器1-1 偏大（测试）", "振动传感器1-1", "振动传感器1-1")]
+
+    class Agent(plugins.Reasoner):
+        name, label = "test_agent", "智能体（测试）"
+
+        def review(self, report, ctx):
+            bench = next(c for c, _ in ctx.sims if c["id"] == "bench")
+            cond = {i["name"]: 1 for i in bench["inputs"]}
+            assert ctx.model_expected("bench", {**cond, "电传转速": 2000, "电机转速": 1000, "油温": 36})
+            return {"title": "综合判断", "summary": f"规则结论：{report['summary']}", "suggestions": ["复查振动"]}
+
+    class Broken(plugins.Reasoner):
+        name, label = "test_broken", "出错的插件"
+
+        def review(self, report, ctx):
+            raise RuntimeError("服务不可用")
+
+    for p in (VibrationCheck(), Agent(), Broken()):
+        (plugins.register_analyzer if isinstance(p, plugins.Analyzer) else plugins.register_reasoner)(p)
+    try:
+        body = diagnose_frame(_real())
+        assert body["result"] == "warning"
+        assert any(c["name"].startswith("振动传感器1-1") for c in body["causes"])
+        reviews = {r["name"]: r for r in body["reviews"]}
+        assert reviews["test_agent"]["status"] == "done" and reviews["test_agent"]["summary"].startswith("规则结论：预警")
+        assert reviews["test_broken"]["status"] == "error" and "服务不可用" in reviews["test_broken"]["error"]
+        report = build_report({"task_id": "t", "file_name": "a.txt", "mode": "manual"}, body, operator="tester")
+        assert render_docx(report)
+    finally:
+        for n in ("test_vibration", "test_agent", "test_broken"):
+            plugins.unregister(n)
+    assert "reviews" not in diagnose_frame(_real())

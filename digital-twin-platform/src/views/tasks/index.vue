@@ -152,6 +152,8 @@
 
         <div class="section-title">处理建议</div>
         <el-card shadow="never" class="advice">{{ reportDialog.report.repair_advice }}</el-card>
+
+        <review-list :reviews="reportDialog.report.reviews" />
         <div v-if="reportDialog.report.algorithm" class="algo-note">
           诊断算法 {{ reportDialog.report.algorithm.version }}，
           {{ reportDialog.report.algorithm.baseline ? `健康基准：${reportDialog.report.algorithm.baseline.source}` : '未使用健康基准' }}
@@ -171,6 +173,7 @@ import { deleteTasks, downloadReport, getReport, listTasks } from '@/api/tasks'
 import { RESULT_TAG, SEVERITY_LABELS, resultLabel } from '@/utils/report'
 import CauseList from '@/components/CauseList'
 import ModelCompare from '@/components/ModelCompare'
+import ReviewList from '@/components/ReviewList'
 import HistoryTrend from './HistoryTrend'
 
 const STATUS_LABELS = { Created: '待诊断', Completed: '已完成', Failed: '失败' }
@@ -181,7 +184,7 @@ const DAY_MS = 24 * 3600 * 1000
 
 export default {
   name: 'Tasks',
-  components: { CauseList, HistoryTrend, ModelCompare },
+  components: { CauseList, HistoryTrend, ModelCompare, ReviewList },
   data() {
     return {
       STATUS_LABELS,
@@ -305,6 +308,7 @@ export default {
 </script>
 
 <style lang="scss" scoped>
+
 .box-card {
   margin-bottom: 20px;
 }

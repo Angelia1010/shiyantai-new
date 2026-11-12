@@ -14,6 +14,7 @@
     GET    /diagnosis/settings          诊断设置（当前燃油 20 ℃ 密度等）
     PUT    /diagnosis/settings          修改诊断设置 {fuel_density_20?, fuel_note?}
     GET    /diagnosis/history           历次诊断的关键指标（趋势图用）?days=&limit=
+    GET    /diagnosis/plugins           已加载的诊断扩展插件（分析器、推理器）
     GET    /simulation/status           仿真模型列表：各模型配置、基准表与标定结果、诊断方案、重建任务状态
     POST   /simulation/models/<id>/table    后台重建该模型的基准表 {path: 正常数据目录, engine?: surrogate|amesim}
     DELETE /simulation/models/<id>/table    删除该模型重建的基准表，恢复默认表
@@ -22,6 +23,9 @@
     PUT    /simulation/models/<id>      修改仿真模型配置
     DELETE /simulation/models/<id>      删除模型（内置模型删除后可恢复）；?restore=1 时只放弃对内置模型配置的修改
     POST   /simulation/models/<id>/restore  恢复已删除的内置模型
+    POST   /simulation/preview          按提交的配置预览拟合（不保存）{config, path, outputs?}
+    GET    /simulation/derived          派生测点（如涡轮转速 Hz）的换算
+    PUT    /simulation/derived          修改派生测点换算 {items: [{name, source?, scale, offset, min?}]}
     GET    /simulation/columns          可选的测点列
     PUT    /simulation/profile          保存诊断方案 {models: {模型 id: {mode, sigma_warn?, sigma_alarm?}}}
     GET    /tasks/<id>/report.docx      报告（Word）
@@ -173,6 +177,12 @@ def put_diagnosis_settings():
 _HISTORY_SOURCES = {"live": ("auto", "realtime"), "file": ("file",), "all": None}
 
 
+@app.get("/diagnosis/plugins")
+def diagnosis_plugins():
+    from pump_test_bench.app.diagnosis.plugins import list_plugins
+    return jsonify({"plugins": list_plugins()})
+
+
 @app.get("/diagnosis/history")
 def diagnosis_history():
     """历次诊断的关键指标，按时间从早到晚。source=live（试验台实时/自动诊断，默认）| file | all。"""
@@ -209,7 +219,7 @@ def simulation_build(model_id: str):
     data = json_body()
     engine = data.get("engine") or sim_service.load_model_cfg(model_id)["engine"]["type"]
     if engine not in sim_service.ENGINE_LABELS:
-        raise ValueError("engine 只能是 surrogate 或 amesim")
+        raise ValueError(f"engine 只能是 {'、'.join(sim_service.ENGINE_LABELS)}")
     directory, files = sim_service.resolve_source(data.get("path"))
     try:
         job = sim_service.start_build(model_id, files, engine, str(directory), g.user)
@@ -255,6 +265,27 @@ def simulation_restore(model_id: str):
     result = sim_service.restore_builtin(model_id)
     logger.info("用户 %s 恢复内置仿真模型 %s", g.user, model_id)
     return jsonify({**result, **sim_service.status()})
+
+
+@app.post("/simulation/preview")
+def simulation_preview():
+    body = json_body()
+    path = body.get("path")
+    if not path:
+        raise ValueError("请选择正常数据目录")
+    return jsonify(sim_service.preview(body.get("config") or {}, path, body.get("outputs")))
+
+
+@app.get("/simulation/derived")
+def simulation_derived():
+    return jsonify({"items": sim_service.derived_settings()})
+
+
+@app.put("/simulation/derived")
+def simulation_derived_save():
+    items = sim_service.save_derived(json_body().get("items") or [])
+    logger.info("用户 %s 修改派生测点换算", g.user)
+    return jsonify({"items": items})
 
 
 @app.get("/simulation/columns")

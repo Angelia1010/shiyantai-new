@@ -53,6 +53,7 @@
               <h4>原因分析</h4>
               <cause-list :causes="diagnosisResult.causes || []" :history="diagnosisResult.history" />
             </div>
+            <review-list :reviews="diagnosisResult.reviews" />
 
             <div v-if="shownFindings.length" class="diagnosis-section">
               <el-collapse>
@@ -137,12 +138,13 @@ import * as echarts from 'echarts'
 import { RESULT_TAG, SEVERITY_LABELS } from '@/utils/report'
 import CauseList from '@/components/CauseList'
 import ModelCompare from '@/components/ModelCompare'
+import ReviewList from '@/components/ReviewList'
 
 const SEVERITY_TAG = { info: 'info', notice: 'info', warning: 'warning', abnormal: 'danger' }
 
 export default {
   name: 'ResultDisplayStep',
-  components: { CauseList, ModelCompare },
+  components: { CauseList, ModelCompare, ReviewList },
   props: {
     // utils/report.js summarizeReport() 的结果
     diagnosisResult: { type: Object, default: null },

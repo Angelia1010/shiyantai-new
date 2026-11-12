@@ -3,7 +3,9 @@
 输入有三种取法：
 - column（+ fallback_columns）：单个测点的均值，主测点无效时用备用测点；
 - columns + aggregate：多个测点的中位数（如多只流量计的共识值）；
-- derived = density：由油温按燃油密度模型计算（需要调用方提供 density_fn）。
+- derived = density / viscosity：由油温按燃油密度模型（需要调用方提供 density_fn）/ 黏度模型计算；
+- constant：常数（公式里要用、但不来自测点的量）。
+取得的值再按 scale、offset 换算单位：值 × scale + offset（如 kg/h → kg/s：scale = 1/3600）。
 测点也可以是派生测点（config/signals.json 的 derived），如由涡轮流量计流量换算的转速 Hz。
 """
 from typing import Callable, Dict, List, Optional, Tuple
@@ -41,23 +43,28 @@ def condition_of(seg: pd.DataFrame, cfg: Dict, density_fn: Optional[DensityFn] =
     notes: List[str] = []
     for spec in cfg["inputs"]:
         lo, hi = spec.get("valid", [float("-inf"), float("inf")])
-        if spec.get("derived") == "density":
+        derived = spec.get("derived")
+        if derived in ("density", "viscosity"):
             cols = [spec["temperature_column"]] + spec.get("fallback_columns", [])
             temp, i = _first_valid(seg, cols, -40, 120)
-            rho = density_fn(temp) if (temp is not None and density_fn) else None
-            if rho is None:
-                notes.append(f"无法计算{spec['name']}（缺少有效油温或密度模型）")
+            if derived == "density":
+                value = density_fn(temp) if (temp is not None and density_fn) else None
+            else:
+                from pump_test_bench.app.signals import fuel_viscosity
+                value = fuel_viscosity(temp) if temp is not None else None
+            if value is None:
+                notes.append(f"无法计算{spec['name']}（缺少有效油温" + ("或密度模型）" if derived == "density" else "）"))
                 continue
             if i > 0:
                 notes.append(f"{cols[0]} 读数无效，{spec['name']}改用 {cols[i]} 计算")
-            cond[spec["name"]] = rho
+        elif spec.get("constant") is not None and not spec.get("column") and not spec.get("columns"):
+            value = float(spec["constant"])
         elif spec.get("columns"):
             vals = [v for v in (_mean(seg, c) for c in spec["columns"]) if v is not None]
             value = float(np.median(vals)) if vals else None
             if value is None or not lo <= value <= hi:
                 notes.append(f"缺少有效的{spec['name']}")
                 continue
-            cond[spec["name"]] = value
         else:
             cols = [spec["column"]] + spec.get("fallback_columns", [])
             value, i = _first_valid(seg, cols, lo, hi)
@@ -66,7 +73,7 @@ def condition_of(seg: pd.DataFrame, cfg: Dict, density_fn: Optional[DensityFn] =
                 continue
             if i > 0:
                 notes.append(f"{spec['column']} 读数无效，{spec['name']}改用 {cols[i]}")
-            cond[spec["name"]] = value
+        cond[spec["name"]] = value * float(spec.get("scale", 1.0)) + float(spec.get("offset", 0.0))
     return cond, notes
 
 

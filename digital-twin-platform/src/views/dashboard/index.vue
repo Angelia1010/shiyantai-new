@@ -272,7 +272,7 @@ import CauseList from '@/components/CauseList'
 import ModelCompare from '@/components/ModelCompare'
 import { errorMessage } from '@/utils/request'
 import { MessageType, openChannel } from '@/utils/broadcastChannel'
-import { fieldUnit, formatValue } from '@/utils/features'
+import { fieldUnit, formatValue, loadDerivedFields } from '@/utils/features'
 import { SEVERITY_LABELS, resultLabel, summarizeReport } from '@/utils/report'
 import TestBenchView from './TestBenchView.vue'
 import TrendChart from './TrendChart.vue'
@@ -381,6 +381,7 @@ export default {
     }
   },
   created() {
+    loadDerivedFields()
     this.lastSeq = 0
     this.currentFile = null
     this.channel = openChannel(this.handleMessage)

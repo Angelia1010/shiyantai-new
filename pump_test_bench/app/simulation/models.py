@@ -1,15 +1,16 @@
-"""仿真模型。统一接口：run(工况) → {输出名: 预期值}。
+"""仿真引擎（在工况网格上逐点运行、得到 grid 产物的模型）。统一接口：run(工况) → {输出名: 预期值}。
 
-- SurrogateModel（数据代理模型）：用正常数据拟合的二次响应面。AMESim 模型接入之前，用它把整套流程跑通；
-  它只“记住”了健康数据的规律，能发现偏离健康规律的情况，但不能模拟没见过的部件故障。
 - AmesimModel：通过 AMESim 服务（AMESim_server）设置参数、运行仿真、读取变量，取末段稳态值。
+数据代理模型不在这里：它由正常数据拟合出公式（见 surrogate.py 与 builders/），诊断时直接计算。
+
+接入新的仿真软件（如 Simulink、FMU、自研求解器）：继承 SimulationModel 实现 run()（及需要时 open/close），
+然后 register_engine("类型", 类, "显示名")；模型配置 engine.type 写该类型即可，建表、标定、诊断无需改动。
 """
 import logging
 from typing import Callable, Dict, Iterable, List, Optional
 
 import numpy as np
 
-from pump_test_bench.app.simulation.config import input_names, output_names
 
 logger = logging.getLogger(__name__)
 
@@ -23,73 +24,6 @@ class SimulationModel:
 
     def describe(self) -> Dict:
         return {"type": self.kind, "label": self.label}
-
-
-# --------------------------------------------------------------------------- 数据代理模型
-class SurrogateModel(SimulationModel):
-    """y = Σ c·[1, z_i, z_i², z_i·z_j]，z 为按网格归一化的输入。"""
-    kind = "surrogate"
-    label = "数据代理模型（由正常数据拟合）"
-
-    def __init__(self, inputs: List[str], centers: List[float], scales: List[float], coef: Dict[str, List[float]],
-                 fit_info: Optional[Dict] = None, active: Optional[List[str]] = None):
-        self.inputs, self.centers, self.scales, self.coef = inputs, centers, scales, coef
-        self.fit_info = fit_info or {}
-        # 正常数据里几乎不变的输入（如恒定的压力）无法拟合出影响，不参与拟合，避免外推出错
-        self.active = active if active is not None else list(inputs)
-
-    @staticmethod
-    def _features(z: np.ndarray) -> np.ndarray:
-        n = z.shape[1]
-        cols = [np.ones(len(z))] + [z[:, i] for i in range(n)] + [z[:, i] ** 2 for i in range(n)]
-        cols += [z[:, i] * z[:, j] for i in range(n) for j in range(i + 1, n)]
-        return np.column_stack(cols)
-
-    def _z(self, rows: Iterable[Dict[str, float]]) -> np.ndarray:
-        idx = [self.inputs.index(n) for n in self.active]
-        return np.array([[(r[self.inputs[i]] - self.centers[i]) / self.scales[i] for i in idx] for r in rows],
-                        dtype=float).reshape(-1, len(idx))
-
-    @classmethod
-    def fit(cls, samples: List[Dict], cfg: Dict) -> "SurrogateModel":
-        """samples：[{"condition": {输入: 值}, "outputs": {输出: 值}}]，至少要比待定系数多。"""
-        names = input_names(cfg)
-        centers, scales = [], []
-        for spec in cfg["inputs"]:
-            grid = spec["grid"]
-            centers.append((max(grid) + min(grid)) / 2)
-            scales.append(max((max(grid) - min(grid)) / 2, 1e-9))
-        model = cls(names, centers, scales, {})
-        usable = [s for s in samples if all(n in s["condition"] for n in names)]
-        if usable:
-            spread = {n: np.ptp([s["condition"][n] for s in usable]) / sc for n, sc in zip(names, scales)}
-            model.active = [n for n in names if spread[n] > 0.05]
-        dropped = [n for n in names if n not in model.active]
-        X = cls._features(model._z(s["condition"] for s in usable))
-        if len(usable) < X.shape[1] + 3:
-            raise ValueError(f"可用于拟合的正常数据只有 {len(usable)} 个工况，至少需要 {X.shape[1] + 3} 个")
-        for out in output_names(cfg):
-            rows = [(i, s["outputs"][out]) for i, s in enumerate(usable) if s["outputs"].get(out) is not None]
-            if len(rows) < X.shape[1] + 3:
-                continue
-            idx = [i for i, _ in rows]
-            y = np.array([v for _, v in rows])
-            c, *_ = np.linalg.lstsq(X[idx], y, rcond=None)
-            model.coef[out] = [float(v) for v in c]
-        model.fit_info = {"samples": len(usable), "dropped_inputs": dropped}
-        return model
-
-    def run(self, condition: Dict[str, float]) -> Dict[str, float]:
-        x = self._features(self._z([condition]))[0]
-        return {out: float(np.dot(c, x)) for out, c in self.coef.items()}
-
-    def to_dict(self) -> Dict:
-        return {"type": self.kind, "inputs": self.inputs, "centers": self.centers, "scales": self.scales,
-                "coef": self.coef, "fit_info": self.fit_info, "active": self.active}
-
-    @classmethod
-    def from_dict(cls, d: Dict) -> "SurrogateModel":
-        return cls(d["inputs"], d["centers"], d["scales"], d["coef"], d.get("fit_info"), d.get("active"))
 
 
 # --------------------------------------------------------------------------- AMESim 模型
@@ -169,15 +103,20 @@ class AmesimModel(SimulationModel):
         return out
 
 
-def make_model(cfg: Dict, kind: Optional[str] = None, surrogate: Optional[Dict] = None,
-               samples_fn: Optional[Callable[[], List[Dict]]] = None) -> SimulationModel:
-    kind = kind or cfg.get("engine", {}).get("type", "surrogate")
-    if kind == "amesim":
-        return AmesimModel(cfg)
-    if kind == "surrogate":
-        if surrogate:
-            return SurrogateModel.from_dict(surrogate)
-        if samples_fn is None:
-            raise ValueError("数据代理模型需要正常数据来拟合")
-        return SurrogateModel.fit(samples_fn(), cfg)
-    raise ValueError(f"未知的模型类型：{kind}（surrogate 或 amesim）")
+ENGINES: Dict[str, Callable[[Dict], SimulationModel]] = {}
+ENGINE_LABELS: Dict[str, str] = {}
+
+
+def register_engine(kind: str, factory: Callable[[Dict], SimulationModel], label: str) -> None:
+    ENGINES[kind] = factory
+    ENGINE_LABELS[kind] = label
+
+
+register_engine("amesim", AmesimModel, "AMESim 模型")
+
+
+def make_model(cfg: Dict, kind: Optional[str] = None) -> SimulationModel:
+    kind = kind or cfg.get("engine", {}).get("type")
+    if kind not in ENGINES:
+        raise ValueError(f"未知的仿真引擎：{kind}（可用：{'、'.join(ENGINES)}）")
+    return ENGINES[kind](cfg)

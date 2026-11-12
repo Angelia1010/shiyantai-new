@@ -1,5 +1,5 @@
 <template>
-  <el-dialog :title="isNew ? '新建仿真模型' : `编辑模型：${form.name}`" :visible="visible" width="980px" top="4vh" append-to-body
+  <el-dialog :title="isNew ? '新建仿真模型' : `编辑模型：${form.name}`" :visible="visible" width="1180px" top="3vh" append-to-body
              :close-on-click-modal="false" @close="$emit('close')">
     <el-tabs v-model="tab" class="editor">
       <!-- 基本信息 -->
@@ -67,93 +67,167 @@
         </el-form>
       </el-tab-pane>
 
-      <!-- 输入 -->
-      <el-tab-pane label="输入（工况）" name="inputs">
+      <!-- 变量 -->
+      <el-tab-pane label="变量" name="inputs">
+        <div class="tab-hint muted">
+          变量是模型的输入，{{ isSurrogate ? '公式里直接用变量名' : '建表时按网格逐点运行模型' }}。单位换算：取得的值 × 系数 + 偏移，换成公式需要的单位（如 kg/h → kg/s：× 0.000277778）。
+        </div>
         <el-table :data="form.inputs" size="mini" border>
           <el-table-column label="名称" width="110">
             <template slot-scope="{ row }"><el-input v-model.trim="row.name" size="mini" /></template>
           </el-table-column>
-          <el-table-column label="取法" width="150">
+          <el-table-column label="来源" width="140">
             <template slot-scope="{ row }">
               <el-select v-model="row.source" size="mini">
                 <el-option label="单个测点" value="single" />
                 <el-option label="多个测点取中位数" value="multi" />
                 <el-option label="由油温算燃油密度" value="density" />
+                <el-option label="由油温算运动黏度" value="viscosity" />
+                <el-option label="常数" value="constant" />
               </el-select>
             </template>
           </el-table-column>
-          <el-table-column label="测点" min-width="220">
+          <el-table-column label="测点 / 数值" min-width="190">
             <template slot-scope="{ row }">
               <el-select v-if="row.source === 'multi'" v-model="row.columns" multiple filterable allow-create size="mini" style="width: 100%">
                 <el-option v-for="c in columns" :key="c" :label="c" :value="c" />
               </el-select>
-              <el-select v-else-if="row.source === 'density'" v-model="row.temperature_column" filterable allow-create size="mini"
-                         placeholder="油温测点" style="width: 100%">
+              <el-select v-else-if="row.source === 'density' || row.source === 'viscosity'" v-model="row.temperature_column" filterable
+                         allow-create size="mini" placeholder="油温测点" style="width: 100%">
                 <el-option v-for="c in columns" :key="c" :label="c" :value="c" />
               </el-select>
+              <el-input v-else-if="row.source === 'constant'" v-model="row.constant" size="mini" placeholder="数值" />
               <el-select v-else v-model="row.column" filterable allow-create size="mini" style="width: 100%">
                 <el-option v-for="c in columns" :key="c" :label="c" :value="c" />
               </el-select>
             </template>
           </el-table-column>
-          <el-table-column label="备用测点" width="140">
+          <el-table-column label="备用测点" width="120">
             <template slot-scope="{ row }">
-              <el-select v-if="row.source !== 'multi'" v-model="row.fallback" filterable allow-create clearable size="mini"
-                         placeholder="主测点无效时用" style="width: 100%">
+              <el-select v-if="row.source !== 'multi' && row.source !== 'constant'" v-model="row.fallback" filterable allow-create clearable
+                         size="mini" placeholder="主测点无效时用" style="width: 100%">
                 <el-option v-for="c in columns" :key="c" :label="c" :value="c" />
               </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column label="单位换算（× 系数 + 偏移）" width="190">
+            <template slot-scope="{ row }">
+              <div v-if="row.source !== 'constant'" class="conv">
+                ×<el-input v-model="row.scale" size="mini" placeholder="1" />
+                +<el-input v-model="row.offset" size="mini" placeholder="0" />
+              </div>
             </template>
           </el-table-column>
           <el-table-column label="单位" width="70">
             <template slot-scope="{ row }"><el-input v-model.trim="row.unit" size="mini" /></template>
           </el-table-column>
-          <el-table-column width="170">
+          <el-table-column v-if="isSurrogate && usesRoles" width="110">
+            <template slot="header">
+              角色
+              <el-tooltip placement="top">
+                <div slot="content">
+                  自动拟合按角色确定公式结构：主变量最高三次、次变量二次、环境变量（油温等）一次，加交叉项。<br>
+                  自动：按数据建议（与输出最相关的为主变量，温度类为环境变量，不变的不使用）。
+                </div>
+                <i class="el-icon-question tip" />
+              </el-tooltip>
+            </template>
+            <template slot-scope="{ row }">
+              <el-select v-model="row.role" size="mini">
+                <el-option v-for="(label, value) in ROLE_LABELS" :key="value" :label="label" :value="value" />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column v-if="!isSurrogate" width="150">
             <template slot="header">
               网格
-              <el-tooltip content="建基准表时计算的工况点，逗号分隔，应覆盖正常数据的工况范围" placement="top"><i class="el-icon-question tip" /></el-tooltip>
+              <el-tooltip content="建表时运行模型的工况点，逗号分隔，应覆盖正常数据的工况范围" placement="top"><i class="el-icon-question tip" /></el-tooltip>
             </template>
             <template slot-scope="{ row }"><el-input v-model="row.grid" size="mini" placeholder="1000, 2000, 3000" /></template>
           </el-table-column>
-          <el-table-column width="110">
+          <el-table-column width="100">
             <template slot="header">
               有效范围
               <el-tooltip content="超出时认为该测点读数无效（如断路），改用备用测点；可不填" placement="top"><i class="el-icon-question tip" /></el-tooltip>
             </template>
             <template slot-scope="{ row }"><el-input v-model="row.valid" size="mini" placeholder="下限,上限" /></template>
           </el-table-column>
-          <el-table-column width="50">
+          <el-table-column width="44">
             <template slot-scope="{ $index }">
               <el-button type="text" icon="el-icon-delete" :disabled="form.inputs.length <= 1" @click="form.inputs.splice($index, 1)" />
             </template>
           </el-table-column>
         </el-table>
-        <el-button size="mini" icon="el-icon-plus" class="add" @click="form.inputs.push(blankInput())">添加输入</el-button>
+        <el-button size="mini" icon="el-icon-plus" class="add" @click="form.inputs.push(blankInput())">添加变量</el-button>
       </el-tab-pane>
 
-      <!-- 输出 -->
-      <el-tab-pane label="输出（测点）" name="outputs">
-        <el-table :data="form.outputs" size="mini" border>
-          <el-table-column label="名称" width="110">
+      <!-- 输出与公式 -->
+      <el-tab-pane label="输出与公式" name="outputs">
+        <div v-if="isSurrogate" class="preview-bar">
+          <span class="muted">验证用的正常数据目录：</span>
+          <el-autocomplete v-model="previewPath" :fetch-suggestions="suggestDirs" size="mini" placeholder="设备正常时采集的数据目录（完整路径）"
+                           style="width: 420px" />
+          <el-button size="mini" type="primary" plain :loading="previewing === '*'" :disabled="!previewPath" @click="runPreview(null)">全部验证</el-button>
+          <span class="muted small">展开每个输出可编辑公式、单独验证；验证不保存任何东西</span>
+        </div>
+        <el-table ref="outputs" :data="form.outputs" size="mini" border row-key="_key" :expand-row-keys="expanded"
+                  @expand-change="onExpand">
+          <el-table-column v-if="isSurrogate" type="expand" width="30">
+            <template slot-scope="{ row }">
+              <div class="method-panel">
+                <formula-editor v-if="row.method === 'formula'" :formula="row.formula" :variables="variableList"
+                                :fitted="previews[row.name] && previews[row.name].coefficients" />
+                <el-form v-else-if="builderOf(row.method)" inline size="mini" class="options">
+                  <el-form-item v-for="opt in builderOf(row.method).options" :key="opt.key" :label="opt.label">
+                    <el-select v-if="opt.type === 'select'" v-model="row.options[row.method][opt.key]" style="width: 110px">
+                      <el-option v-for="c in opt.choices" :key="String(c.value)" :label="c.label" :value="c.value" />
+                    </el-select>
+                    <el-input-number v-else-if="opt.type === 'number'" v-model="row.options[row.method][opt.key]" :min="opt.min" :max="opt.max"
+                                     :step="opt.key === 'ridge' ? 0.0001 : 1" :precision="opt.key === 'ridge' ? 4 : 0"
+                                     controls-position="right" style="width: 110px" />
+                    <el-input v-else v-model="row.options[row.method][opt.key]" style="width: 220px" />
+                    <el-tooltip v-if="opt.help" :content="opt.help" placement="top"><i class="el-icon-question tip" /></el-tooltip>
+                  </el-form-item>
+                  <div class="muted small">{{ builderOf(row.method).description }}</div>
+                </el-form>
+                <div class="panel-actions">
+                  <el-button size="mini" type="primary" :loading="previewing === row.name" :disabled="!previewPath || !row.name"
+                             @click="runPreview(row)">{{ row.method === 'formula' ? '验证公式' : '试拟合' }}</el-button>
+                  <span v-if="!previewPath" class="muted small">先在上方选择正常数据目录</span>
+                </div>
+                <fit-result v-if="previews[row.name]" :result="previews[row.name]" :adoptable="row.method === 'formula'"
+                            @adopt="adopt(row, $event)" />
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="名称" width="120">
             <template slot-scope="{ row }"><el-input v-model.trim="row.name" size="mini" /></template>
           </el-table-column>
-          <el-table-column label="类型" width="85">
+          <el-table-column v-if="isSurrogate" label="计算方式" width="110">
+            <template slot-scope="{ row }">
+              <el-select v-model="row.method" size="mini" @change="onMethod(row)">
+                <el-option v-for="b in builders" :key="b.kind" :label="b.label" :value="b.kind" :disabled="!b.available" />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column label="类型" width="76">
             <template slot-scope="{ row }">
               <el-select v-model="row.kind" size="mini">
                 <el-option v-for="(label, value) in KIND_LABELS" :key="value" :label="label" :value="value" />
               </el-select>
             </template>
           </el-table-column>
-          <el-table-column label="单位" width="70">
+          <el-table-column label="单位" width="64">
             <template slot-scope="{ row }"><el-input v-model.trim="row.unit" size="mini" /></template>
           </el-table-column>
-          <el-table-column label="所属系统" width="130">
+          <el-table-column label="所属系统" width="120">
             <template slot-scope="{ row }">
               <el-select v-model="row.system" filterable allow-create clearable size="mini">
                 <el-option v-for="name in SYSTEMS" :key="name" :label="name" :value="name" />
               </el-select>
             </template>
           </el-table-column>
-          <el-table-column width="80">
+          <el-table-column width="70">
             <template slot="header">
               残差
               <el-tooltip content="相对：偏差 ÷ 预期值，适合流量、转速等；绝对：直接相减，适合温度和接近 0 的量（如油箱压力）" placement="top"><i class="el-icon-question tip" /></el-tooltip>
@@ -165,7 +239,7 @@
               </el-select>
             </template>
           </el-table-column>
-          <el-table-column min-width="200">
+          <el-table-column min-width="180">
             <template slot="header">
               对应测点
               <el-tooltip content="同一处的多只表可以一起选，各自与同一个预期值比较" placement="top"><i class="el-icon-question tip" /></el-tooltip>
@@ -176,7 +250,7 @@
               </el-select>
             </template>
           </el-table-column>
-          <el-table-column width="110">
+          <el-table-column width="96">
             <template slot="header">
               单测点偏离
               <el-tooltip content="参与结论：该测点偏离时判预警/异常；补充依据：只作为其他原因的依据（如已有互校的流量计）" placement="top"><i class="el-icon-question tip" /></el-tooltip>
@@ -188,27 +262,27 @@
               </el-select>
             </template>
           </el-table-column>
-          <el-table-column label="三维部件" width="130">
+          <el-table-column label="三维部件" width="120">
             <template slot-scope="{ row }">
               <el-select v-model="row.component" clearable filterable size="mini">
                 <el-option v-for="(c, key) in components" :key="key" :label="c.label" :value="key" />
               </el-select>
             </template>
           </el-table-column>
-          <el-table-column width="70">
+          <el-table-column width="56">
             <template slot="header">
               随流量
               <el-tooltip content="与流量相关的压力：判断“实际流量变化”时用来确认" placement="top"><i class="el-icon-question tip" /></el-tooltip>
             </template>
             <template slot-scope="{ row }"><el-checkbox v-model="row.flow_dependent" :disabled="row.kind !== 'pressure'" /></template>
           </el-table-column>
-          <el-table-column width="50">
+          <el-table-column width="44">
             <template slot-scope="{ $index }">
               <el-button type="text" icon="el-icon-delete" :disabled="form.outputs.length <= 1" @click="form.outputs.splice($index, 1)" />
             </template>
           </el-table-column>
         </el-table>
-        <el-button size="mini" icon="el-icon-plus" class="add" @click="form.outputs.push(blankOutput())">添加输出</el-button>
+        <el-button size="mini" icon="el-icon-plus" class="add" @click="addOutput">添加输出</el-button>
       </el-tab-pane>
 
       <!-- 判定规则 -->
@@ -347,8 +421,27 @@
 
 <script>
 import { COMPONENTS } from '@/views/dashboard/scene/components'
-import { KIND_LABELS, MEANING_LABELS, createModel, getColumns, updateModel } from '@/api/simulation'
+import { getDataDirs } from '@/api/files'
+import {
+  KIND_LABELS, MEANING_LABELS, ROLE_LABELS, createModel, getColumns, previewModel, updateModel
+} from '@/api/simulation'
 import { errorMessage } from '@/utils/request'
+import FitResult from './FitResult'
+import FormulaEditor from './FormulaEditor'
+
+// 后端未返回构建器列表时的默认（与 pump_test_bench/app/simulation/builders 一致）
+const DEFAULT_BUILDERS = [
+  {
+    kind: 'autofit', label: '自动拟合', available: true, description: '按变量角色确定公式结构，用正常数据拟合',
+    options: [
+      { key: 'max_degree', label: '主变量最高次数', type: 'number', default: 3, min: 1, max: 4 },
+      { key: 'interactions', label: '交叉项', type: 'select', default: true, choices: [{ value: true, label: '使用' }, { value: false, label: '不使用' }] },
+      { key: 'ridge', label: '正则强度', type: 'number', default: 0.0001, min: 0, max: 1 }
+    ]
+  },
+  { kind: 'formula', label: '自定义公式', available: true, options: [] }
+]
+let keySeq = 0
 
 // 标准台的系统划分（与 pump_test_bench/config/signals.json 一致），可在“所属系统”中另填
 const SYSTEMS = ['油箱系统', '离心泵驱动电机', '供油系统', '传动系统', '被试件', '回油系统（大流量管路）', '回油系统（小流量管路）']
@@ -362,8 +455,35 @@ function toText(list) {
   return (list || []).join(', ')
 }
 
+function inputSource(i) {
+  if (i.derived === 'density' || i.derived === 'viscosity') return i.derived
+  if (i.constant !== undefined && i.constant !== null && !i.column && !(i.columns && i.columns.length)) return 'constant'
+  return i.columns && i.columns.length ? 'multi' : 'single'
+}
+
+/** 各构建器的选项（formula 单独处理）：已保存的值优先，其余用默认值 */
+function builderOptions(o, builders) {
+  const out = {}
+  for (const b of builders) {
+    if (b.kind === 'formula') continue
+    const saved = o[b.kind] || {}
+    out[b.kind] = Object.fromEntries((b.options || []).map(opt => [opt.key, saved[opt.key] !== undefined ? saved[opt.key] : opt.default]))
+  }
+  return out
+}
+
+function formulaForm(o) {
+  const f = o.formula || {}
+  const coefs = {}
+  for (const [n, c] of Object.entries(f.coefficients || {})) {
+    const item = c && typeof c === 'object' ? c : { value: c }
+    coefs[n] = { value: item.value === undefined || item.value === null ? '' : String(item.value), fit: !!item.fit }
+  }
+  return { expression: f.expression || '', coefficients: coefs }
+}
+
 /** 模型配置 → 表单 */
-function toForm(cfg) {
+function toForm(cfg, builders = DEFAULT_BUILDERS) {
   const rule = (cfg.rules || {}).group_shift
   const th = cfg.thresholds || {}
   const floors = {}
@@ -393,7 +513,11 @@ function toForm(cfg) {
     active_if: (cfg.active_if || []).map(c => ({ column: c.column || '', min: c.min === undefined ? '' : c.min, max: c.max === undefined ? '' : c.max, note: c.note || '' })),
     inputs: (cfg.inputs || []).map(i => ({
       name: i.name,
-      source: i.derived === 'density' ? 'density' : (i.columns && i.columns.length ? 'multi' : 'single'),
+      source: inputSource(i),
+      constant: i.constant === undefined || i.constant === null ? '' : String(i.constant),
+      scale: i.scale === undefined ? '' : String(i.scale),
+      offset: i.offset === undefined ? '' : String(i.offset),
+      role: i.role || 'auto',
       column: i.column || '',
       columns: [...(i.columns || [])],
       temperature_column: i.temperature_column || '',
@@ -412,7 +536,11 @@ function toForm(cfg) {
       single: o.single || 'decisive',
       component: o.component || '',
       flow_dependent: !!o.flow_dependent,
-      component_by_column: o.component_by_column
+      component_by_column: o.component_by_column,
+      method: o.method || 'autofit',
+      formula: formulaForm(o),
+      options: builderOptions(o, builders),
+      _key: `o${++keySeq}`
     })),
     groupEnabled: !!rule,
     group: {
@@ -440,10 +568,13 @@ function toForm(cfg) {
 
 export default {
   name: 'ModelEditor',
+  components: { FitResult, FormulaEditor },
   props: {
     visible: { type: Boolean, default: false },
     // 编辑时为模型配置（status.models[i].config），新建时为 null
-    model: { type: Object, default: null }
+    model: { type: Object, default: null },
+    // 数据代理模型的构建器（status.builders）
+    builders: { type: Array, default: () => DEFAULT_BUILDERS }
   },
   data() {
     return {
@@ -453,6 +584,11 @@ export default {
       saving: false,
       components: COMPONENTS,
       SYSTEMS,
+      ROLE_LABELS,
+      previewPath: '',
+      previewing: '',
+      previews: {},
+      expanded: [],
       KIND_LABELS,
       MEANING_LABELS
     }
@@ -460,6 +596,15 @@ export default {
   computed: {
     isNew() {
       return !this.model
+    },
+    isSurrogate() {
+      return this.form.engine === 'surrogate'
+    },
+    usesRoles() {
+      return this.form.outputs.some(o => o.method === 'autofit')
+    },
+    variableList() {
+      return this.form.inputs.filter(i => i.name).map(i => ({ name: i.name, unit: i.unit }))
     },
     usedKinds() {
       return [...new Set(this.form.outputs.map(o => o.kind))]
@@ -474,10 +619,12 @@ export default {
       handler(v) {
         if (!v) return
         this.tab = 'basic'
+        this.previews = {}
+        this.expanded = []
         this.form = toForm(this.model || {
           inputs: [this.blankInputCfg()],
           outputs: [{ name: '', kind: 'flow', unit: 'L/h', columns: [] }]
-        })
+        }, this.builders)
         if (!this.columns.length) getColumns().then(r => { this.columns = r.columns }).catch(() => {})
       },
       immediate: true
@@ -488,10 +635,71 @@ export default {
       return { name: '', column: '', unit: '', grid: [] }
     },
     blankInput() {
-      return { name: '', source: 'single', column: '', columns: [], temperature_column: '', fallback: '', unit: '', grid: '', valid: '' }
+      return {
+        name: '', source: 'single', column: '', columns: [], temperature_column: '', fallback: '', unit: '', grid: '', valid: '',
+        constant: '', scale: '', offset: '', role: 'auto'
+      }
     },
     blankOutput() {
-      return { name: '', kind: 'pressure', unit: 'MPa', columns: [], system: '', residual: 'relative', single: 'decisive', component: '', flow_dependent: false }
+      return {
+        name: '', kind: 'pressure', unit: 'MPa', columns: [], system: '', residual: 'relative', single: 'decisive', component: '',
+        flow_dependent: false, method: 'autofit', formula: { expression: '', coefficients: {} },
+        options: builderOptions({}, this.builders), _key: `o${++keySeq}`
+      }
+    },
+    addOutput() {
+      const o = this.blankOutput()
+      this.form.outputs.push(o)
+      if (this.isSurrogate) this.expanded = [...this.expanded, o._key]
+    },
+    builderOf(kind) {
+      return this.builders.find(b => b.kind === kind)
+    },
+    onMethod(row) {
+      if (!row.options[row.method] && row.method !== 'formula') {
+        this.$set(row.options, row.method, builderOptions({}, [this.builderOf(row.method)])[row.method] || {})
+      }
+      this.$delete(this.previews, row.name)
+      if (!this.expanded.includes(row._key)) this.expanded = [...this.expanded, row._key]
+    },
+    onExpand(row, rows) {
+      this.expanded = rows.map(r => r._key)
+    },
+    async suggestDirs(query, callback) {
+      try {
+        const { preset, registered } = await getDataDirs()
+        const keyword = (query || '').toLowerCase()
+        callback([...registered, ...preset].filter(d => !keyword || d.toLowerCase().includes(keyword)).map(value => ({ value })))
+      } catch (e) {
+        callback([])
+      }
+    },
+    /** 验证 / 试拟合：row 为空时验证全部输出。不保存。 */
+    async runPreview(row) {
+      this.previewing = row ? row.name : '*'
+      try {
+        const cfg = this.toConfig()
+        if (!cfg.id) cfg.id = 'preview'
+        const r = await previewModel(cfg, this.previewPath.trim(), row ? [row.name] : undefined)
+        for (const [name, result] of Object.entries(r.outputs)) this.$set(this.previews, name, result)
+        if (!row) this.expanded = this.form.outputs.map(o => o._key)
+        const note = Object.entries(r.roles || {}).map(([n, role]) => `${n}·${ROLE_LABELS[role] || role}`).join('，')
+        this.$message.success(`已用 ${r.files} 个正常数据文件验证` + (note && this.usesRoles ? `；变量角色：${note}` : ''))
+      } catch (e) {
+        this.$message.error(errorMessage(e))
+      } finally {
+        this.previewing = ''
+      }
+    },
+    /** 采用拟合出的系数，改为固定 */
+    adopt(row, coefs) {
+      for (const [n, v] of Object.entries(coefs || {})) {
+        if (row.formula.coefficients[n]) {
+          row.formula.coefficients[n].value = String(Number(v.toPrecision(10)))
+          row.formula.coefficients[n].fit = false
+        }
+      }
+      this.$message.success('已采用拟合值并改为固定，保存后生效')
     },
     /** 表单 → 模型配置（保留表单不管的字段，如 media、order、ordiam 档位表） */
     toConfig() {
@@ -515,17 +723,22 @@ export default {
         inputs: f.inputs.map((i, k) => {
           const old = (base.inputs || [])[k] || {}
           const out = { ...old, name: i.name, unit: i.unit, grid: i.grid, valid: i.valid }
-          delete out.column
-          delete out.columns
-          delete out.derived
-          delete out.temperature_column
-          delete out.aggregate
+          for (const key of ['column', 'columns', 'derived', 'temperature_column', 'aggregate', 'constant', 'scale', 'offset', 'role']) {
+            delete out[key]
+          }
           if (i.source === 'multi') out.columns = i.columns
-          else if (i.source === 'density') {
-            out.derived = 'density'
+          else if (i.source === 'density' || i.source === 'viscosity') {
+            out.derived = i.source
             out.temperature_column = i.temperature_column
+          } else if (i.source === 'constant') {
+            out.constant = i.constant
           } else out.column = i.column
-          out.fallback_columns = i.source !== 'multi' && i.fallback ? [i.fallback] : []
+          if (i.source !== 'constant') {
+            if (String(i.scale).trim() !== '') out.scale = i.scale
+            if (String(i.offset).trim() !== '') out.offset = i.offset
+          }
+          if (f.engine === 'surrogate') out.role = i.role || 'auto'
+          out.fallback_columns = i.source !== 'multi' && i.source !== 'constant' && i.fallback ? [i.fallback] : []
           return out
         }),
         outputs: f.outputs.map(o => {
@@ -534,6 +747,16 @@ export default {
           if (o.component) out.component = o.component
           if (o.flow_dependent && o.kind === 'pressure') out.flow_dependent = true
           if (o.component_by_column) out.component_by_column = o.component_by_column
+          if (f.engine === 'surrogate') {
+            out.method = o.method
+            if (o.formula.expression || o.method === 'formula') {
+              out.formula = {
+                expression: o.formula.expression,
+                coefficients: Object.fromEntries(Object.entries(o.formula.coefficients).map(([n, c]) => [n, { value: c.value, fit: c.fit }]))
+              }
+            }
+            for (const [kind, opts] of Object.entries(o.options || {})) out[kind] = { ...opts }
+          }
           return out
         }),
         rules: f.groupEnabled ? {
@@ -590,8 +813,41 @@ export default {
 </script>
 
 <style scoped>
+.tab-hint {
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.conv {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.conv .el-input {
+  width: 74px;
+}
+.preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.method-panel {
+  padding: 6px 12px 10px 24px;
+}
+.panel-actions {
+  margin: 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.options .el-form-item {
+  margin-bottom: 4px;
+}
+.small {
+  font-size: 12px;
+}
 .editor >>> .el-tabs__content {
-  max-height: 64vh;
+  max-height: 70vh;
   overflow-y: auto;
 }
 .add {

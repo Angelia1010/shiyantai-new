@@ -249,15 +249,20 @@ def test_simulation_endpoints(task_client, env, token):
     bench = st["models"][0]
     assert bench["table"]["is_default"] and bench["setting"]["mode"] == "decisive"
     assert st["models"][1]["engine"] == "surrogate" and st["models"][1]["media"]["video"]
-    assert [e["type"] for e in st["models"][1]["engines"]] == ["surrogate", "amesim"]
+    assert [e["type"] for e in st["models"][1]["engines"]] == ["surrogate"]
+    assert {b["kind"] for b in st["builders"]} >= {"autofit", "formula"}
+    assert st["models"][1]["methods"] == ["formula"] and st["models"][0]["methods"] == ["autofit"]
+    turb_formula = st["models"][1]["table"]["formulas"]["涡轮流量计转速"]
+    assert turb_formula["display"] == "934.79 + 13217.85 * 质量流量 - 1.18 * 密度"
+    assert any("相差" in x for x in turb_formula["assessment"]["suggestions"])  # 与反算的转速差约 12%，提示核对
 
     pred = task_client.post("/simulation/models/bench/predict", headers=auth(token),
                             json={"condition": {"电机转速": 1000, "电传转速": 2000, "油温": 36}}).get_json()
     flow = next(e for e in pred["expected"] if e["name"] == "回油流量（大流量管路）")
     assert 350 < flow["value"] < 390 and pred["outside"] == []
     turb = task_client.post("/simulation/models/turbine_large/predict", headers=auth(token),
-                            json={"condition": {"入口压力": 0.048, "出口质量流量": 290, "温度": 36}}).get_json()
-    assert 1100 < turb["expected"][0]["value"] < 1300  # Hz
+                            json={"condition": {"入口压力": 0.048, "质量流量": 290 / 3600, "温度": 36, "密度": 782}}).get_json()
+    assert turb["expected"][0]["value"] == pytest.approx(934.79 + 13217.85 * 290 / 3600 - 1.18 * 782)  # Hz
     assert task_client.post("/simulation/models/bench/predict", headers=auth(token), json={"condition": {}}).status_code == 400
 
     st = task_client.put("/simulation/profile", headers=auth(token),
@@ -326,7 +331,10 @@ def test_custom_simulation_model_crud(task_client, env, token):
     from pump_test_bench.app.diagnosis.engine import load_sims
     assert "torque" in [c["id"] for c, _ in load_sims()]
 
-    changed = {**torque["config"], "inputs": [{**model["inputs"][0], "grid": [1000, 1500, 2000, 2500, 3000]}]}
+    assert torque["table"]["kind"] == "formula" and torque["table"]["formulas"]["扭矩"]["method"] == "autofit"
+    changed = {**torque["config"], "outputs": [{**torque["config"]["outputs"][0], "method": "formula",
+                                                "formula": {"expression": "a + b * 转速", "coefficients": {
+                                                    "a": {"value": 0, "fit": True}, "b": {"value": 0.01, "fit": True}}}}]}
     r = task_client.put("/simulation/models/torque", headers=auth(token), json=changed)
     assert r.status_code == 200 and r.get_json()["table"]["stale"] is True
     assert "torque" not in [c["id"] for c, _ in load_sims()]  # 基准表作废，不参与诊断
@@ -352,3 +360,53 @@ def test_custom_simulation_model_crud(task_client, env, token):
     bench = next(m for m in r["models"] if m["id"] == "bench")
     assert bench["source"] == "builtin" and bench["description"] != "改过"
     assert task_client.delete("/simulation/models/bench?restore=1", headers=auth(token)).status_code == 400
+
+
+def test_formula_preview_and_derived(task_client, env, token):
+    """编辑页：验证自定义公式（系数由数据拟合）、试拟合（自动拟合），不保存；派生测点换算可修改。"""
+    import shutil
+    from pump_test_bench.tests.conftest import REPO_ROOT
+    src = REPO_ROOT / "标准台性能录取数据" / "标准台性能录取数据"
+    healthy = env / "healthy"
+    for folder in ("36-38摄氏度", "45-50摄氏度"):
+        shutil.copytree(src / folder, healthy / folder)
+    cfg = {
+        "id": "turb_fit", "name": "涡轮（拟合）", "engine": {"type": "surrogate"},
+        "active_if": [{"column": "回油流量1-1", "min": 20}],
+        "inputs": [{"name": "m", "column": "回油质量流量2", "scale": 1 / 3600, "unit": "kg/s"},
+                   {"name": "rho", "derived": "density", "temperature_column": "回油温度1-1", "unit": "kg/m³"}],
+        "outputs": [{"name": "f", "unit": "Hz", "kind": "flow", "columns": ["回油流量1-1转速", "回油流量1-2转速"],
+                     "method": "formula", "formula": {"expression": "(m * 3600 / rho * 1000 - q0) / K", "coefficients": {
+                         "q0": {"value": 0, "fit": False}, "K": {"value": 0.3, "fit": True}}}}],
+    }
+    r = task_client.post("/simulation/preview", headers=auth(token), json={"config": cfg, "path": str(healthy)})
+    assert r.status_code == 200, r.get_json()
+    out = r.get_json()["outputs"]["f"]
+    assert out["coefficients"]["K"] == pytest.approx(0.3049, rel=0.01)  # 与反算转速所用的 K 系数一致
+    assert out["assessment"]["cv_error"] < 0.005 and out["fitted_from_data"]
+    assert len(out["assessment"]["points"]) == 30
+
+    bad = {**cfg, "outputs": [{**cfg["outputs"][0], "formula": {"expression": "a * m +", "coefficients": {}}}]}
+    err = task_client.post("/simulation/preview", headers=auth(token), json={"config": bad, "path": str(healthy)})
+    assert err.status_code == 400 and "公式" in err.get_json()["error"]
+    undefined = {**cfg, "outputs": [{**cfg["outputs"][0], "formula": {"expression": "a * m", "coefficients": {}}}]}
+    err = task_client.post("/simulation/preview", headers=auth(token), json={"config": undefined, "path": str(healthy)})
+    assert err.status_code == 400 and "系数表" in err.get_json()["error"]
+
+    auto = {**cfg, "inputs": cfg["inputs"] + [{"name": "T", "column": "回油温度1-1", "role": "environment"}],
+            "outputs": [{**cfg["outputs"][0], "method": "autofit"}]}
+    r = task_client.post("/simulation/preview", headers=auth(token), json={"config": auto, "path": str(healthy)}).get_json()
+    assert r["outputs"]["f"]["method"] == "autofit" and r["roles"]["T"] == "environment"
+
+    items = task_client.get("/simulation/derived", headers=auth(token)).get_json()["items"]
+    hz = next(i for i in items if i["name"] == "回油流量1-1转速")
+    assert hz["scale"] == pytest.approx(1 / 0.304921, rel=1e-5)
+    r = task_client.put("/simulation/derived", headers=auth(token),
+                        json={"items": [{"name": "回油流量1-1转速", "scale": 1 / 0.342, "offset": -0.21 / 0.342}]})
+    assert r.status_code == 200
+    hz = next(i for i in r.get_json()["items"] if i["name"] == "回油流量1-1转速")
+    assert hz["scale"] == pytest.approx(1 / 0.342)
+    st = task_client.get("/simulation/status", headers=auth(token)).get_json()
+    assert next(m for m in st["models"] if m["id"] == "turbine_large")["table"]["stale"]  # 换算改了，需要重建
+    assert task_client.put("/simulation/derived", headers=auth(token),
+                           json={"items": [{"name": "不存在", "scale": 1}]}).status_code == 400

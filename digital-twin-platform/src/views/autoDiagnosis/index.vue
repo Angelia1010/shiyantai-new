@@ -68,6 +68,7 @@ import { Cancelled, DiagnosisPipeline } from './pipeline'
 import { addDataDir, setAutoDiagnose, setWatchPath } from '@/api/files'
 import { downloadReport, getDiagnosisSettings, getReport, listTasks, saveDiagnosisSettings } from '@/api/tasks'
 import { errorMessage } from '@/utils/request'
+import { loadDerivedFields } from '@/utils/features'
 import { createTicker } from '@/utils/backgroundTicker'
 import { MessageType, openChannel } from '@/utils/broadcastChannel'
 import { createRemoteLogger } from '@/utils/remoteLogger'
@@ -100,6 +101,7 @@ export default {
     }
   },
   created() {
+    loadDerivedFields()
     // 以下对象不需要响应式
     this.remoteLogger = createRemoteLogger('autoDiagnosis')
     this.pipeline = null

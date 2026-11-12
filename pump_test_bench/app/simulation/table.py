@@ -1,6 +1,10 @@
-"""仿真基准表：每个模型在其工况网格上的结果，在线诊断时多线性插值。
+"""模型产物（仿真基准表）：每个模型建立后得到的一份结果，诊断时用它算预期值。
 
-每个模型一张表，保存在 ``<DB_PATH 所在目录>/simulation_tables/<模型 id>.json``（前端或工具重建的）；
+两种产物（kind），由 predict() 按 kind 分派，新增一种只需在 PREDICTORS 中注册：
+- grid：在工况网格上运行模型（AMESim 等）得到的表，诊断时多线性插值；
+- formula：数据代理模型的公式与系数（surrogate.formula_table），诊断时直接计算。
+
+每个模型一份，保存在 ``<DB_PATH 所在目录>/simulation_tables/<模型 id>.json``（前端或工具重建的）；
 没有时用随代码提供的 ``config/simulation_tables/<模型 id>.json``（由 2026-11 正常数据生成）。
 """
 import itertools
@@ -51,6 +55,7 @@ def build_table(model: SimulationModel, cfg: Dict, progress: Optional[Callable[[
         model_info["surrogate"] = model.to_dict()
     return {
         "version": 2,
+        "kind": "grid",
         "model_id": cfg["id"],
         "model_name": cfg["name"],
         "signature": signature(cfg),
@@ -64,8 +69,8 @@ def build_table(model: SimulationModel, cfg: Dict, progress: Optional[Callable[[
     }
 
 
-def predict(table: Dict, condition: Dict[str, float]) -> Tuple[Dict[str, float], List[str]]:
-    """多线性插值。返回 (预期值 {输出: 值}, 超出网格的输入说明)；超出网格时按边界取值。"""
+def _grid_predict(table: Dict, condition: Dict[str, float]) -> Tuple[Dict[str, float], List[str]]:
+    """多线性插值。超出网格时按边界取值。"""
     grids = [np.asarray(i["grid"], dtype=float) for i in table["inputs"]]
     shape = [len(g) for g in grids]
     outside, corners = [], []
@@ -93,6 +98,53 @@ def predict(table: Dict, condition: Dict[str, float]) -> Tuple[Dict[str, float],
     return out, outside
 
 
+def _compiled(table: Dict) -> Dict:
+    """公式产物的已解析公式（缓存在表对象上）。"""
+    cache = table.get("_compiled")
+    if cache is None:
+        from pump_test_bench.app.simulation.formula import Expression
+        cache = {name: Expression(f["expression"]) for name, f in table["formulas"].items()}
+        table["_compiled"] = cache
+    return cache
+
+
+def _formula_predict(table: Dict, condition: Dict[str, float]) -> Tuple[Dict[str, float], List[str]]:
+    """按公式直接计算。超出建模数据范围的输入照常计算，但给出提示（外推，结论仅供参考）。"""
+    outside = []
+    for spec in table["inputs"]:
+        x = condition.get(spec["name"])
+        if x is None:
+            raise ValueError(f"缺少输入：{spec['name']}")
+        rng = spec.get("range")
+        if rng:
+            lo, hi = rng
+            margin = 0.05 * max(hi - lo, abs(hi), 1e-9) if hi > lo else 0.02 * max(abs(lo), 1e-9)
+            if x < lo - margin or x > hi + margin:
+                outside.append(f"{spec['name']} {x:.4g}{spec.get('unit', '')}（建模数据 {lo:.4g}–{hi:.4g}）")
+    env = {k: float(v) for k, v in condition.items()}
+    out = {}
+    for name, expr in _compiled(table).items():
+        value = expr.evaluate({**table["formulas"][name]["coefficients"], **env})
+        v = float(np.asarray(value).reshape(-1)[0])
+        if np.isfinite(v):
+            out[name] = v
+    return out, outside
+
+
+PREDICTORS: Dict[str, Callable[[Dict, Dict[str, float]], Tuple[Dict[str, float], List[str]]]] = {
+    "grid": _grid_predict,
+    "formula": _formula_predict,
+}
+
+
+def predict(table: Dict, condition: Dict[str, float]) -> Tuple[Dict[str, float], List[str]]:
+    """返回 (预期值 {输出: 值}, 超出范围的输入说明)。"""
+    kind = table.get("kind", "grid")
+    if kind not in PREDICTORS:
+        raise ValueError(f"不认识的模型产物类型：{kind}")
+    return PREDICTORS[kind](table, condition)
+
+
 def sensitivity(table: Dict, condition: Dict[str, float], output: str, ref_output: str,
                 input_name: str, step: float = 0.05) -> Optional[float]:
     """输出对参考输出的弹性 d ln(output) / d ln(ref_output)，沿某个输入方向（如电传转速）数值求导。"""
@@ -113,7 +165,8 @@ def save_table(table: Dict, path: Optional[Path] = None) -> Path:
     path = path or table_path(table["model_id"])
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(table, ensure_ascii=False, indent=1), encoding="utf-8")
+    data = {k: v for k, v in table.items() if not k.startswith("_")}
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     tmp.replace(path)
     return path
 
@@ -136,6 +189,7 @@ def load_table(model_id: str) -> Optional[Dict]:
                 return cached[1]
         try:
             table = json.loads(path.read_text(encoding="utf-8"))
+            table.pop("_compiled", None)
         except ValueError:
             logger.warning("仿真基准表格式错误，忽略：%s", path)
             continue

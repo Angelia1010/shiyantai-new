@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 DEFAULT_SIM_DIR = Path(__file__).resolve().parents[2] / "config" / "simulation"
-ENGINES = ("surrogate", "amesim")
+SURROGATE = "surrogate"  # 数据代理模型（公式），其余引擎见 models.ENGINES（在网格上运行的仿真软件）
 KINDS = {"flow": "流量", "pressure": "压力", "temperature": "温度", "torque": "扭矩", "speed": "转速", "other": "其他"}
 DEFAULT_FLOORS = {  # 阈值下限：相对偏差（温度为绝对偏差 ℃）
     "flow": (0.025, 0.04), "pressure": (0.04, 0.07), "temperature": (3.0, 5.0), "torque": (0.15, 0.25),
@@ -144,11 +144,35 @@ def residual_mode(output: Dict) -> str:
     return output.get("residual") or ("absolute" if output.get("kind") == "temperature" else "relative")
 
 
+def engine_names() -> List[str]:
+    from pump_test_bench.app.simulation.models import ENGINES
+    return [SURROGATE] + list(ENGINES)
+
+
+def is_surrogate(cfg: Dict) -> bool:
+    return (cfg.get("engine") or {}).get("type", SURROGATE) == SURROGATE
+
+
 def signature(cfg: Dict) -> str:
-    """影响基准表的配置（引擎、输入、输出）的摘要；配置改了而基准表没重建时，基准表作废。"""
-    key = {"inputs": [{k: i.get(k) for k in ("name", "column", "columns", "derived", "temperature_column", "grid")}
-                      for i in cfg["inputs"]],
-           "outputs": [{k: o.get(k) for k in ("name", "columns", "kind", "residual")} for o in cfg["outputs"]]}
+    """影响模型产物的配置（引擎、变量、输出、公式）的摘要；配置改了而产物没重建时，产物作废。"""
+    surrogate = is_surrogate(cfg)
+    ikeys = ("name", "column", "columns", "derived", "temperature_column", "scale", "offset", "constant")
+    ikeys += ("role",) if surrogate else ("grid",)
+    okeys = ("name", "columns", "kind", "residual") + (("method", "formula", "autofit") if surrogate else ())
+    key = {"engine": (cfg.get("engine") or {}).get("type", SURROGATE),
+           "inputs": [{k: i.get(k) for k in ikeys} for i in cfg["inputs"]],
+           "outputs": [{k: o.get(k) for k in okeys} for o in cfg["outputs"]],
+           "exclude": sorted(cfg.get("exclude_files") or [])}
+    try:  # 用到的派生测点（如涡轮转速）换算改了，结果也要重建
+        from pump_test_bench.app.signals import derived_specs
+        specs = derived_specs()
+        cols = {c for i in cfg["inputs"] for c in [i.get("column"), *(i.get("columns") or [])] if c}
+        cols |= {c for o in cfg["outputs"] for c in o.get("columns", [])}
+        used = {c: specs[c] for c in sorted(cols) if c in specs}
+        if used:
+            key["derived"] = used
+    except Exception:
+        pass
     return hashlib.sha1(json.dumps(key, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()[:12]
 
 
@@ -175,10 +199,13 @@ def validate_model(data: Dict, existing_id: Optional[str] = None) -> Dict:
     cfg["name"] = str(cfg.get("name") or "").strip()
     if not cfg["name"]:
         raise ValueError("请填写模型名称")
-    engine = (cfg.get("engine") or {}).get("type", "surrogate") if isinstance(cfg.get("engine"), dict) else cfg.get("engine")
-    if engine not in ENGINES:
-        raise ValueError("模型方式只能是数据代理模型（surrogate）或 AMESim 模型（amesim）")
+    engine = (cfg.get("engine") or {}).get("type", SURROGATE) if isinstance(cfg.get("engine"), dict) else cfg.get("engine")
+    if engine not in engine_names():
+        raise ValueError(f"模型方式无效：{engine}（可用：{'、'.join(engine_names())}）")
     cfg["engine"] = {"type": engine}
+    surrogate = engine == SURROGATE
+    from pump_test_bench.app.simulation.builders import DEFAULT_METHOD, ROLES, get_builder
+    from pump_test_bench.app.simulation.formula import is_valid_name
     if cfg.get("default_mode", "decisive") not in ("decisive", "reference", "off"):
         raise ValueError("默认参与方式只能是 decisive、reference 或 off")
     cfg["components"] = [str(c) for c in cfg.get("components") or []]
@@ -190,38 +217,70 @@ def validate_model(data: Dict, existing_id: Optional[str] = None) -> Dict:
     for k, i in enumerate(inputs, 1):
         i["name"] = str(i.get("name") or "").strip()
         if not i["name"] or i["name"] in names:
-            raise ValueError(f"第 {k} 个输入的名称为空或重复")
+            raise ValueError(f"第 {k} 个变量的名称为空或重复")
+        if surrogate and not is_valid_name(i["name"]):
+            raise ValueError(f"变量名“{i['name']}”要在公式里使用，只能由中文、字母、数字、下划线组成，不能以数字开头，"
+                             "也不能是函数名（如 exp、log）")
         names.add(i["name"])
-        if i.get("derived") == "density":
+        derived = i.get("derived")
+        if derived in ("density", "viscosity"):
             if not i.get("temperature_column"):
-                raise ValueError(f"输入“{i['name']}”由油温计算密度，请选择油温测点")
-            i.pop("column", None), i.pop("columns", None)
+                raise ValueError(f"变量“{i['name']}”由油温计算，请选择油温测点")
+            i.pop("column", None), i.pop("columns", None), i.pop("constant", None)
+        elif derived == "constant" or (i.get("constant") not in (None, "") and not i.get("column") and not i.get("columns")):
+            try:
+                i["constant"] = float(i.get("constant"))
+            except (TypeError, ValueError):
+                raise ValueError(f"变量“{i['name']}”是常数，请填写数值") from None
+            for key in ("column", "columns", "derived", "temperature_column", "fallback_columns"):
+                i.pop(key, None)
         elif i.get("columns") and len(i["columns"]) > 1:
             i["aggregate"] = "median"
-            i.pop("column", None), i.pop("derived", None)
+            i.pop("column", None), i.pop("derived", None), i.pop("constant", None)
         else:
             col = i.get("column") or (i.get("columns") or [None])[0]
             if not col:
-                raise ValueError(f"输入“{i['name']}”请选择测点")
+                raise ValueError(f"变量“{i['name']}”请选择测点")
             i["column"] = col
-            i.pop("columns", None), i.pop("derived", None)
-        grid = sorted(set(_num_list(i.get("grid"), f"输入“{i['name']}”的网格")))
-        if len(grid) < 2:
-            raise ValueError(f"输入“{i['name']}”的网格至少要有 2 个点（覆盖正常数据的工况范围）")
-        i["grid"] = grid
+            i.pop("columns", None), i.pop("derived", None), i.pop("constant", None)
+        for key, default in (("scale", 1.0), ("offset", 0.0)):
+            if i.get(key) in (None, ""):
+                i.pop(key, None)
+                continue
+            try:
+                i[key] = float(i[key])
+            except (TypeError, ValueError):
+                raise ValueError(f"变量“{i['name']}”的单位换算只能填数字") from None
+            if i[key] == default:
+                i.pop(key)
+        if i.get("scale") == 0:
+            raise ValueError(f"变量“{i['name']}”的换算系数不能为 0")
+        if surrogate:
+            i["role"] = i.get("role") or "auto"
+            if i["role"] not in ROLES:
+                raise ValueError(f"变量“{i['name']}”的角色无效")
+            if i.get("grid") in (None, "", []):
+                i.pop("grid", None)
+            else:
+                i["grid"] = sorted(set(_num_list(i.get("grid"), f"变量“{i['name']}”的网格")))
+        else:
+            i.pop("role", None)
+            grid = sorted(set(_num_list(i.get("grid"), f"变量“{i['name']}”的网格")))
+            if len(grid) < 2:
+                raise ValueError(f"变量“{i['name']}”的网格至少要有 2 个点（覆盖正常数据的工况范围）")
+            i["grid"] = grid
         if i.get("valid") not in (None, "", []):
-            v = _num_list(i["valid"], f"输入“{i['name']}”的有效范围")
+            v = _num_list(i["valid"], f"变量“{i['name']}”的有效范围")
             if len(v) != 2 or v[0] >= v[1]:
-                raise ValueError(f"输入“{i['name']}”的有效范围应为 下限,上限")
+                raise ValueError(f"变量“{i['name']}”的有效范围应为 下限,上限")
             i["valid"] = v
         else:
             i.pop("valid", None)
         i["fallback_columns"] = [c for c in i.get("fallback_columns") or [] if c]
         if not i["fallback_columns"]:
             i.pop("fallback_columns")
-    n_feat = 1 + 2 * len(inputs) + len(inputs) * (len(inputs) - 1) // 2
-    if engine == "surrogate" and len(inputs) > 4:
-        raise ValueError(f"数据代理模型最多 4 个输入（每个输出要拟合 {n_feat} 个系数，需要足够多的正常数据）")
+    if surrogate and len(inputs) > 8:
+        raise ValueError("数据代理模型最多 8 个变量")
 
     outputs = cfg.get("outputs") or []
     if not outputs:
@@ -243,6 +302,15 @@ def validate_model(data: Dict, existing_id: Optional[str] = None) -> Dict:
         o["residual"] = residual_mode(o)
         if o.get("single", "decisive") not in ("decisive", "notice"):
             raise ValueError(f"输出“{o['name']}”的单测点判定只能是 decisive 或 notice")
+        if surrogate:
+            o["method"] = o.get("method") or DEFAULT_METHOD
+            builder = get_builder(o["method"])
+            if not builder.available():
+                raise ValueError(f"输出“{o['name']}”的计算方式“{builder.label}”当前不可用")
+            builder.validate(o, inputs)  # 其他计算方式的设置保留（切换回来时不丢）
+        else:
+            for key in ("method", "formula", "autofit"):
+                o.pop(key, None)
 
     rules = cfg.get("rules") or {}
     rule = rules.get("group_shift")
@@ -311,6 +379,9 @@ def validate_model(data: Dict, existing_id: Optional[str] = None) -> Dict:
             item["note"] = str(c["note"])
         conds.append(item)
     cfg["active_if"] = conds
+    cfg["exclude_files"] = sorted({str(f) for f in cfg.get("exclude_files") or [] if f})
+    if not cfg["exclude_files"]:
+        cfg.pop("exclude_files")
     return cfg
 
 
