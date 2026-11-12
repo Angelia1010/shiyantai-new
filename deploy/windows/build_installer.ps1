@@ -23,6 +23,8 @@
   npm 镜像，如 https://registry.npmmirror.com。
 .PARAMETER SkipFrontend
   不重新编译前端，直接使用已有的 digital-twin-platform\dist。
+.PARAMETER CleanFrontend
+  删除已有的前端依赖（node_modules），用 npm ci 全新安装。默认已有依赖时直接使用。
 .PARAMETER NoInstaller
   只组装 stage 目录，不生成安装包（用于检查）。
 #>
@@ -32,6 +34,7 @@ param(
     [string]$PipIndex = "",
     [string]$NpmRegistry = "",
     [switch]$SkipFrontend,
+    [switch]$CleanFrontend,
     [switch]$NoInstaller
 )
 
@@ -145,7 +148,15 @@ if (-not $SkipFrontend) {
     try {
         if ($NpmRegistry) { $env:npm_config_registry = $NpmRegistry }
         if ($nodeMajor -ge 17) { $env:NODE_OPTIONS = "--openssl-legacy-provider" }
-        Invoke-Checked "npm.cmd" @("ci", "--no-audit", "--no-fund") "安装前端依赖（npm ci）"
+        $nm = Join-Path $web "node_modules"
+        if ((Test-Path (Join-Path $nm ".bin")) -and -not $CleanFrontend) {
+            Write-Host "使用已有的前端依赖（node_modules）；需要全新安装时加参数 -CleanFrontend"
+        } else {
+            Invoke-Checked "npm.cmd" @("ci", "--no-audit", "--no-fund") ("安装前端依赖（npm ci）。如提示文件夹删不掉，" +
+                "请先关闭正在运行的前端开发服务（npm run dev 的窗口）和打开该目录的编辑器后重试")
+        }
+        # 开发服务留下的编译缓存可能被占用或过期，编译前清掉（删不掉也不影响）
+        Remove-Item (Join-Path $nm ".cache") -Recurse -Force -ErrorAction SilentlyContinue
         Invoke-Checked "npm.cmd" @("run", "build:prod") "编译前端（npm run build:prod）"
     } finally { Pop-Location }
 }

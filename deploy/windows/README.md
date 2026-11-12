@@ -64,6 +64,7 @@ powershell -ExecutionPolicy Bypass -File deploy\windows\build_installer.ps1 -Pip
 
 - **发新版本**：把 `deploy\windows\VERSION` 里的版本号改一下（比如改成 `1.0.1`），再执行一次第 4 步的命令，然后在目标电脑上直接运行新安装包。原来的密码、设置、诊断记录都会保留。
 - **服务出问题**：开始菜单“标准台校验系统”里有“服务状态”“重启服务”；日志在 `C:\ProgramData\BenchCheck\logs`。
+- **打包前**：关闭正在运行的前端开发服务（`npm run dev` 的窗口），否则可能因文件被占用而失败。
 - **打包报错**：窗口里出现红色的 **[失败]** 时，把整个 PowerShell 窗口的内容截图或复制下来，按提示处理或反馈。
 
 ---
@@ -105,6 +106,7 @@ powershell -ExecutionPolicy Bypass -File deploy\windows\build_installer.ps1 `
 | `-PythonVersion 3.11.9` | 打包的 Python 版本 |
 | `-PipIndex` / `-NpmRegistry` | pip / npm 镜像 |
 | `-SkipFrontend` | 不重新编译前端，用已有的 `digital-twin-platform\dist` |
+| `-CleanFrontend` | 删除已有的前端依赖（node_modules）全新安装；默认已有依赖时直接使用 |
 | `-NoInstaller` | 只组装 `deploy\windows\build\stage`，不生成安装包（用于检查） |
 
 脚本做的事情：下载并缓存 Python 嵌入式包 → 安装 `requirements-runtime.txt` 中的依赖 → `npm ci` 与 `npm run build:prod` →
