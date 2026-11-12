@@ -114,8 +114,7 @@ begin
   SettingsPage := CreateInputQueryPage(wpSelectTasks, '登录与访问设置',
     '设置登录密码和网页端口',
     '登录用户名为 admin。' + #13#10 +
-    '浏览器访问地址为 http://本机地址:端口/。' +
-    #13#10 + #13#10 +
+    '浏览器访问地址为 http://本机地址:端口/。' + #13#10 + #13#10 +
     '升级安装时密码可以留空，表示保留原来的密码。');
   SettingsPage.Add('登录密码（至少 6 位）：', True);
   SettingsPage.Add('再次输入密码：', True);
