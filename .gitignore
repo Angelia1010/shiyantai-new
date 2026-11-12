@@ -50,3 +50,4 @@ Thumbs.db
 *.pdb
 *.dll
 live_test_runs/
+live_test_data/
