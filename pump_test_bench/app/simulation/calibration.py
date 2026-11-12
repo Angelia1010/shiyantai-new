@@ -4,7 +4,7 @@
 诊断时先扣除固有偏差，再按离散定阈值。模型越准，离散越小，能发现的偏离越小。
 
 代理模型由同一批正常数据拟合，直接在拟合数据上算离散会偏乐观；因此按“留一组”交叉验证
-（每次留出一个数据目录，如一个油温段，用其余数据拟合后预测它）计算离散。公式与 AMESim 模型不经拟合，直接计算。
+（每次留出一个数据目录，如一个油温段，用其余数据拟合后预测它）计算离散。AMESim 模型不经拟合，固有偏差也按留一组交叉验证。
 """
 import logging
 from pathlib import Path
@@ -173,7 +173,7 @@ def build_reference(paths: List[Path], sim_cfg: Dict, kind: Optional[str] = None
     else:
         table = build_table(make_model(sim_cfg, kind), sim_cfg, lambda i, n: say("运行模型", i, n))
         calib = calibrate(_residuals(table, samples, sim_cfg), None, sim_cfg)
-        calib["method"] = ("数学公式" if kind == "formula" else "AMESim 模型") + "，固有偏差按留一组交叉验证"
+        calib["method"] = "AMESim 模型，固有偏差按留一组交叉验证"
 
     calib.update({"files": len(samples), "source": source})
     table["calibration"] = calib

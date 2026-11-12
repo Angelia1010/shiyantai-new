@@ -2,7 +2,8 @@
  "version": 2,
  "model_id": "bench",
  "model_name": "泵-管路系统模型",
- "created": "2026-11-12 13:09:25",
+ "signature": "8517900a066e",
+ "created": "2026-11-12 13:25:54",
  "model": {
   "type": "surrogate",
   "label": "数据代理模型（由正常数据拟合）",

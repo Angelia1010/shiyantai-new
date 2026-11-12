@@ -1,9 +1,9 @@
 {
-  "_说明": "涡轮流量计模型：现有数学公式（质量流量、密度 → 涡轮转速 Y = 2696.17 + 15468.63·m − 3.42·ρ → 叶片频率 f = 6Y/2π → 理论流量 q = 0.304921·f + 0.210230），再用正常数据标定每只表的固有偏差（随流量线性变化）。负责发现单只或几只涡轮表的 K 系数漂移，以及参考量（质量流量计、燃油密度）的偏差。",
+  "_说明": "涡轮流量计模型：由正常数据拟合的数据代理模型，质量流量、燃油密度 → 各涡轮流量计应有的体积流量。负责发现单只或几只涡轮表的 K 系数漂移，以及参考量（质量流量计、燃油密度）的偏差。以后可改为 AMESim 涡轮流量计部件模型（补全 amesim 段）。",
   "id": "turbine",
   "name": "涡轮流量计模型",
   "order": 2,
-  "description": "回路 1/2 流量计与供油管路上的涡轮流量计：质量流量、密度 → 理论体积流量",
+  "description": "回路 1/2 流量计与供油管路上的涡轮流量计：质量流量、密度 → 预期体积流量",
   "components": [
     "回油流量计1",
     "回油流量计2",
@@ -11,9 +11,7 @@
   ],
   "default_mode": "decisive",
   "engine": {
-    "type": "formula",
-    "formula": "turbine_meter",
-    "_说明": "formula = 内置数学公式（app/simulation/formulas.py）；以后可改为 amesim 并补全 amesim 段"
+    "type": "surrogate"
   },
   "inputs": [
     {
@@ -55,7 +53,7 @@
   ],
   "outputs": [
     {
-      "name": "理论体积流量",
+      "name": "预期体积流量",
       "unit": "L/h",
       "kind": "flow",
       "columns": [
@@ -74,7 +72,7 @@
   ],
   "rules": {
     "group_shift": {
-      "output": "理论体积流量",
+      "output": "预期体积流量",
       "min_columns": 3,
       "meaning": "reference"
     }
@@ -98,7 +96,7 @@
     "model_file": "待填写.ame",
     "parameters": [],
     "variables": {
-      "理论体积流量": "待填写"
+      "预期体积流量": "待填写"
     }
   }
 }

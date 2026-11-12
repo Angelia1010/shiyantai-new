@@ -2,21 +2,29 @@
   <div class="app-container simulation-page">
     <div class="page-header">
       <h2 class="page-title">仿真模型</h2>
-      <span class="page-sub">
-        每个模型是试验台一部分的健康参考：给定工况，给出健康时各测点的预期值。每个模型各有一张仿真基准表并用正常数据标定，
-        诊断时按“诊断方案”决定哪些模型参与结论。
-      </span>
+      <el-button size="small" type="primary" icon="el-icon-plus" @click="openEditor(null)">新建模型</el-button>
     </div>
 
     <el-card shadow="never" class="box-card">
       <div slot="header" class="card-head">
-        <span>诊断方案 <span class="muted small-inline">自动诊断与手动诊断共用；手动诊断时可在“自动诊断”页临时调整</span></span>
+        <span>
+          诊断方案
+          <el-tooltip placement="right">
+            <div slot="content">
+              自动诊断与手动诊断共用，手动诊断时可在“自动诊断”页临时调整。<br>
+              参与结论：偏离超过阈值时判预警/异常；仅作参考：只写进报告；关闭：不做该模型的对比。<br>
+              阈值 = max(下限, 倍数 × 标定离散 σ)，倍数越大越不容易报。
+            </div>
+            <i class="el-icon-question tip" />
+          </el-tooltip>
+        </span>
         <el-button size="mini" type="primary" :disabled="!profileDirty" @click="saveProfile">保存方案</el-button>
       </div>
       <el-table v-loading="loading" :data="models" size="small" border>
         <el-table-column label="模型" min-width="200">
           <template slot-scope="{ row }">
             <b>{{ row.name }}</b>
+            <el-tag v-if="row.source !== 'builtin'" size="mini" type="info" class="src-tag">{{ SOURCE_LABELS[row.source] }}</el-tag>
             <div class="muted small">{{ row.description }}</div>
           </template>
         </el-table-column>
@@ -25,6 +33,7 @@
             <template v-if="row.table">
               {{ row.table.model.label }}
               <div class="muted small">{{ row.table.is_default ? '默认表' : '重建于' }} {{ row.table.created }}</div>
+              <div v-if="row.table.stale" class="warn small">配置已修改，需要重建</div>
             </template>
             <span v-else class="warn">还没有基准表</span>
           </template>
@@ -46,10 +55,6 @@
           </template>
         </el-table-column>
       </el-table>
-      <div class="muted small note">
-        参与结论：偏离超过阈值时判预警/异常；仅作参考：只写进报告，不影响结论；关闭：不做该模型的对比。
-        阈值 = max(下限, 倍数 × 标定离散 σ)，倍数越大越不容易报。
-      </div>
     </el-card>
 
     <el-tabs v-model="activeId" type="border-card" class="model-tabs">
@@ -60,8 +65,11 @@
               <div class="section-head">
                 <span>基准表</span>
                 <div>
+                  <el-button size="mini" icon="el-icon-edit" @click="openEditor(m)">编辑配置</el-button>
+                  <el-button v-if="m.source === 'custom'" size="mini" type="danger" plain @click="removeModel(m)">删除模型</el-button>
+                  <el-button v-if="m.source === 'override'" size="mini" @click="removeModel(m)">恢复内置配置</el-button>
                   <el-button v-if="m.table && !m.table.is_default" size="mini" :disabled="running" @click="reset(m)">恢复默认表</el-button>
-                  <el-button size="mini" type="primary" :disabled="running" @click="openBuild(m)">重建基准表</el-button>
+                  <el-button size="mini" type="primary" :disabled="running" @click="openBuild(m)">{{ m.table ? '重建基准表' : '建立基准表' }}</el-button>
                 </div>
               </div>
               <template v-if="m.table">
@@ -83,8 +91,8 @@
                     {{ m.table.is_default ? '随代码提供的默认表（2026-11 正常数据）' : m.table.source }}
                   </el-descriptions-item>
                 </el-descriptions>
-                <el-alert v-if="m.table.model.type === 'surrogate'" class="note" type="info" :closable="false" show-icon
-                          title="数据代理模型由正常数据拟合，用于在 AMESim 模型接入前跑通流程。它只学到了健康数据的规律，能发现偏离，但不能模拟没见过的部件故障。" />
+                <el-alert v-if="m.table.stale" class="note" type="warning" :closable="false" show-icon
+                          title="模型配置已修改（输入或输出变了），这张基准表已作废，重建前该模型不参与诊断" />
               </template>
               <el-empty v-else description="还没有基准表" :image-size="70" />
 
@@ -100,10 +108,17 @@
             </div>
 
             <div v-if="m.table" class="section">
-              <div class="section-head"><span>标定结果（模型 vs 正常数据）</span></div>
-              <div class="muted small">
-                固有偏差：正常时该测点比模型预期高/低多少（随工况变化，此处为平均值），诊断时先扣除；
-                离散 σ：扣除后的波动，决定阈值。σ 越小，模型能发现的偏离越小。
+              <div class="section-head">
+                <span>
+                  标定结果（模型 vs 正常数据）
+                  <el-tooltip placement="right">
+                    <div slot="content">
+                      固有偏差：正常时该测点比模型预期高/低多少（随工况变化，此处为平均值），诊断时先扣除。<br>
+                      离散 σ：扣除后的波动，决定阈值；σ 越小，模型能发现的偏离越小。
+                    </div>
+                    <i class="el-icon-question tip" />
+                  </el-tooltip>
+                </span>
               </div>
               <el-table :data="m.table.calibration.columns" size="small" border max-height="320">
                 <el-table-column prop="column" label="测点" min-width="120" />
@@ -162,11 +177,10 @@
           <el-radio-group v-model="build.engine">
             <el-radio v-for="e in build.model.engines" :key="e.type" :label="e.type" :disabled="!e.ready">{{ e.label }}</el-radio>
           </el-radio-group>
-          <div v-for="e in notReady" :key="e.type" class="muted small">{{ e.label }}：{{ e.note }}</div>
+          <div v-for="e in notReady" :key="e.type" class="warn small">{{ e.label }}：请先在“编辑配置”的 AMESim 页填写模型文件与变量路径</div>
         </el-form-item>
         <el-form-item label="正常数据目录">
-          <el-autocomplete v-model="build.path" :fetch-suggestions="suggestDirs" placeholder="设备正常时采集的数据目录" style="width: 100%" />
-          <div class="muted small">用于{{ build.engine === 'surrogate' ? '拟合代理模型并' : '' }}标定；填写完整路径，会自动登记为数据目录，子目录会一起读取</div>
+          <el-autocomplete v-model="build.path" :fetch-suggestions="suggestDirs" placeholder="设备正常时采集的数据目录（完整路径，含子目录）" style="width: 100%" />
         </el-form-item>
       </el-form>
       <span slot="footer">
@@ -174,6 +188,8 @@
         <el-button type="primary" :disabled="!build.path" @click="startBuild">开始建立</el-button>
       </span>
     </el-dialog>
+
+    <model-editor :visible="editor.visible" :model="editor.model" @close="editor.visible = false" @saved="onSaved" />
   </div>
 </template>
 
@@ -181,15 +197,19 @@
 import * as echarts from 'echarts'
 import { addDataDir, getDataDirs } from '@/api/files'
 import {
-  MODE_LABELS, buildModelTable, getSimulationStatus, predictModel, resetModelTable, saveDiagnosisProfile
+  MODE_LABELS, buildModelTable, deleteModel, getSimulationStatus, predictModel, resetModelTable, saveDiagnosisProfile
 } from '@/api/simulation'
 import { errorMessage } from '@/utils/request'
+import ModelEditor from './ModelEditor'
+
+const SOURCE_LABELS = { custom: '自定义', override: '已修改' }
 
 // 工况试算的初始值（没有的输入取网格中点）
 const DEFAULT_CONDITION = { 电传转速: 2000, 进口压力: 0.15, 油温: 36, 质量流量: 290, 燃油密度: 782, 汇流温度: 36, 流量: 370 }
 
 export default {
   name: 'Simulation',
+  components: { ModelEditor },
   data() {
     return {
       loading: true,
@@ -202,7 +222,9 @@ export default {
       predictions: {},
       build: { visible: false, model: null, engine: '', path: '' },
       publicPath: process.env.BASE_URL,
-      MODE_LABELS
+      editor: { visible: false, model: null },
+      MODE_LABELS,
+      SOURCE_LABELS
     }
   },
   computed: {
@@ -250,12 +272,14 @@ export default {
     applyStatus(st, keepProfile = false) {
       this.models = st.models
       this.job = st.job || { state: 'idle' }
-      if (!keepProfile || !this.profileDirty) {
-        const p = {}
-        for (const m of st.models) p[m.id] = { mode: 'decisive', sigma_warn: 3, sigma_alarm: 5, ...m.setting }
-        this.profile = p
-        this.profileDirty = false
+      const p = {}
+      for (const m of st.models) {
+        const saved = { mode: 'decisive', sigma_warn: 3, sigma_alarm: 5, ...m.setting }
+        // 有未保存的修改时保留用户正在改的值，新出现的模型用保存的方案
+        p[m.id] = keepProfile && this.profileDirty && this.profile[m.id] ? this.profile[m.id] : saved
       }
+      this.profile = p
+      if (!keepProfile) this.profileDirty = false
       for (const m of st.models) {
         if (!m.table || this.conditions[m.id]) continue
         const c = {}
@@ -293,8 +317,40 @@ export default {
         this.$message.error(errorMessage(e))
       }
     },
+    openEditor(m) {
+      this.editor = { visible: true, model: m ? m.config : null }
+    },
+    async onSaved(model) {
+      this.editor.visible = false
+      this.$delete(this.predictions, model.id)
+      this.$delete(this.conditions, model.id)
+      if (this.charts[model.id]) {
+        this.charts[model.id].dispose()
+        delete this.charts[model.id]
+      }
+      this.applyStatus(await getSimulationStatus(), true)
+      this.activeId = model.id
+    },
+    async removeModel(m) {
+      const restore = m.source === 'override'
+      try {
+        await this.$confirm(restore ? `放弃对“${m.name}”配置的修改，恢复内置配置？`
+          : `删除自定义模型“${m.name}”及其基准表？`, restore ? '恢复内置配置' : '删除模型', { type: 'warning' })
+      } catch (e) {
+        return
+      }
+      try {
+        const st = await deleteModel(m.id)
+        this.$delete(this.predictions, m.id)
+        this.$delete(this.conditions, m.id)
+        if (!restore) this.activeId = ''
+        this.applyStatus(st, true)
+      } catch (e) {
+        this.$message.error(errorMessage(e))
+      }
+    },
     openBuild(m) {
-      this.build = { visible: true, model: m, engine: (m.table && m.table.model.type) || m.engine, path: '' }
+      this.build = { visible: true, model: m, engine: m.engine, path: '' }
     },
     async suggestDirs(query, callback) {
       try {
@@ -390,12 +446,18 @@ export default {
 .page-header {
   margin-bottom: 12px;
 }
-.page-sub {
-  display: block;
-  margin-top: 4px;
-  font-size: 13px;
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.tip {
+  margin-left: 4px;
   color: #909399;
-  line-height: 1.7;
+  cursor: help;
+}
+.src-tag {
+  margin-left: 6px;
 }
 .box-card {
   margin-bottom: 16px;
@@ -427,10 +489,6 @@ export default {
 .small {
   font-size: 12px;
   line-height: 1.7;
-}
-.small-inline {
-  font-size: 12px;
-  margin-left: 8px;
 }
 .warn {
   color: #e6a23c;

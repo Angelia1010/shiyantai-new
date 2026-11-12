@@ -76,7 +76,7 @@ def test_leak_is_not_blamed_on_single_meters():
 def test_mass_meter_drift():
     body = diagnose_frame(faults.drift(healthy_frame(), "回油质量流量2", 0.04))
     found = {(f["category"], f["target"]) for f in decisive(body)}
-    assert found - {("model_reference", "理论体积流量")} == {("mass_volume", "回油质量流量2")}
+    assert found - {("model_reference", "预期体积流量")} == {("mass_volume", "回油质量流量2")}
     # 涡轮流量计模型的“参考量偏差”与质量-体积校核指向同一原因
     assert [c["name"] for c in body["causes"]] == ["回油质量流量计2 零点或标定漂移"]
 
@@ -128,10 +128,11 @@ def test_baseline_removes_fixed_meter_bias(tmp_path):
     assert base["density"]["slope"] == pytest.approx(load_config()["fuel"]["slope"], abs=0.1)
 
     df = healthy_frame(flow=320, temp=32, seed=99, biases=biased)
-    assert diagnose_frame(df)["result"] == "warning"
-    assert diagnose_frame(df, baseline=base)["result"] == "normal"
+    # 只看健康基准的作用（仿真模型按真实数据标定，这只合成表的偏差与真实表不同，会被模型报出）
+    assert diagnose_frame(df, sims=None)["result"] == "warning"
+    assert diagnose_frame(df, baseline=base, sims=None)["result"] == "normal"
     # 扣除固有偏差后，再漂移 3% 仍能查出来
-    drifted = diagnose_frame(faults.drift(df, "回油流量1-2", 0.03), baseline=base)
+    drifted = diagnose_frame(faults.drift(df, "回油流量1-2", 0.03), baseline=base, sims=None)
     assert drifted["result"] == "abnormal" and {f["target"] for f in decisive(drifted)} == {"回油流量1-2"}
 
 

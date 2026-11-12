@@ -30,7 +30,7 @@ from pump_test_bench.app.diagnosis.config import config_path, load_config
 from pump_test_bench.app.diagnosis.signals import Segment, find_steady, time_axis
 from pump_test_bench.app.simulation.check import model_check, summary_rows
 from pump_test_bench.app.simulation.config import list_models
-from pump_test_bench.app.simulation.table import load_table
+from pump_test_bench.app.simulation.table import is_stale, load_table
 
 logger = logging.getLogger(__name__)
 
@@ -662,7 +662,7 @@ def load_sims() -> List:
     try:
         for mcfg in list_models():
             table = load_table(mcfg["id"])
-            if table:
+            if table and not is_stale(table, mcfg):  # 配置改过、基准表没重建的模型不参与
                 out.append((mcfg, table))
     except Exception:
         logger.warning("加载仿真模型失败，本次不做模型对比", exc_info=True)

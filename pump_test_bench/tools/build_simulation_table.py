@@ -34,7 +34,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="建立仿真基准表")
     parser.add_argument("source", type=Path, help="正常（健康）数据文件或目录")
     parser.add_argument("--model", help="模型 id（默认全部）：" + "、".join(m["id"] for m in list_models()))
-    parser.add_argument("--engine", choices=("surrogate", "formula", "amesim"), help="引擎，默认按模型配置")
+    parser.add_argument("--engine", choices=("surrogate", "amesim"), help="引擎，默认按模型配置")
     parser.add_argument("--default", action="store_true", help="写入 config/simulation_tables/（随代码提供的默认表）")
     args = parser.parse_args(argv)
 

@@ -33,3 +33,31 @@ export function saveDiagnosisProfile(models) {
 
 export const MODE_LABELS = { decisive: '参与结论', reference: '仅作参考', off: '关闭' }
 export const MODE_TAG = { decisive: 'success', reference: 'warning', off: 'info' }
+
+/** 新建仿真模型（配置结构同 pump_test_bench/config/simulation/*.json） */
+export function createModel(config) {
+  return request({ url: `${BASE}/models`, method: 'post', data: config })
+}
+
+/** 修改仿真模型配置；改了输入、输出后需要重建基准表 */
+export function updateModel(modelId, config) {
+  return request({ url: `${BASE}/models/${encodeURIComponent(modelId)}`, method: 'put', data: config })
+}
+
+/** 删除自定义模型 / 恢复内置模型的默认配置 */
+export function deleteModel(modelId) {
+  return request({ url: `${BASE}/models/${encodeURIComponent(modelId)}`, method: 'delete' })
+}
+
+/** 可选的测点列（试验台导出文件的表头） */
+export function getColumns() {
+  return request({ url: `${BASE}/columns`, method: 'get' })
+}
+
+export const ENGINE_LABELS = { surrogate: '数据代理模型', amesim: 'AMESim 模型' }
+export const KIND_LABELS = { flow: '流量', pressure: '压力', temperature: '温度', torque: '扭矩', other: '其他' }
+export const MEANING_LABELS = {
+  pump: '实际流量变化（被试泵出力，再看压力是否同步）',
+  reference: '参考量偏差（如质量流量计、燃油密度）',
+  input: '模型输入测点偏差'
+}

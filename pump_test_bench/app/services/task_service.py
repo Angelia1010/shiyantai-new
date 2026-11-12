@@ -15,9 +15,13 @@
     PUT    /diagnosis/settings          修改诊断设置 {fuel_density_20?, fuel_note?}
     GET    /diagnosis/history           历次诊断的关键指标（趋势图用）?days=&limit=
     GET    /simulation/status           仿真模型列表：各模型配置、基准表与标定结果、诊断方案、重建任务状态
-    POST   /simulation/models/<id>/table    后台重建该模型的基准表 {path: 正常数据目录, engine?: surrogate|formula|amesim}
+    POST   /simulation/models/<id>/table    后台重建该模型的基准表 {path: 正常数据目录, engine?: surrogate|amesim}
     DELETE /simulation/models/<id>/table    删除该模型重建的基准表，恢复默认表
     POST   /simulation/models/<id>/predict  工况试算 {condition: {输入名: 值}}
+    POST   /simulation/models           新建仿真模型（配置见 config/simulation/*.json）
+    PUT    /simulation/models/<id>      修改仿真模型配置
+    DELETE /simulation/models/<id>      删除自定义模型 / 恢复内置模型的默认配置
+    GET    /simulation/columns          可选的测点列
     PUT    /simulation/profile          保存诊断方案 {models: {模型 id: {mode, sigma_warn?, sigma_alarm?}}}
     GET    /tasks/<id>/report.docx      报告（Word）
     POST   /logs                        前端日志 {source, logs: [{level, message}]}
@@ -204,7 +208,7 @@ def simulation_build(model_id: str):
     data = json_body()
     engine = data.get("engine") or sim_service.load_model_cfg(model_id)["engine"]["type"]
     if engine not in sim_service.ENGINE_LABELS:
-        raise ValueError("engine 只能是 surrogate、formula 或 amesim")
+        raise ValueError("engine 只能是 surrogate 或 amesim")
     directory, files = sim_service.resolve_source(data.get("path"))
     try:
         job = sim_service.start_build(model_id, files, engine, str(directory), g.user)
@@ -221,6 +225,32 @@ def simulation_reset(model_id: str):
 @app.post("/simulation/models/<model_id>/predict")
 def simulation_predict(model_id: str):
     return jsonify(sim_service.try_predict(model_id, json_body().get("condition") or {}))
+
+
+@app.post("/simulation/models")
+def simulation_create():
+    model = sim_service.save_model(json_body())
+    logger.info("用户 %s 新建仿真模型 %s", g.user, model["id"])
+    return jsonify(model), 201
+
+
+@app.put("/simulation/models/<model_id>")
+def simulation_update(model_id: str):
+    model = sim_service.save_model(json_body(), model_id)
+    logger.info("用户 %s 修改仿真模型 %s", g.user, model_id)
+    return jsonify(model)
+
+
+@app.delete("/simulation/models/<model_id>")
+def simulation_delete(model_id: str):
+    result = sim_service.delete_model(model_id)
+    logger.info("用户 %s 删除仿真模型 %s", g.user, model_id)
+    return jsonify({**result, **sim_service.status()})
+
+
+@app.get("/simulation/columns")
+def simulation_columns():
+    return jsonify({"columns": sim_service.known_columns()})
 
 
 @app.put("/simulation/profile")

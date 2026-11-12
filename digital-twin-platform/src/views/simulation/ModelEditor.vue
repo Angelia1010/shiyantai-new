@@ -1,0 +1,509 @@
+<template>
+  <el-dialog :title="isNew ? '新建仿真模型' : `编辑模型：${form.name}`" :visible="visible" width="980px" top="4vh"
+             :close-on-click-modal="false" @close="$emit('close')">
+    <el-tabs v-model="tab" class="editor">
+      <!-- 基本信息 -->
+      <el-tab-pane label="基本信息" name="basic">
+        <el-form label-width="110px" size="small">
+          <el-form-item label="模型编号" required>
+            <el-input v-model.trim="form.id" :disabled="!isNew" placeholder="英文字母开头，如 filter_dp" style="width: 260px" />
+          </el-form-item>
+          <el-form-item label="模型名称" required>
+            <el-input v-model.trim="form.name" placeholder="如：过滤器压差模型" style="width: 360px" />
+          </el-form-item>
+          <el-form-item label="说明">
+            <el-input v-model="form.description" placeholder="对应哪部分、输入什么、输出什么" />
+          </el-form-item>
+          <el-form-item label="模型方式" required>
+            <el-radio-group v-model="form.engine">
+              <el-radio label="surrogate">数据代理模型</el-radio>
+              <el-radio label="amesim">AMESim 模型</el-radio>
+            </el-radio-group>
+            <el-tooltip placement="right" content="数据代理模型：用正常数据拟合，建基准表时只需选正常数据目录；AMESim 模型：在“AMESim”页填写模型文件、参数与变量路径，建基准表时由 AMESim 逐个工况仿真">
+              <i class="el-icon-question tip" />
+            </el-tooltip>
+          </el-form-item>
+          <el-form-item label="三维部件">
+            <el-select v-model="form.components" multiple filterable placeholder="诊断出问题时在三维模型上告警的部件" style="width: 100%">
+              <el-option v-for="(c, key) in components" :key="key" :label="c.label" :value="key" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="默认参与方式">
+            <el-select v-model="form.default_mode" style="width: 160px">
+              <el-option label="参与结论" value="decisive" />
+              <el-option label="仅作参考" value="reference" />
+              <el-option label="关闭" value="off" />
+            </el-select>
+          </el-form-item>
+        </el-form>
+      </el-tab-pane>
+
+      <!-- 输入 -->
+      <el-tab-pane label="输入（工况）" name="inputs">
+        <el-table :data="form.inputs" size="mini" border>
+          <el-table-column label="名称" width="110">
+            <template slot-scope="{ row }"><el-input v-model.trim="row.name" size="mini" /></template>
+          </el-table-column>
+          <el-table-column label="取法" width="150">
+            <template slot-scope="{ row }">
+              <el-select v-model="row.source" size="mini">
+                <el-option label="单个测点" value="single" />
+                <el-option label="多个测点取中位数" value="multi" />
+                <el-option label="由油温算燃油密度" value="density" />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column label="测点" min-width="220">
+            <template slot-scope="{ row }">
+              <el-select v-if="row.source === 'multi'" v-model="row.columns" multiple filterable allow-create size="mini" style="width: 100%">
+                <el-option v-for="c in columns" :key="c" :label="c" :value="c" />
+              </el-select>
+              <el-select v-else-if="row.source === 'density'" v-model="row.temperature_column" filterable allow-create size="mini"
+                         placeholder="油温测点" style="width: 100%">
+                <el-option v-for="c in columns" :key="c" :label="c" :value="c" />
+              </el-select>
+              <el-select v-else v-model="row.column" filterable allow-create size="mini" style="width: 100%">
+                <el-option v-for="c in columns" :key="c" :label="c" :value="c" />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column label="备用测点" width="140">
+            <template slot-scope="{ row }">
+              <el-select v-if="row.source !== 'multi'" v-model="row.fallback" filterable allow-create clearable size="mini"
+                         placeholder="主测点无效时用" style="width: 100%">
+                <el-option v-for="c in columns" :key="c" :label="c" :value="c" />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column label="单位" width="70">
+            <template slot-scope="{ row }"><el-input v-model.trim="row.unit" size="mini" /></template>
+          </el-table-column>
+          <el-table-column width="170">
+            <template slot="header">
+              网格
+              <el-tooltip content="建基准表时计算的工况点，逗号分隔，应覆盖正常数据的工况范围" placement="top"><i class="el-icon-question tip" /></el-tooltip>
+            </template>
+            <template slot-scope="{ row }"><el-input v-model="row.grid" size="mini" placeholder="1000, 2000, 3000" /></template>
+          </el-table-column>
+          <el-table-column width="110">
+            <template slot="header">
+              有效范围
+              <el-tooltip content="超出时认为该测点读数无效（如断路），改用备用测点；可不填" placement="top"><i class="el-icon-question tip" /></el-tooltip>
+            </template>
+            <template slot-scope="{ row }"><el-input v-model="row.valid" size="mini" placeholder="下限,上限" /></template>
+          </el-table-column>
+          <el-table-column width="50">
+            <template slot-scope="{ $index }">
+              <el-button type="text" icon="el-icon-delete" :disabled="form.inputs.length <= 1" @click="form.inputs.splice($index, 1)" />
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-button size="mini" icon="el-icon-plus" class="add" @click="form.inputs.push(blankInput())">添加输入</el-button>
+      </el-tab-pane>
+
+      <!-- 输出 -->
+      <el-tab-pane label="输出（测点）" name="outputs">
+        <el-table :data="form.outputs" size="mini" border>
+          <el-table-column label="名称" width="110">
+            <template slot-scope="{ row }"><el-input v-model.trim="row.name" size="mini" /></template>
+          </el-table-column>
+          <el-table-column label="类型" width="85">
+            <template slot-scope="{ row }">
+              <el-select v-model="row.kind" size="mini">
+                <el-option v-for="(label, value) in KIND_LABELS" :key="value" :label="label" :value="value" />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column label="单位" width="70">
+            <template slot-scope="{ row }"><el-input v-model.trim="row.unit" size="mini" /></template>
+          </el-table-column>
+          <el-table-column min-width="230">
+            <template slot="header">
+              对应测点
+              <el-tooltip content="同一处的多只表可以一起选，各自与同一个预期值比较" placement="top"><i class="el-icon-question tip" /></el-tooltip>
+            </template>
+            <template slot-scope="{ row }">
+              <el-select v-model="row.columns" multiple filterable allow-create size="mini" style="width: 100%">
+                <el-option v-for="c in columns" :key="c" :label="c" :value="c" />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column width="110">
+            <template slot="header">
+              单测点偏离
+              <el-tooltip content="参与结论：该测点偏离时判预警/异常；补充依据：只作为其他原因的依据（如已有互校的流量计）" placement="top"><i class="el-icon-question tip" /></el-tooltip>
+            </template>
+            <template slot-scope="{ row }">
+              <el-select v-model="row.single" size="mini">
+                <el-option label="参与结论" value="decisive" />
+                <el-option label="补充依据" value="notice" />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column label="三维部件" width="130">
+            <template slot-scope="{ row }">
+              <el-select v-model="row.component" clearable filterable size="mini">
+                <el-option v-for="(c, key) in components" :key="key" :label="c.label" :value="key" />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column width="70">
+            <template slot="header">
+              随流量
+              <el-tooltip content="与流量相关的压力：判断“实际流量变化”时用来确认" placement="top"><i class="el-icon-question tip" /></el-tooltip>
+            </template>
+            <template slot-scope="{ row }"><el-checkbox v-model="row.flow_dependent" :disabled="row.kind !== 'pressure'" /></template>
+          </el-table-column>
+          <el-table-column width="50">
+            <template slot-scope="{ $index }">
+              <el-button type="text" icon="el-icon-delete" :disabled="form.outputs.length <= 1" @click="form.outputs.splice($index, 1)" />
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-button size="mini" icon="el-icon-plus" class="add" @click="form.outputs.push(blankOutput())">添加输出</el-button>
+      </el-tab-pane>
+
+      <!-- 判定规则 -->
+      <el-tab-pane label="判定规则" name="rules">
+        <el-form label-width="130px" size="small">
+          <el-form-item label="阈值倍数（σ）">
+            预警 <el-input-number v-model="form.sigma_warn" :min="1" :max="20" :step="0.5" controls-position="right" style="width: 100px" />
+            异常 <el-input-number v-model="form.sigma_alarm" :min="1" :max="20" :step="0.5" controls-position="right" style="width: 100px" />
+            <el-tooltip content="阈值 = max(下限, 倍数 × 标定离散 σ)" placement="right"><i class="el-icon-question tip" /></el-tooltip>
+          </el-form-item>
+          <el-form-item v-for="kind in usedKinds" :key="kind" :label="`${KIND_LABELS[kind]}阈值下限`">
+            预警 <el-input-number v-model="form.floors[kind].warn" :min="0" :step="kind === 'temperature' ? 0.5 : 0.5" :precision="1"
+                                 controls-position="right" style="width: 100px" />
+            异常 <el-input-number v-model="form.floors[kind].alarm" :min="0" :step="0.5" :precision="1"
+                                 controls-position="right" style="width: 100px" />
+            <span class="unit">{{ kind === 'temperature' ? '℃（绝对偏差）' : '%（相对偏差）' }}</span>
+          </el-form-item>
+          <el-divider content-position="left">整体偏移</el-divider>
+          <el-form-item label="启用">
+            <el-switch v-model="form.groupEnabled" />
+            <el-tooltip placement="right" content="一组测点彼此一致、整体偏离模型预期时，判为一个整体原因，而不是每个测点各报一次">
+              <i class="el-icon-question tip" />
+            </el-tooltip>
+          </el-form-item>
+          <template v-if="form.groupEnabled">
+            <el-form-item label="参与的输出">
+              <el-select v-model="form.group.outputs" multiple style="width: 100%">
+                <el-option v-for="o in form.outputs" :key="o.name" :label="o.name" :value="o.name" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="含义">
+              <el-select v-model="form.group.meaning" style="width: 380px">
+                <el-option v-for="(label, value) in MEANING_LABELS" :key="value" :label="label" :value="value" />
+              </el-select>
+            </el-form-item>
+            <el-form-item v-if="form.group.meaning === 'input'" label="对应的输入">
+              <el-select v-model="form.group.input">
+                <el-option v-for="i in form.inputs" :key="i.name" :label="i.name" :value="i.name" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="至少几个测点一致">
+              <el-input-number v-model="form.group.min_columns" :min="1" :max="20" controls-position="right" />
+            </el-form-item>
+            <el-form-item label="三维部件">
+              <el-select v-model="form.group.component" clearable filterable>
+                <el-option v-for="(c, key) in components" :key="key" :label="c.label" :value="key" />
+              </el-select>
+            </el-form-item>
+          </template>
+        </el-form>
+      </el-tab-pane>
+
+      <!-- AMESim -->
+      <el-tab-pane label="AMESim" name="amesim" :disabled="form.engine !== 'amesim'">
+        <el-form label-width="130px" size="small">
+          <el-form-item label="模型文件" required>
+            <el-input v-model.trim="form.amesim.model_file" placeholder="放在 AMESim 服务模型目录中的 .ame 文件名" style="width: 360px" />
+          </el-form-item>
+          <el-form-item label="服务地址">
+            <el-input v-model.trim="form.amesim.url" placeholder="http://127.0.0.1:5003" style="width: 260px" />
+          </el-form-item>
+          <el-form-item label="仿真时长 / 稳态取末段">
+            <el-input-number v-model="form.amesim.stop_time_s" :min="1" controls-position="right" style="width: 110px" /> 秒 /
+            <el-input-number v-model="form.amesim.steady_tail_s" :min="0.1" controls-position="right" style="width: 110px" /> 秒
+          </el-form-item>
+          <el-divider content-position="left">输入怎样设置到模型</el-divider>
+          <el-table :data="form.amesim.parameters" size="mini" border>
+            <el-table-column label="输入" width="130">
+              <template slot-scope="{ row }">
+                <el-select v-model="row.input" size="mini">
+                  <el-option v-for="i in form.inputs" :key="i.name" :label="i.name" :value="i.name" />
+                </el-select>
+              </template>
+            </el-table-column>
+            <el-table-column label="设置方式" width="150">
+              <template slot-scope="{ row }">
+                <el-select v-model="row.kind" size="mini">
+                  <el-option label="部件参数" value="component" />
+                  <el-option label="全局参数" value="global" />
+                  <el-option label="写入 input.data 表格" value="input_table" />
+                </el-select>
+              </template>
+            </el-table-column>
+            <el-table-column label="参数路径（多个用逗号分隔）">
+              <template slot-scope="{ row }">
+                <el-input v-if="row.kind !== 'input_table'" v-model="row.params" size="mini" placeholder="如 speed@pmover01" />
+                <span v-else class="muted">写入 {{ row.points || 150 }} 个点的常值表格</span>
+              </template>
+            </el-table-column>
+            <el-table-column width="50">
+              <template slot-scope="{ $index }">
+                <el-button type="text" icon="el-icon-delete" @click="form.amesim.parameters.splice($index, 1)" />
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-button size="mini" icon="el-icon-plus" class="add" @click="form.amesim.parameters.push({ input: '', kind: 'component', params: '' })">添加参数映射</el-button>
+          <el-divider content-position="left">输出对应的模型变量</el-divider>
+          <el-form-item v-for="o in form.outputs" :key="o.name" :label="o.name || '（未命名输出）'">
+            <el-input v-model.trim="form.amesim.variables[o.name]" placeholder="如 qout@pump01" style="width: 360px" />
+          </el-form-item>
+        </el-form>
+      </el-tab-pane>
+    </el-tabs>
+
+    <span slot="footer">
+      <span v-if="!isNew" class="muted footer-note">修改了输入或输出后，原基准表作废，需要重建后才参与诊断</span>
+      <el-button @click="$emit('close')">取消</el-button>
+      <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+    </span>
+  </el-dialog>
+</template>
+
+<script>
+import { COMPONENTS } from '@/views/dashboard/scene/components'
+import { KIND_LABELS, MEANING_LABELS, createModel, getColumns, updateModel } from '@/api/simulation'
+import { errorMessage } from '@/utils/request'
+
+const DEFAULT_FLOORS = {
+  flow: [2.5, 4], pressure: [4, 7], temperature: [3, 5], torque: [15, 25], other: [5, 8]
+}
+
+function toText(list) {
+  return (list || []).join(', ')
+}
+
+/** 模型配置 → 表单 */
+function toForm(cfg) {
+  const rule = (cfg.rules || {}).group_shift
+  const th = cfg.thresholds || {}
+  const floors = {}
+  for (const kind of Object.keys(DEFAULT_FLOORS)) {
+    const pct = kind === 'temperature' ? 1 : 100
+    const w = (th.floor_warn || {})[kind]
+    const a = (th.floor_alarm || {})[kind]
+    floors[kind] = {
+      warn: w === undefined ? DEFAULT_FLOORS[kind][0] : +(w * pct).toFixed(2),
+      alarm: a === undefined ? DEFAULT_FLOORS[kind][1] : +(a * pct).toFixed(2)
+    }
+  }
+  const ame = cfg.amesim || {}
+  return {
+    id: cfg.id || '',
+    name: cfg.name || '',
+    description: cfg.description || '',
+    engine: (cfg.engine && cfg.engine.type) || 'surrogate',
+    components: [...(cfg.components || [])],
+    default_mode: cfg.default_mode || 'decisive',
+    inputs: (cfg.inputs || []).map(i => ({
+      name: i.name,
+      source: i.derived === 'density' ? 'density' : (i.columns && i.columns.length ? 'multi' : 'single'),
+      column: i.column || '',
+      columns: [...(i.columns || [])],
+      temperature_column: i.temperature_column || '',
+      fallback: (i.fallback_columns || [])[0] || '',
+      unit: i.unit || '',
+      grid: toText(i.grid),
+      valid: toText(i.valid)
+    })),
+    outputs: (cfg.outputs || []).map(o => ({
+      name: o.name,
+      kind: o.kind || 'other',
+      unit: o.unit || '',
+      columns: [...(o.columns || [])],
+      single: o.single || 'decisive',
+      component: o.component || '',
+      flow_dependent: !!o.flow_dependent,
+      component_by_column: o.component_by_column
+    })),
+    groupEnabled: !!rule,
+    group: {
+      outputs: rule ? (rule.outputs || [rule.output]) : [],
+      meaning: (rule && rule.meaning) || 'pump',
+      input: (rule && rule.input) || '',
+      min_columns: (rule && rule.min_columns) || 3,
+      component: (rule && rule.component) || ''
+    },
+    sigma_warn: th.sigma_warn || 3,
+    sigma_alarm: th.sigma_alarm || 5,
+    floors,
+    amesim: {
+      model_file: ame.model_file && !String(ame.model_file).includes('待填写') ? ame.model_file : '',
+      url: ame.url || 'http://127.0.0.1:5003',
+      stop_time_s: ame.stop_time_s || 20,
+      steady_tail_s: ame.steady_tail_s || 5,
+      parameters: (ame.parameters || []).map(p => ({ ...p, params: Array.isArray(p.params) ? p.params.join(', ') : (p.params || '') })),
+      variables: Object.fromEntries(Object.entries(ame.variables || {}).map(([k, v]) => [k, String(v).includes('待填写') ? '' : v]))
+    }
+  }
+}
+
+export default {
+  name: 'ModelEditor',
+  props: {
+    visible: { type: Boolean, default: false },
+    // 编辑时为模型配置（status.models[i].config），新建时为 null
+    model: { type: Object, default: null }
+  },
+  data() {
+    return {
+      tab: 'basic',
+      form: toForm({}),
+      columns: [],
+      saving: false,
+      components: COMPONENTS,
+      KIND_LABELS,
+      MEANING_LABELS
+    }
+  },
+  computed: {
+    isNew() {
+      return !this.model
+    },
+    usedKinds() {
+      return [...new Set(this.form.outputs.map(o => o.kind))]
+    }
+  },
+  watch: {
+    visible: {
+      handler(v) {
+        if (!v) return
+        this.tab = 'basic'
+        this.form = toForm(this.model || {
+          inputs: [this.blankInputCfg()],
+          outputs: [{ name: '', kind: 'flow', unit: 'L/h', columns: [] }]
+        })
+        if (!this.columns.length) getColumns().then(r => { this.columns = r.columns }).catch(() => {})
+      },
+      immediate: true
+    }
+  },
+  methods: {
+    blankInputCfg() {
+      return { name: '', column: '', unit: '', grid: [] }
+    },
+    blankInput() {
+      return { name: '', source: 'single', column: '', columns: [], temperature_column: '', fallback: '', unit: '', grid: '', valid: '' }
+    },
+    blankOutput() {
+      return { name: '', kind: 'pressure', unit: 'MPa', columns: [], single: 'decisive', component: '', flow_dependent: false }
+    },
+    /** 表单 → 模型配置（保留表单不管的字段，如 media、order、ordiam 档位表） */
+    toConfig() {
+      const f = this.form
+      const base = this.model ? JSON.parse(JSON.stringify(this.model)) : {}
+      const cfg = {
+        ...base,
+        id: f.id,
+        name: f.name,
+        description: f.description,
+        engine: { ...(base.engine || {}), type: f.engine },
+        components: f.components,
+        default_mode: f.default_mode,
+        inputs: f.inputs.map((i, k) => {
+          const old = (base.inputs || [])[k] || {}
+          const out = { ...old, name: i.name, unit: i.unit, grid: i.grid, valid: i.valid }
+          delete out.column
+          delete out.columns
+          delete out.derived
+          delete out.temperature_column
+          delete out.aggregate
+          if (i.source === 'multi') out.columns = i.columns
+          else if (i.source === 'density') {
+            out.derived = 'density'
+            out.temperature_column = i.temperature_column
+          } else out.column = i.column
+          out.fallback_columns = i.source !== 'multi' && i.fallback ? [i.fallback] : []
+          return out
+        }),
+        outputs: f.outputs.map(o => {
+          const out = { name: o.name, kind: o.kind, unit: o.unit, columns: o.columns, single: o.single }
+          if (o.component) out.component = o.component
+          if (o.flow_dependent && o.kind === 'pressure') out.flow_dependent = true
+          if (o.component_by_column) out.component_by_column = o.component_by_column
+          return out
+        }),
+        rules: f.groupEnabled ? {
+          group_shift: {
+            outputs: f.group.outputs,
+            meaning: f.group.meaning,
+            min_columns: f.group.min_columns,
+            ...(f.group.meaning === 'input' ? { input: f.group.input } : {}),
+            ...(f.group.component ? { component: f.group.component } : {})
+          }
+        } : {},
+        thresholds: {
+          ...(base.thresholds || {}),
+          sigma_warn: f.sigma_warn,
+          sigma_alarm: f.sigma_alarm,
+          floor_warn: Object.fromEntries(this.usedKinds.map(k => [k, f.floors[k].warn / (k === 'temperature' ? 1 : 100)])),
+          floor_alarm: Object.fromEntries(this.usedKinds.map(k => [k, f.floors[k].alarm / (k === 'temperature' ? 1 : 100)]))
+        },
+        amesim: {
+          ...(base.amesim || {}),
+          model_file: f.amesim.model_file,
+          url: f.amesim.url,
+          stop_time_s: f.amesim.stop_time_s,
+          steady_tail_s: f.amesim.steady_tail_s,
+          parameters: f.amesim.parameters,
+          variables: Object.fromEntries(f.outputs.map(o => [o.name, f.amesim.variables[o.name] || '']))
+        }
+      }
+      if (f.engine !== 'amesim' && !cfg.amesim.model_file) cfg.amesim.model_file = '待填写.ame'
+      return cfg
+    },
+    async save() {
+      this.saving = true
+      try {
+        const cfg = this.toConfig()
+        const result = this.isNew ? await createModel(cfg) : await updateModel(this.model.id, cfg)
+        this.$message.success(this.isNew ? `已新建“${result.name}”，请为它建立基准表` : `已保存“${result.name}”`)
+        this.$emit('saved', result)
+      } catch (e) {
+        this.$message.error(errorMessage(e))
+      } finally {
+        this.saving = false
+      }
+    }
+  }
+}
+</script>
+
+<style scoped>
+.editor >>> .el-tabs__content {
+  max-height: 64vh;
+  overflow-y: auto;
+}
+.add {
+  margin-top: 8px;
+}
+.tip {
+  margin-left: 6px;
+  color: #909399;
+  cursor: help;
+}
+.unit {
+  margin-left: 8px;
+  color: #909399;
+}
+.muted {
+  color: #909399;
+}
+.footer-note {
+  font-size: 12px;
+  margin-right: 12px;
+}
+</style>

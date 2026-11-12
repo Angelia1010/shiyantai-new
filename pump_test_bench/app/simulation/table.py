@@ -13,6 +13,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
+from pump_test_bench.app.simulation.config import signature
 from pump_test_bench.app.simulation.models import SimulationModel
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,7 @@ def build_table(model: SimulationModel, cfg: Dict, progress: Optional[Callable[[
         "version": 2,
         "model_id": cfg["id"],
         "model_name": cfg["name"],
+        "signature": signature(cfg),
         "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "model": model_info,
         "inputs": [{"name": s["name"], "unit": s.get("unit", ""), "grid": s["grid"],
@@ -143,3 +145,20 @@ def load_table(model_id: str) -> Optional[Dict]:
             _cache[str(path)] = (mtime, table)
         return table
     return None
+
+
+def is_stale(table: Dict, cfg: Dict) -> bool:
+    """模型的输入、输出改过而基准表没有重建。"""
+    sig = table.get("signature")
+    return bool(sig) and sig != signature(cfg)
+
+
+def delete_user_table(model_id: str) -> bool:
+    try:
+        path = table_path(model_id)
+    except Exception:
+        return False
+    if path.exists():
+        path.unlink()
+        return True
+    return False

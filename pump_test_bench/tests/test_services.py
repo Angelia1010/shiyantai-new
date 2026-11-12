@@ -247,7 +247,8 @@ def test_simulation_endpoints(task_client, env, token):
     assert ids == ["bench", "turbine", "thermal"]
     bench = st["models"][0]
     assert bench["table"]["is_default"] and bench["setting"]["mode"] == "decisive"
-    assert st["models"][1]["engine"] == "formula" and st["models"][1]["media"]["video"]
+    assert st["models"][1]["engine"] == "surrogate" and st["models"][1]["media"]["video"]
+    assert [e["type"] for e in st["models"][1]["engines"]] == ["surrogate", "amesim"]
 
     pred = task_client.post("/simulation/models/bench/predict", headers=auth(token),
                             json={"condition": {"电传转速": 2000, "进口压力": 0.15, "油温": 36}}).get_json()
@@ -283,3 +284,52 @@ def test_simulation_endpoints(task_client, env, token):
 
     st = task_client.delete("/simulation/models/bench/table", headers=auth(token)).get_json()
     assert st["removed"] and st["models"][0]["table"]["is_default"]
+
+
+def test_custom_simulation_model_crud(task_client, env, token):
+    """前端自定义模型：新建（数据代理）→ 用正常数据建基准表 → 参与诊断 → 修改（基准表作废）→ 删除。"""
+    import shutil
+    import time as _time
+    from pump_test_bench.tests.conftest import REPO_ROOT
+    model = {
+        "id": "torque", "name": "电传扭矩模型", "engine": {"type": "surrogate"}, "components": ["被试件2"],
+        "inputs": [{"name": "转速", "column": "电传实际转速", "unit": "rpm", "grid": "1000,2000,3000"}],
+        "outputs": [{"name": "扭矩", "unit": "N·m", "kind": "torque", "columns": ["电传扭矩"]}],
+    }
+    r = task_client.post("/simulation/models", headers=auth(token), json=model)
+    assert r.status_code == 201, r.get_json()
+    created = r.get_json()
+    assert created["source"] == "custom" and created["table"] is None
+    assert created["config"]["inputs"][0]["grid"] == [1000, 2000, 3000]
+    assert task_client.post("/simulation/models", headers=auth(token), json=model).status_code == 400  # 编号重复
+    bad = {**model, "id": "x2", "outputs": [{"name": "扭矩", "kind": "torque", "columns": []}]}
+    assert "测点" in task_client.post("/simulation/models", headers=auth(token), json=bad).get_json()["error"]
+    ame = {**model, "id": "ame1", "engine": {"type": "amesim"}}
+    assert "模型文件" in task_client.post("/simulation/models", headers=auth(token), json=ame).get_json()["error"]
+
+    src = REPO_ROOT / "标准台性能录取数据" / "标准台性能录取数据"
+    healthy = env / "healthy"
+    shutil.copytree(src / "36-38摄氏度", healthy / "36-38摄氏度")
+    shutil.copytree(src / "45-50摄氏度", healthy / "45-50摄氏度")
+    assert task_client.post("/simulation/models/torque/table", headers=auth(token),
+                            json={"path": str(healthy)}).status_code == 202
+    for _ in range(300):
+        st = task_client.get("/simulation/status", headers=auth(token)).get_json()
+        if st["job"]["state"] != "running":
+            break
+        _time.sleep(0.1)
+    assert st["job"]["state"] == "done", st["job"]
+    torque = next(m for m in st["models"] if m["id"] == "torque")
+    assert torque["table"] and not torque["table"]["stale"]
+
+    from pump_test_bench.app.diagnosis.engine import load_sims
+    assert "torque" in [c["id"] for c, _ in load_sims()]
+
+    changed = {**torque["config"], "inputs": [{**model["inputs"][0], "grid": [1000, 1500, 2000, 2500, 3000]}]}
+    r = task_client.put("/simulation/models/torque", headers=auth(token), json=changed)
+    assert r.status_code == 200 and r.get_json()["table"]["stale"] is True
+    assert "torque" not in [c["id"] for c, _ in load_sims()]  # 基准表作废，不参与诊断
+
+    assert task_client.delete("/simulation/models/bench", headers=auth(token)).status_code == 400  # 内置模型不能删
+    r = task_client.delete("/simulation/models/torque", headers=auth(token)).get_json()
+    assert r["removed"] == "torque" and "torque" not in [m["id"] for m in r["models"]]

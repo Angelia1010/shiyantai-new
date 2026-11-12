@@ -2,7 +2,8 @@
  "version": 2,
  "model_id": "thermal",
  "model_name": "温控链路模型",
- "created": "2026-11-12 13:09:40",
+ "signature": "b7c173ee663e",
+ "created": "2026-11-12 13:26:09",
  "model": {
   "type": "surrogate",
   "label": "数据代理模型（由正常数据拟合）",

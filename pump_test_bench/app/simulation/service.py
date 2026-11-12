@@ -6,11 +6,13 @@ from typing import Dict, List, Optional
 
 from pump_test_bench.app.simulation.calibration import build_reference
 from pump_test_bench.app.simulation.check import thresholds
-from pump_test_bench.app.simulation.config import list_models, load_model_cfg
-from pump_test_bench.app.simulation.table import load_table, predict, save_table, table_path
+from pump_test_bench.app.simulation.config import (
+    KINDS, builtin_ids, delete_user_model, list_models, load_model_cfg, save_user_model, validate_model
+)
+from pump_test_bench.app.simulation.table import delete_user_table, is_stale, load_table, predict, save_table, table_path
 
 logger = logging.getLogger(__name__)
-ENGINE_LABELS = {"surrogate": "数据代理模型（由正常数据拟合）", "formula": "数学公式", "amesim": "AMESim 模型"}
+ENGINE_LABELS = {"surrogate": "数据代理模型（由正常数据拟合）", "amesim": "AMESim 模型"}
 
 _job_lock = threading.Lock()
 _job: Dict = {"state": "idle"}
@@ -57,10 +59,9 @@ def start_build(model_id: str, paths, engine: str, source: str, operator: str) -
 
 
 def _engines(mcfg: Dict) -> List[Dict]:
-    """该模型可选的引擎：配置的引擎 + 代理模型 + AMESim（amesim 段补全后可用）。"""
-    configured = mcfg["engine"]["type"]
+    """可选的引擎：数据代理模型 + AMESim（amesim 段补全后可用）。"""
     out = []
-    for kind in dict.fromkeys([configured, "surrogate", "amesim"]):
+    for kind in ("surrogate", "amesim"):
         ready = kind != "amesim" or "待填写" not in str(mcfg.get("amesim", {}))
         out.append({"type": kind, "label": ENGINE_LABELS.get(kind, kind), "ready": ready,
                     "note": "" if ready else f"{mcfg['id']}.json 的 amesim 段还有“待填写”项"})
@@ -82,10 +83,13 @@ def model_status(mcfg: Dict, profile: Dict) -> Dict:
                             "unit": units.get(c["output"], ""), "bias": c["bias"], "bias_slope": c.get("bias_slope", 0),
                             "std": c["std"], "warn": warn, "alarm": alarm, "n": c.get("n")})
         info = {"created": table.get("created"), "model": table.get("model", {}), "source": table.get("source", ""),
-                "is_default": bool(table.get("_default")), "inputs": table["inputs"], "outputs": table["outputs"],
+                "is_default": bool(table.get("_default")), "stale": is_stale(table, mcfg),
+                "inputs": table["inputs"], "outputs": table["outputs"],
                 "calibration": {"files": calib.get("files"), "method": calib.get("method"), "columns": columns}}
     return {
         "id": mcfg["id"], "name": mcfg["name"], "description": mcfg.get("description", ""),
+        "source": mcfg.get("_source", "builtin"),
+        "config": {k: v for k, v in mcfg.items() if not k.startswith("_")},
         "components": mcfg.get("components", []), "engine": mcfg["engine"]["type"], "engines": _engines(mcfg),
         "inputs": [{k: i.get(k) for k in ("name", "column", "columns", "derived", "temperature_column", "unit", "grid")}
                    for i in mcfg["inputs"]],
@@ -98,7 +102,42 @@ def model_status(mcfg: Dict, profile: Dict) -> Dict:
 def status() -> Dict:
     from pump_test_bench.app.diagnosis.settings import MODES, profile
     prof = profile()
-    return {"models": [model_status(m, prof) for m in list_models()], "job": job_status(), "modes": MODES}
+    return {"models": [model_status(m, prof) for m in list_models()], "job": job_status(), "modes": MODES,
+            "kinds": KINDS, "engine_labels": ENGINE_LABELS}
+
+
+def save_model(data: Dict, model_id: Optional[str] = None) -> Dict:
+    """新建（model_id 为空）或修改模型配置。改了输入、输出后旧基准表作废，需要重建。"""
+    existing = {m["id"] for m in list_models()}
+    if model_id is None and str(data.get("id", "")).strip() in existing:
+        raise ValueError(f"模型编号 {data.get('id')} 已存在，请换一个")
+    if model_id is not None and model_id not in existing:
+        raise ValueError(f"没有这个仿真模型：{model_id}")
+    from pump_test_bench.app.diagnosis.settings import profile
+    cfg = validate_model(data, model_id)
+    if model_id is None:
+        cfg.setdefault("order", 10 + len(existing))
+    save_user_model(cfg)
+    return model_status(load_model_cfg(cfg["id"]), profile())
+
+
+def delete_model(model_id: str) -> Dict:
+    """删除自定义模型（连同其基准表）；内置模型只能删除修改过的配置，恢复为内置配置。"""
+    cfg = load_model_cfg(model_id)
+    if cfg.get("_source") == "builtin":
+        raise ValueError("内置模型不能删除，可以在诊断方案中把它设为“关闭”")
+    delete_user_model(model_id)
+    if model_id not in builtin_ids():
+        delete_user_table(model_id)
+    return {"removed": model_id, "restored": model_id in builtin_ids()}
+
+
+def known_columns() -> List[str]:
+    """可选的测点列（试验台导出文件的表头）。"""
+    from pump_test_bench.app.core.known_headers import HEADER_V2
+    from pump_test_bench.app.core.table_parser import normalize_column
+    cols = [normalize_column(h)[0] for h in HEADER_V2 if h.strip()]
+    return [c for c in dict.fromkeys(cols) if c and c != "时间"]
 
 
 def try_predict(model_id: str, condition: Dict) -> Dict:
