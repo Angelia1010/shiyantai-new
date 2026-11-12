@@ -46,7 +46,7 @@ def build_table(model: SimulationModel, cfg: Dict, progress: Optional[Callable[[
         model_info["surrogate"] = model.to_dict()
     return {
         "version": 1,
-        "created": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "model": model_info,
         "inputs": [{"name": s["name"], "unit": s.get("unit", ""), "column": s["column"], "grid": s["grid"]}
                    for s in cfg["inputs"]],

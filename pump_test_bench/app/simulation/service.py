@@ -43,7 +43,9 @@ def start_build(paths, model: str, source: str, operator: str) -> Dict:
         try:
             table = build_reference(list(paths), load_sim_config(), model, progress, source=source)
             save_table(table)
-            _set_job(state="done", stage="完成", finished=int(time.time() * 1000))
+            _set_job(state="done", stage="完成", finished=int(time.time() * 1000),
+                     result={"created": table["created"], "files": table["calibration"]["files"],
+                             "model": table["model"]["label"]})
             logger.info("用户 %s 重建仿真基准表（%s，%s）", operator, model, source)
         except Exception as exc:  # 失败原因返回给前端
             logger.exception("建立仿真基准表失败")

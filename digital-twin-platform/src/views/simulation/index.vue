@@ -49,6 +49,9 @@
             <div class="muted">正在建立基准表：{{ job.stage }} {{ job.total ? `${job.done}/${job.total}` : '' }}</div>
             <el-progress :percentage="jobPercent" :stroke-width="10" />
           </div>
+          <div v-else-if="job.state === 'done' && job.result" class="muted small job">
+            上次重建：{{ job.result.created }}，{{ job.operator }} 用 {{ job.source }}（{{ job.result.files }} 个文件）
+          </div>
           <el-alert v-else-if="job.state === 'failed'" class="note" type="error" :closable="false" :title="`上次建立失败：${job.error}`" />
         </el-card>
 
@@ -186,8 +189,15 @@ export default {
     },
     async load() {
       try {
+        const wasRunning = this.running
         this.status = await getSimulationStatus()
         this.job = this.status.job || { state: 'idle' }
+        if (wasRunning && this.job.state === 'done' && this.job.result) {
+          const r = this.job.result
+          this.$message.success(`基准表已更新：${r.model}，${r.files} 个正常数据文件，${r.created}`)
+        } else if (wasRunning && this.job.state === 'failed') {
+          this.$message.error(`建立基准表失败：${this.job.error}`)
+        }
         if (this.table && !Object.keys(this.condition).length) {
           const c = {}
           for (const i of this.table.inputs) {
