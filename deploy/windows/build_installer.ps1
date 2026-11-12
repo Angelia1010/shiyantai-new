@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-  生成“标准台校验系统”的 Windows 安装包（一键打包）。
+  生成「标准台校验系统」的 Windows 安装包（一键打包）。
 
 .DESCRIPTION
   在一台能联网的 Windows 电脑上，于仓库任意位置运行：
@@ -175,7 +175,7 @@ foreach ($dir in @("shared", "pump_test_bench", "AMESim_server")) {
     if ($LASTEXITCODE -ge 8) { Fail "复制 $dir 失败" }
 }
 Copy-Item (Join-Path $Root ".env.example") $app
-# 智能助手（本地大模型）的部署说明，供勾选“智能助手”时参考
+# 智能助手（本地大模型）的部署说明，供勾选「智能助手」时参考
 New-Item -ItemType Directory -Force -Path (Join-Path $app "DeepSeek-model") | Out-Null
 Copy-Item (Join-Path $Root "DeepSeek-model\README.md"), (Join-Path $Root "DeepSeek-model\说明.docx") (Join-Path $app "DeepSeek-model") -ErrorAction SilentlyContinue
 Copy-Item (Join-Path $Here "installer_tools.py") $Stage
@@ -197,7 +197,7 @@ Step "生成安装包"
 $isccDir = Split-Path $iscc
 # 有完整的中文语言文件就用它；没有时 setup.iss 用项目自带的 ChineseSimplified-partial.isl
 $chs = Join-Path $isccDir "Languages\ChineseSimplified.isl"
-# 杀毒软件常在安装包 exe 刚写出时锁住扫描，导致“另一个程序正在使用此文件”：
+# 杀毒软件常在安装包 exe 刚写出时锁住扫描，导致「另一个程序正在使用此文件」：
 # 每次编译到新的临时目录，失败时等几秒重试，成功后再移到 output
 $exeName = "BenchCheck-Setup-$Version.exe"
 $exe = Join-Path $Out $exeName
@@ -215,7 +215,7 @@ for ($try = 1; $try -le 3; $try++) {
     }
 }
 if (-not $compiled) {
-    Fail ("Inno Setup 编译失败。如果提示“另一个程序正在使用此文件”，多半是杀毒软件在扫描生成的安装包：" +
+    Fail ("Inno Setup 编译失败。如果提示「另一个程序正在使用此文件」，多半是杀毒软件在扫描生成的安装包：" +
           "请在 Windows 安全中心 → 病毒和威胁防护 → 排除项 中添加文件夹 $Here ，然后重新运行。")
 }
 Start-Sleep -Seconds 2
