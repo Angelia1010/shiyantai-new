@@ -50,17 +50,25 @@ if (-not $Version) { $Version = (Get-Content (Join-Path $Here "VERSION") -Raw).T
 
 function Step($text) { Write-Host "`n==> $text" -ForegroundColor Cyan }
 function Fail($text) { Write-Host "`n[失败] $text" -ForegroundColor Red; exit 1 }
-function Download($url, $file, [switch]$Optional) {
-    if (Test-Path $file) { Write-Host "使用缓存：$file"; return $true }
-    Write-Host "下载 $url"
-    try { Invoke-WebRequest -Uri $url -OutFile "$file.part" -UseBasicParsing }
-    catch {
-        if ($Optional) { Write-Host "下载失败（可选文件，跳过）：$url" -ForegroundColor Yellow; return $false }
-        Fail "下载失败：$url`n$($_.Exception.Message)`n如无法访问外网，可把该文件手动放到 $file 后重试。"
+# 依次尝试多个地址（国内镜像在前）；$check 用于确认下载到的是需要的文件，而不是网页
+function Download([string[]]$urls, $file, [scriptblock]$check) {
+    if ((Test-Path $file) -and (& $check $file)) { Write-Host "使用缓存：$file"; return }
+    Remove-Item $file -ErrorAction SilentlyContinue
+    foreach ($url in $urls) {
+        Write-Host "下载 $url"
+        try {
+            Invoke-WebRequest -Uri $url -OutFile "$file.part" -UseBasicParsing -UserAgent "Mozilla/5.0"
+            if (& $check "$file.part") { Move-Item "$file.part" $file -Force; return }
+            Write-Host "  下载到的不是需要的文件，换下一个地址" -ForegroundColor Yellow
+        } catch {
+            Write-Host "  失败：$($_.Exception.Message)" -ForegroundColor Yellow
+        }
+        Remove-Item "$file.part" -ErrorAction SilentlyContinue
     }
-    Move-Item "$file.part" $file -Force
-    return $true
+    Fail "下载失败。可以用浏览器打开上面任一地址下载，把文件放到 $file 后重新运行。"
 }
+$IsZip = { param($f) (Get-Item $f).Length -gt 1MB -and ([System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($f)[0..1]) -eq "PK") }
+$IsGetPip = { param($f) (Get-Item $f).Length -gt 100KB -and ((Get-Content $f -TotalCount 40 -Encoding UTF8) -join "`n") -match "pip" }
 function Invoke-Checked($exe, [string[]]$arguments, $what) {
     & $exe @arguments
     if ($LASTEXITCODE -ne 0) { Fail "$what（退出码 $LASTEXITCODE）" }
@@ -103,7 +111,9 @@ New-Item -ItemType Directory -Force -Path $Stage | Out-Null
 # ---------------------------------------------------------------- 2. Python 运行环境
 Step "Python $PythonVersion 嵌入式运行环境"
 $pyZip = Join-Path $Cache "python-$PythonVersion-embed-amd64.zip"
-Download "https://www.python.org/ftp/python/$PythonVersion/python-$PythonVersion-embed-amd64.zip" $pyZip | Out-Null
+Download @("https://mirrors.huaweicloud.com/python/$PythonVersion/python-$PythonVersion-embed-amd64.zip",
+           "https://npmmirror.com/mirrors/python/$PythonVersion/python-$PythonVersion-embed-amd64.zip",
+           "https://www.python.org/ftp/python/$PythonVersion/python-$PythonVersion-embed-amd64.zip") $pyZip $IsZip
 $pyDir = Join-Path $Stage "python"
 Expand-Archive -Path $pyZip -DestinationPath $pyDir -Force
 $tag = ($PythonVersion.Split(".")[0..1] -join "")
@@ -113,7 +123,8 @@ Set-Content -Path $pth -Encoding ASCII -Value @("python$tag.zip", ".", "..\app",
 $py = Join-Path $pyDir "python.exe"
 
 $getPip = Join-Path $Cache "get-pip.py"
-Download "https://bootstrap.pypa.io/get-pip.py" $getPip | Out-Null
+Download @("https://mirrors.aliyun.com/pypi/get-pip.py",
+           "https://bootstrap.pypa.io/get-pip.py") $getPip $IsGetPip
 $pipArgs = @("--no-warn-script-location", "--disable-pip-version-check")
 if ($PipIndex) { $pipArgs += @("-i", $PipIndex) }
 Invoke-Checked $py (@($getPip) + $pipArgs) "安装 pip"
