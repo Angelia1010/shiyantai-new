@@ -12,6 +12,9 @@
     </div>
     <el-input ref="input" v-model="formula.expression" type="textarea" :autosize="{ minRows: 2, maxRows: 5 }"
               class="expr" placeholder="如：a + b * 质量流量 + c * 密度；乘方用 ^，条件用 if(条件, 甲, 乙)" @input="sync" />
+    <div v-if="formula.expression" class="preview">
+      <equation-view :expression="previewText" :variables="variables.map(v => v.name)" size="small" />
+    </div>
     <div class="hint muted">不是变量、也不是函数的名字都是系数，在下表中给值；勾选“由数据拟合”的系数在验证或建立模型时用正常数据求出，填的值作为初值。</div>
     <el-table v-if="names.length" :data="rows" size="mini" border class="coefs">
       <el-table-column label="系数" width="110">
@@ -42,9 +45,11 @@
 
 <script>
 import { FUNCTION_HELP, coefficientNames } from '@/api/simulation'
+import EquationView from './EquationView'
 
 export default {
   name: 'FormulaEditor',
+  components: { EquationView },
   props: {
     // { expression, coefficients: { 名: { value, fit } } }，直接修改
     formula: { type: Object, required: true },
@@ -59,6 +64,10 @@ export default {
   computed: {
     names() {
       return coefficientNames(this.formula.expression, this.variables.map(v => v.name))
+    },
+    // 预览：去掉 “Y =” 前缀
+    previewText() {
+      return String(this.formula.expression || '').replace(/^[^=<>!()]*?(?<![<>=!])=(?!=)/, '')
     },
     rows() {
       return this.names.filter(n => this.formula.coefficients[n]).map(name => ({ name }))
@@ -111,6 +120,12 @@ export default {
 }
 .expr >>> textarea {
   font-family: Menlo, Consolas, monospace;
+}
+.preview {
+  margin-top: 6px;
+  padding: 4px 12px;
+  border-left: 3px solid #0b1626;
+  background: #f7f9fb;
 }
 .hint {
   font-size: 12px;

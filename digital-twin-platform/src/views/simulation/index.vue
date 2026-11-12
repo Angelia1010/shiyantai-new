@@ -1,157 +1,176 @@
 <template>
-  <div class="app-container simulation-page">
-    <div class="page-header">
-      <h2 class="page-title">仿真模型</h2>
-      <div>
+  <div class="sim-page">
+    <header class="sim-head">
+      <h2>仿真模型</h2>
+      <div class="head-actions">
         <el-dropdown v-if="deletedBuiltins.length" trigger="click" @command="restoreBuiltin">
-          <el-button size="small" icon="el-icon-refresh-left">恢复已删除的内置模型（{{ deletedBuiltins.length }}）</el-button>
+          <el-button size="small" plain icon="el-icon-refresh-left">恢复已删除的内置模型（{{ deletedBuiltins.length }}）</el-button>
           <el-dropdown-menu slot="dropdown">
             <el-dropdown-item v-for="d in deletedBuiltins" :key="d.id" :command="d">{{ d.name }}</el-dropdown-item>
           </el-dropdown-menu>
         </el-dropdown>
-        <el-button size="small" icon="el-icon-setting" @click="openDerived">派生测点</el-button>
+        <el-button size="small" plain icon="el-icon-setting" @click="openDerived">派生测点</el-button>
         <el-button size="small" type="primary" icon="el-icon-plus" @click="openEditor(null)">新建模型</el-button>
       </div>
-    </div>
+    </header>
 
-    <el-card shadow="never" class="box-card">
-      <div slot="header" class="card-head">
-        <span>
-          模型与诊断方案
-          <el-tooltip placement="right">
-            <div slot="content">
-              点击模型查看详细信息（输入、输出、规则、基准表与标定、工况试算）。<br>
-              参与结论：偏离超过阈值时判预警/异常；仅作参考：只写进报告；关闭：不做该模型的对比。<br>
-              阈值 = max(下限, 倍数 × 标定离散 σ)，倍数越大越不容易报。诊断方案自动诊断与手动诊断共用。
+    <div v-loading="loading" class="sim-body">
+      <!-- 模型列表 -->
+      <nav class="rail" aria-label="仿真模型列表">
+        <button v-for="m in models" :key="m.id" type="button" :class="['rail-item', statusOf(m).tone, { active: m.id === selectedId }]"
+                @click="select(m)">
+          <span class="rail-name">{{ m.name }}</span>
+          <span class="rail-method">{{ methodText(m) }}</span>
+          <span class="rail-meta">
+            <i class="dot" />{{ statusOf(m).text }}
+            <template v-if="accuracyOf(m)"><span class="sep" />换油温误差 {{ accuracyOf(m) }}</template>
+          </span>
+          <span v-if="job.state === 'running' && job.model_id === m.id" class="rail-progress"><span :style="{ width: jobPercent + '%' }" /></span>
+        </button>
+        <div v-if="!loading && !models.length" class="rail-empty">
+          还没有仿真模型。
+          <el-button type="text" @click="openEditor(null)">新建一个</el-button>
+        </div>
+        <div v-if="profileDirty" class="profile-bar">
+          <span>诊断方案有未保存的修改</span>
+          <el-button size="mini" type="primary" @click="saveProfile">保存方案</el-button>
+        </div>
+      </nav>
+
+      <!-- 模型详情 -->
+      <section v-if="current" class="sheet">
+        <div class="sheet-head">
+          <div class="title-block">
+            <h3>{{ current.name }}</h3>
+            <p class="desc">{{ current.description }}</p>
+            <div class="badges">
+              <span class="badge">{{ methodText(current) }}</span>
+              <span :class="['badge', current.source]">{{ SOURCE_LABELS[current.source] }}</span>
+              <span class="badge mono">{{ current.id }}</span>
             </div>
-            <i class="el-icon-question tip" />
-          </el-tooltip>
-        </span>
-        <el-button size="mini" type="primary" :disabled="!profileDirty" @click="saveProfile">保存方案</el-button>
-      </div>
-      <el-table v-loading="loading" :data="models" size="small" border class="model-table" empty-text="还没有仿真模型，点击右上角“新建模型”"
-                @row-click="openDetail">
-        <el-table-column label="模型" min-width="220">
-          <template slot-scope="{ row }">
-            <span class="model-name">{{ row.name }}</span>
-            <el-tag size="mini" :type="row.source === 'builtin' ? '' : 'info'" class="src-tag">{{ SOURCE_LABELS[row.source] }}</el-tag>
-            <div class="muted small ellipsis">{{ row.description }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column label="方式" width="110">
-          <template slot-scope="{ row }">
-            {{ ENGINE_LABELS[row.engine] || row.engine }}
-            <div v-if="row.methods && row.methods.length" class="muted small">{{ row.methods.map(m => METHOD_LABELS[m] || m).join(' + ') }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column label="变量 / 输出" width="150">
-          <template slot-scope="{ row }">
-            {{ row.config.inputs.length }} 个变量 / {{ outputColumns(row.config).length }} 个测点
-            <div class="muted small">{{ systemsOf(row.config).join('、') }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column label="基准表" min-width="150">
-          <template slot-scope="{ row }">
-            <template v-if="row.table">
-              <span v-if="row.table.stale" class="warn">需要重建</span>
-              <span v-else>{{ row.table.is_default ? '默认表' : '已重建' }}</span>
-              <div class="muted small">{{ row.table.created }}</div>
-            </template>
-            <span v-else class="warn">还没有基准表</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="参与方式" width="130">
-          <template slot-scope="{ row }">
-            <div @click.stop>
-              <el-select v-model="profile[row.id].mode" size="mini" @change="profileDirty = true">
+          </div>
+          <div class="sheet-actions">
+            <el-button size="small" icon="el-icon-edit" @click="openEditor(current)">编辑</el-button>
+            <el-button size="small" type="primary" icon="el-icon-cpu" :disabled="running" @click="openBuild(current)">
+              {{ current.table ? '重建模型' : '建立模型' }}
+            </el-button>
+            <el-dropdown trigger="click" @command="onMore">
+              <el-button size="small" icon="el-icon-more" aria-label="更多操作" />
+              <el-dropdown-menu slot="dropdown">
+                <el-dropdown-item command="reset" :disabled="!current.table || current.table.is_default || running">恢复随代码提供的结果</el-dropdown-item>
+                <el-dropdown-item command="restore" :disabled="current.source !== 'override'">恢复内置配置</el-dropdown-item>
+                <el-dropdown-item command="delete" divided class="danger-item">删除模型</el-dropdown-item>
+              </el-dropdown-menu>
+            </el-dropdown>
+          </div>
+        </div>
+
+        <dl class="facts">
+          <div class="fact">
+            <dt>诊断中</dt>
+            <dd>
+              <el-select v-model="profile[current.id].mode" size="mini" class="mode-select" @change="profileDirty = true">
                 <el-option v-for="(label, value) in MODE_LABELS" :key="value" :label="label" :value="value" />
               </el-select>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="预警 / 异常倍数（σ）" width="220">
-          <template slot-scope="{ row }">
-            <div @click.stop>
-              <el-input-number v-model="profile[row.id].sigma_warn" size="mini" :min="1" :max="20" :step="0.5"
-                               controls-position="right" style="width: 90px" @change="profileDirty = true" />
-              /
-              <el-input-number v-model="profile[row.id].sigma_alarm" size="mini" :min="1" :max="20" :step="0.5"
-                               controls-position="right" style="width: 90px" @change="profileDirty = true" />
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="170" align="center">
-          <template slot-scope="{ row }">
-            <div @click.stop>
-              <el-button type="text" size="mini" @click="openDetail(row)">详情</el-button>
-              <el-button type="text" size="mini" @click="openEditor(row)">编辑</el-button>
-              <el-button type="text" size="mini" class="danger" @click="removeModel(row)">删除</el-button>
-            </div>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-card>
-
-    <!-- 模型详情 -->
-    <el-drawer :visible.sync="detail.visible" size="72%" :with-header="false" @closed="onDetailClosed">
-      <div v-if="current" class="detail">
-        <div class="detail-head">
-          <div>
-            <span class="detail-title">{{ current.name }}</span>
-            <el-tag size="mini" :type="current.source === 'builtin' ? '' : 'info'" class="src-tag">{{ SOURCE_LABELS[current.source] }}</el-tag>
-            <el-tag size="mini" type="success" class="src-tag">{{ MODE_LABELS[(current.setting || {}).mode || 'decisive'] }}</el-tag>
-            <div class="muted small">{{ current.id }} · {{ current.description }}</div>
+            </dd>
           </div>
-          <div class="detail-actions">
-            <el-button size="mini" icon="el-icon-edit" @click="openEditor(current)">编辑配置</el-button>
-            <el-button v-if="current.source === 'override'" size="mini" @click="restoreConfig(current)">恢复内置配置</el-button>
-            <el-button v-if="current.table && !current.table.is_default" size="mini" :disabled="running" @click="reset(current)">恢复默认表</el-button>
-            <el-button size="mini" type="primary" :disabled="running" @click="openBuild(current)">{{ current.table ? '重建基准表' : '建立基准表' }}</el-button>
-            <el-button size="mini" type="danger" plain @click="removeModel(current)">删除模型</el-button>
-            <el-button size="mini" icon="el-icon-close" circle @click="detail.visible = false" />
+          <div class="fact">
+            <dt>
+              预警 / 异常倍数
+              <el-tooltip content="阈值 = max(下限, 倍数 × 标定离散 σ)，倍数越大越不容易报" placement="top"><i class="el-icon-question" /></el-tooltip>
+            </dt>
+            <dd class="sigma">
+              <el-input-number v-model="profile[current.id].sigma_warn" size="mini" :min="1" :max="20" :step="0.5" controls-position="right"
+                               @change="profileDirty = true" />
+              <span>/</span>
+              <el-input-number v-model="profile[current.id].sigma_alarm" size="mini" :min="1" :max="20" :step="0.5" controls-position="right"
+                               @change="profileDirty = true" />
+              <span class="unit">σ</span>
+            </dd>
           </div>
-        </div>
+          <div class="fact">
+            <dt>模型结果</dt>
+            <dd v-if="current.table">
+              <span :class="{ warn: current.table.stale }">{{ current.table.stale ? '配置已修改，需要重建' : (current.table.is_default ? '随代码提供' : '已重建') }}</span>
+              <small>{{ current.table.created }}</small>
+            </dd>
+            <dd v-else class="warn">还没有，点“建立模型”</dd>
+          </div>
+          <div class="fact">
+            <dt>标定数据</dt>
+            <dd v-if="current.table">
+              {{ current.table.calibration.files }} 个正常数据文件
+              <small>{{ current.table.calibration.method }}</small>
+            </dd>
+            <dd v-else>—</dd>
+          </div>
+        </dl>
 
         <div v-if="job.state === 'running' && job.model_id === current.id" class="job">
-          <div class="muted">正在建立：{{ job.stage }} {{ job.total ? `${job.done}/${job.total}` : '' }}</div>
-          <el-progress :percentage="jobPercent" :stroke-width="10" />
+          <span>正在建立：{{ job.stage }} {{ job.total ? `${job.done}/${job.total}` : '' }}</span>
+          <el-progress :percentage="jobPercent" :stroke-width="6" :show-text="false" />
         </div>
-        <div v-else-if="job.state === 'done' && job.model_id === current.id && job.result" class="muted small job">
-          上次重建：{{ job.result.created }}，{{ job.operator }} 用 {{ job.source }}（{{ job.result.files }} 个文件）
-        </div>
-        <el-alert v-else-if="job.state === 'failed' && job.model_id === current.id" class="note" type="error"
-                  :closable="false" :title="`上次建立失败：${job.error}`" />
+        <el-alert v-else-if="job.state === 'failed' && job.model_id === current.id" class="job" type="error" :closable="false"
+                  :title="`上次建立失败：${job.error}`" />
+        <el-alert v-if="current.table && current.table.stale" class="job" type="warning" :closable="false" show-icon
+                  title="模型配置已修改，原结果已作废，重建前该模型不参与诊断" />
 
-        <el-tabs v-model="detail.tab" class="detail-tabs">
-          <!-- 模型信息 -->
-          <el-tab-pane label="模型信息" name="info">
-            <el-descriptions :column="2" size="small" border>
-              <el-descriptions-item label="模型方式">{{ ENGINE_LABELS[current.engine] || current.engine }}</el-descriptions-item>
-              <el-descriptions-item label="默认参与方式">{{ MODE_LABELS[current.config.default_mode || 'decisive'] }}</el-descriptions-item>
-              <el-descriptions-item label="三维部件" :span="2">{{ componentNames(current.config.components).join('、') || '—' }}</el-descriptions-item>
-              <el-descriptions-item label="适用条件" :span="2">
-                <template v-if="(current.config.active_if || []).length">
-                  <div v-for="(c, k) in current.config.active_if" :key="k">{{ conditionText(c) }}</div>
-                </template>
-                <span v-else>始终适用</span>
-              </el-descriptions-item>
-              <el-descriptions-item label="阈值" :span="2">{{ thresholdText(current.config) }}</el-descriptions-item>
-            </el-descriptions>
+        <el-tabs v-model="tab" class="sheet-tabs">
+          <!-- 公式 -->
+          <el-tab-pane v-if="current.table && current.table.kind === 'formula'" label="公式" name="formulas">
+            <div v-if="excludedFiles.length" class="excluded-line">
+              已排除 {{ excludedFiles.length }} 个文件：
+              <el-tag v-for="f in excludedFiles" :key="f" size="mini" closable class="excluded" @close="includeFile(f)">{{ f }}</el-tag>
+            </div>
+            <article v-for="o in current.config.outputs" :key="o.name" class="spec">
+              <header class="spec-head">
+                <span class="spec-sub">{{ [o.system, o.unit].filter(Boolean).join('，') || '—' }}</span>
+                <div v-if="formulaOf(o.name)" class="spec-metric">
+                  <span :class="['method-tag', formulaOf(o.name).method]">{{ METHOD_LABELS[formulaOf(o.name).method] || formulaOf(o.name).method }}</span>
+                  <span class="metric-label">换油温误差</span>
+                  <span :class="['metric-value', cvTone(formulaOf(o.name).assessment)]">{{ cvText(formulaOf(o.name).assessment) }}</span>
+                  <span v-if="!formulaOf(o.name).assessment.constant && (formulaOf(o.name).assessment.suggestions || []).length" class="flag"
+                        title="有改进建议，见检验详情">
+                    <i class="el-icon-warning-outline" />{{ formulaOf(o.name).assessment.suggestions.length }}
+                  </span>
+                </div>
+              </header>
+              <template v-if="formulaOf(o.name)">
+                <equation-view :expression="formulaOf(o.name).display" :lhs="o.name" :digits="formulaOf(o.name).method === 'autofit' ? 4 : 0"
+                               :variables="current.config.inputs.map(i => i.name)" />
+                <div class="spec-actions">
+                  <el-button type="text" size="mini" :icon="openOutputs[o.name] ? 'el-icon-arrow-up' : 'el-icon-arrow-down'"
+                             @click="toggleOutput(o.name)">{{ openOutputs[o.name] ? '收起检验详情' : '检验详情' }}</el-button>
+                  <el-button v-if="formulaOf(o.name).method !== 'formula'" type="text" size="mini" @click="toCustomFormula(o.name)">
+                    转为自定义公式
+                  </el-button>
+                </div>
+                <fit-result v-if="openOutputs[o.name]" :result="formulaOf(o.name)" :show-formula="false" selectable
+                            @pick="onPick(o.name, $event)" />
+              </template>
+              <el-alert v-else-if="current.table.calibration.failed_outputs[o.name]" type="error" :closable="false"
+                        :title="`未建立：${current.table.calibration.failed_outputs[o.name]}`" />
+              <p v-else class="muted"><b class="spec-missing">{{ o.name }}</b>：没有该输出的结果，重建模型后显示</p>
+            </article>
+            <div v-if="pickedCount" class="exclude-bar">
+              已选 {{ pickedCount }} 个可疑样本
+              <el-button size="mini" type="warning" @click="excludePicked">排除这些样本并重建</el-button>
+            </div>
+          </el-tab-pane>
 
-            <div class="section-head sub">变量</div>
-            <el-table :data="current.config.inputs" size="mini" border>
+          <!-- 变量与输出 -->
+          <el-tab-pane label="变量与输出" name="io">
+            <h4 class="block-title">变量</h4>
+            <el-table :data="current.config.inputs" size="small" class="plain-table">
               <el-table-column prop="name" label="名称" width="110" />
-              <el-table-column label="取法 / 测点" min-width="220">
+              <el-table-column label="来源" min-width="200">
                 <template slot-scope="{ row }">{{ inputSource(row) }}</template>
-              </el-table-column>
-              <el-table-column label="备用测点" width="130">
-                <template slot-scope="{ row }">{{ (row.fallback_columns || []).join('、') || '—' }}</template>
               </el-table-column>
               <el-table-column label="单位换算" width="130">
                 <template slot-scope="{ row }">{{ convText(row) }}</template>
               </el-table-column>
               <el-table-column prop="unit" label="单位" width="70" />
-              <el-table-column v-if="current.engine === 'surrogate'" label="角色" width="110">
+              <el-table-column v-if="current.engine === 'surrogate'" label="角色" width="130">
                 <template slot-scope="{ row }">
                   {{ ROLE_LABELS[row.role || 'auto'] }}
                   <span v-if="(row.role || 'auto') === 'auto' && current.table && current.table.roles && current.table.roles[row.name]" class="muted">
@@ -159,200 +178,158 @@
                   </span>
                 </template>
               </el-table-column>
-              <el-table-column v-else label="网格" min-width="160">
+              <el-table-column v-else label="网格" min-width="150">
                 <template slot-scope="{ row }">{{ (row.grid || []).join(' / ') }}</template>
               </el-table-column>
-              <el-table-column label="有效范围" width="110">
-                <template slot-scope="{ row }">{{ row.valid && row.valid.length ? row.valid.join(' ~ ') : '—' }}</template>
+              <el-table-column label="备用测点" width="120">
+                <template slot-scope="{ row }">{{ (row.fallback_columns || []).join('、') || '—' }}</template>
               </el-table-column>
             </el-table>
 
-            <div class="section-head sub">输出（测点）</div>
-            <el-table :data="current.config.outputs" size="mini" border>
-              <el-table-column label="所属系统" width="150">
+            <h4 class="block-title">输出</h4>
+            <el-table :data="current.config.outputs" size="small" class="plain-table">
+              <el-table-column label="所属系统" width="160">
                 <template slot-scope="{ row }">{{ row.system || '—' }}</template>
               </el-table-column>
-              <el-table-column prop="name" label="名称" min-width="120" />
-              <el-table-column v-if="current.engine === 'surrogate'" label="计算方式" width="90">
+              <el-table-column prop="name" label="名称" min-width="130" />
+              <el-table-column v-if="current.engine === 'surrogate'" label="计算方式" width="96">
                 <template slot-scope="{ row }">{{ METHOD_LABELS[row.method || 'autofit'] || row.method }}</template>
               </el-table-column>
-              <el-table-column label="类型" width="60">
-                <template slot-scope="{ row }">{{ KIND_LABELS[row.kind] || row.kind }}</template>
-              </el-table-column>
-              <el-table-column prop="unit" label="单位" width="60" />
-              <el-table-column label="对应测点" min-width="170">
+              <el-table-column label="对应测点" min-width="180">
                 <template slot-scope="{ row }">{{ (row.columns || []).join('、') }}</template>
               </el-table-column>
-              <el-table-column label="残差" width="60">
+              <el-table-column label="比较" width="70">
                 <template slot-scope="{ row }">{{ row.residual === 'absolute' ? '绝对' : '相对' }}</template>
               </el-table-column>
-              <el-table-column label="单测点偏离" width="90">
+              <el-table-column label="单测点偏离" width="96">
                 <template slot-scope="{ row }">{{ row.single === 'notice' ? '补充依据' : '参与结论' }}</template>
               </el-table-column>
-              <el-table-column label="三维部件" width="140">
+              <el-table-column label="三维部件" width="150">
                 <template slot-scope="{ row }">{{ componentNames([row.component]).join('') || '—' }}</template>
               </el-table-column>
             </el-table>
 
-            <div class="section-head sub">判定规则</div>
-            <div class="rule">
-              <div>单测点偏离：各测点扣除标定偏差后，偏离超过阈值判预警 / 异常。</div>
-              <div v-if="groupRule(current.config)">
-                整体偏移：{{ groupOutputs(current.config).join('、') }} 中至少 {{ groupRule(current.config).min_columns || 3 }} 个测点彼此一致、整体偏离时，
-                判为“{{ MEANING_LABELS[groupRule(current.config).meaning] }}”<template v-if="groupRule(current.config).driver">（沿 {{ groupRule(current.config).driver }} 判断）</template><template v-if="groupRule(current.config).input">（对应输入 {{ groupRule(current.config).input }}）</template>。
-              </div>
-            </div>
+            <h4 class="block-title">适用与判定</h4>
+            <dl class="rules">
+              <dt>适用条件</dt>
+              <dd>
+                <template v-if="(current.config.active_if || []).length">
+                  <div v-for="(c, k) in current.config.active_if" :key="k">{{ conditionText(c) }}</div>
+                </template>
+                <span v-else>始终适用</span>
+              </dd>
+              <dt>单测点偏离</dt>
+              <dd>扣除标定的固有偏差后，偏离超过阈值判预警 / 异常</dd>
+              <template v-if="groupRule(current.config)">
+                <dt>整体偏移</dt>
+                <dd>
+                  {{ groupOutputs(current.config).join('、') }} 中至少 {{ groupRule(current.config).min_columns || 3 }} 个测点彼此一致、整体偏离时，
+                  判为“{{ MEANING_LABELS[groupRule(current.config).meaning] }}”<template v-if="groupRule(current.config).driver">，沿 {{ groupRule(current.config).driver }} 判断</template>
+                </dd>
+              </template>
+              <dt>三维部件</dt>
+              <dd>{{ componentNames(current.config.components).join('、') || '—' }}</dd>
+            </dl>
 
-            <template v-if="current.engine === 'amesim' || (current.config.amesim && current.config.amesim.parameters && current.config.amesim.parameters.length)">
-              <div class="section-head sub">AMESim</div>
-              <el-descriptions :column="2" size="small" border>
-                <el-descriptions-item label="模型文件">{{ current.config.amesim.model_file }}</el-descriptions-item>
-                <el-descriptions-item label="服务地址">{{ current.config.amesim.url || '—' }}</el-descriptions-item>
-                <el-descriptions-item label="参数映射" :span="2">
+            <template v-if="current.engine === 'amesim'">
+              <h4 class="block-title">AMESim</h4>
+              <dl class="rules">
+                <dt>模型文件</dt>
+                <dd>{{ current.config.amesim.model_file }}（{{ current.config.amesim.url || '—' }}）</dd>
+                <dt>参数映射</dt>
+                <dd>
                   <div v-for="(p, k) in current.config.amesim.parameters" :key="k">
                     {{ p.input }}{{ p.derive ? `（${DERIVE_LABELS[p.derive]}）` : '' }} → {{ Array.isArray(p.params) ? p.params.join('、') : (p.params || 'input.data') }}
                   </div>
-                </el-descriptions-item>
-                <el-descriptions-item label="输出变量" :span="2">
-                  <div v-for="(v, k) in current.config.amesim.variables" :key="k">{{ k }} ← {{ v }}</div>
-                </el-descriptions-item>
-              </el-descriptions>
+                </dd>
+                <dt>输出变量</dt>
+                <dd><div v-for="(v, k) in current.config.amesim.variables" :key="k">{{ k }} ← {{ v }}</div></dd>
+              </dl>
             </template>
           </el-tab-pane>
 
-          <!-- 模型公式 -->
-          <el-tab-pane v-if="current.table && current.table.kind === 'formula'" label="模型公式" name="formulas">
-            <div class="formula-head muted small">
-              每个输出的公式与检验结果（{{ current.table.calibration.files }} 个正常数据文件，{{ current.table.calibration.method }}）。
-              <template v-if="excludedFiles.length">
-                已排除 {{ excludedFiles.length }} 个文件：
-                <el-tag v-for="f in excludedFiles" :key="f" size="mini" closable class="excluded" @close="includeFile(f)">{{ f }}</el-tag>
-              </template>
-            </div>
-            <div v-for="o in current.config.outputs" :key="o.name" class="formula-card">
-              <div class="formula-card-head">
-                <b>{{ o.name }}</b> <span class="muted">{{ o.unit }}</span>
-                <span v-if="o.system" class="muted small">· {{ o.system }}</span>
-                <span class="grow" />
-                <el-button v-if="formulaOf(o.name) && formulaOf(o.name).method !== 'formula'" size="mini" type="text"
-                           @click="toCustomFormula(o.name)">转为自定义公式</el-button>
-              </div>
-              <fit-result v-if="formulaOf(o.name)" :result="formulaOf(o.name)" selectable @pick="onPick(o.name, $event)" />
-              <el-alert v-else-if="current.table.calibration.failed_outputs[o.name]" type="error" :closable="false"
-                        :title="`未建立：${current.table.calibration.failed_outputs[o.name]}`" />
-              <span v-else class="muted small">没有该输出的结果（配置修改后请重建）</span>
-            </div>
-            <div v-if="pickedCount" class="exclude-bar">
-              已选 {{ pickedCount }} 个可疑样本
-              <el-button size="mini" type="warning" @click="excludePicked">排除这些样本并重建</el-button>
-            </div>
-          </el-tab-pane>
-
-          <!-- 基准表与标定 -->
-          <el-tab-pane label="基准表与标定" name="table">
+          <!-- 标定 -->
+          <el-tab-pane label="标定" name="calib">
             <template v-if="current.table">
-              <el-descriptions :column="2" size="small" border>
-                <el-descriptions-item label="模型">
-                  <el-tag size="mini">{{ current.table.model.label }}</el-tag>
-                </el-descriptions-item>
-                <el-descriptions-item label="建立时间">{{ current.table.created }}</el-descriptions-item>
-                <el-descriptions-item label="工况网格" :span="2">
-                  <span v-for="i in current.table.inputs" :key="i.name" class="grid-item">
-                    {{ i.name }}（{{ i.source }}）：{{ i.grid.join(' / ') }} {{ i.unit }}
-                  </span>
-                </el-descriptions-item>
-                <el-descriptions-item label="标定" :span="2">
-                  {{ current.table.calibration.files }} 个正常数据文件，{{ current.table.calibration.method }}
-                </el-descriptions-item>
-                <el-descriptions-item label="来源" :span="2">
-                  {{ current.table.is_default ? '随代码提供的默认表（2026-11 正常数据）' : current.table.source }}
-                </el-descriptions-item>
-              </el-descriptions>
-              <el-alert v-if="current.table.stale" class="note" type="warning" :closable="false" show-icon
-                        title="模型配置已修改（输入或输出变了），这张基准表已作废，重建前该模型不参与诊断" />
-              <div class="section-head sub">
-                <span>
-                  标定结果（模型 vs 正常数据）
-                  <el-tooltip placement="right">
-                    <div slot="content">
-                      固有偏差：正常时该测点比模型预期高/低多少（随工况变化，此处为平均值），诊断时先扣除。<br>
-                      离散 σ：扣除后的波动，决定阈值；σ 越小，模型能发现的偏离越小。
-                    </div>
-                    <i class="el-icon-question tip" />
-                  </el-tooltip>
-                </span>
-              </div>
-              <el-table :data="current.table.calibration.columns" size="small" border>
+              <el-table :data="current.table.calibration.columns" size="small" class="plain-table">
                 <el-table-column prop="column" label="测点" min-width="140" />
-                <el-table-column prop="output" label="模型输出" min-width="120" />
-                <el-table-column label="固有偏差" width="110" align="right">
-                  <template slot-scope="{ row }">{{ val(row.bias, row, true) }}</template>
+                <el-table-column prop="output" label="模型输出" min-width="130" />
+                <el-table-column width="110" align="right">
+                  <template slot="header">
+                    固有偏差
+                    <el-tooltip content="正常时该测点比模型预期高/低多少（随工况变化，此处为平均值），诊断时先扣除" placement="top"><i class="el-icon-question" /></el-tooltip>
+                  </template>
+                  <template slot-scope="{ row }"><span :class="{ warn: row.warning }">{{ val(row.bias, row, true) }}</span></template>
                 </el-table-column>
-                <el-table-column label="离散σ" width="100" align="right">
+                <el-table-column width="100" align="right">
+                  <template slot="header">
+                    离散 σ
+                    <el-tooltip content="扣除固有偏差后的波动；σ 越小，能发现的偏离越小" placement="top"><i class="el-icon-question" /></el-tooltip>
+                  </template>
                   <template slot-scope="{ row }">{{ val(row.std, row) }}</template>
                 </el-table-column>
                 <el-table-column label="预警 / 异常" width="170" align="right">
                   <template slot-scope="{ row }">±{{ val(row.warn, row) }} / ±{{ val(row.alarm, row) }}</template>
                 </el-table-column>
-                <el-table-column label="提示" min-width="160">
+                <el-table-column label="提示" min-width="200">
                   <template slot-scope="{ row }"><span v-if="row.warning" class="warn small">{{ row.warning }}</span></template>
                 </el-table-column>
               </el-table>
+              <p class="source-line">来源：{{ current.table.is_default ? '随代码提供（2026-11 正常数据）' : current.table.source }}</p>
             </template>
-            <el-empty v-else description="还没有基准表，点击右上角“建立基准表”" :image-size="70" />
+            <el-empty v-else description="还没有模型结果，点右上角“建立模型”" :image-size="64" />
           </el-tab-pane>
 
           <!-- 工况试算 -->
           <el-tab-pane label="工况试算" name="predict" :disabled="!current.table">
-            <el-row v-if="current.table && conditions[current.id]" :gutter="16">
-              <el-col :span="10">
-                <el-form size="small" label-width="90px" @submit.native.prevent>
-                  <el-form-item v-for="i in current.table.inputs" :key="i.name" :label="i.name">
-                    <el-input-number v-model="conditions[current.id][i.name]" :step="stepOf(i)" :precision="precisionOf(i)" controls-position="right" />
-                    <span class="unit">{{ i.unit }}</span>
-                  </el-form-item>
-                  <el-form-item>
-                    <el-button type="primary" @click="runPredict(current)">计算预期值</el-button>
-                  </el-form-item>
-                </el-form>
-                <div v-if="current.table.inputs.length > 1" class="small muted">
-                  曲线横轴：
+            <div v-if="current.table && conditions[current.id]" class="predict">
+              <el-form size="small" label-position="top" class="predict-form" @submit.native.prevent>
+                <el-form-item v-for="i in current.table.inputs" :key="i.name" :label="`${i.name}${i.unit ? '（' + i.unit + '）' : ''}`">
+                  <el-input-number v-model="conditions[current.id][i.name]" :step="stepOf(i)" :precision="precisionOf(i)" controls-position="right" />
+                </el-form-item>
+                <el-button type="primary" size="small" @click="runPredict(current)">计算预期值</el-button>
+              </el-form>
+              <div class="predict-out">
+                <template v-if="predictions[current.id]">
+                  <el-alert v-if="predictions[current.id].outside.length" type="warning" :closable="false"
+                            :title="`超出建模数据范围（外推）：${predictions[current.id].outside.join('、')}`" />
+                  <table class="expect">
+                    <tr v-for="row in predictions[current.id].expected" :key="row.name">
+                      <th>{{ row.name }}</th>
+                      <td>{{ fmt(row.value, row.unit) }}</td>
+                    </tr>
+                  </table>
+                </template>
+                <div v-if="current.table.inputs.length > 1" class="curve-head">
+                  曲线横轴
                   <el-select v-model="curveVar" size="mini" style="width: 130px" @change="drawCurve(current)">
                     <el-option v-for="i in current.table.inputs" :key="i.name" :label="i.name" :value="i.name" />
                   </el-select>
                 </div>
                 <div ref="curve" class="curve" />
-              </el-col>
-              <el-col :span="14">
-                <template v-if="predictions[current.id]">
-                  <el-alert v-if="predictions[current.id].outside.length" type="warning" :closable="false"
-                            :title="`超出基准表范围：${predictions[current.id].outside.join('、')}`" />
-                  <el-table :data="predictions[current.id].expected" size="small" border>
-                    <el-table-column prop="name" label="模型输出" />
-                    <el-table-column label="预期值" align="right">
-                      <template slot-scope="{ row }">{{ fmt(row.value, row.unit) }}</template>
-                    </el-table-column>
-                  </el-table>
-                </template>
-              </el-col>
-            </el-row>
+              </div>
+            </div>
           </el-tab-pane>
 
-          <el-tab-pane v-if="current.config.media && current.config.media.video" label="仿真动画" name="media">
-            <video class="video" controls preload="metadata" :src="publicPath + current.config.media.video">您的浏览器不支持视频播放。</video>
-            <div class="muted small">{{ current.config.media.caption }}</div>
+          <el-tab-pane v-if="current.media && current.media.video" label="仿真动画" name="media">
+            <video class="video" controls preload="metadata" :src="publicPath + current.media.video">您的浏览器不支持视频播放。</video>
+            <p class="source-line">{{ current.media.caption }}</p>
           </el-tab-pane>
         </el-tabs>
-      </div>
-    </el-drawer>
+      </section>
+      <section v-else-if="!loading" class="sheet sheet-empty">
+        <el-empty description="选择左侧的模型，或新建一个" :image-size="80" />
+      </section>
+    </div>
 
-    <el-dialog :title="`重建基准表：${build.model ? build.model.name : ''}`" :visible.sync="build.visible" width="560px" append-to-body>
+    <el-dialog :title="`${build.model && build.model.table ? '重建' : '建立'}模型：${build.model ? build.model.name : ''}`" :visible.sync="build.visible"
+               width="560px" append-to-body>
       <el-form v-if="build.model" label-width="110px" size="small">
-        <el-form-item label="模型引擎">
+        <el-form-item label="模型方式">
           <el-radio-group v-model="build.engine">
             <el-radio v-for="e in build.model.engines" :key="e.type" :label="e.type" :disabled="!e.ready">{{ e.label }}</el-radio>
           </el-radio-group>
-          <div v-for="e in notReady" :key="e.type" class="warn small">{{ e.label }}：请先在“编辑配置”的 AMESim 页填写模型文件与变量路径</div>
+          <div v-for="e in notReady" :key="e.type" class="warn small">{{ e.note }}</div>
         </el-form-item>
         <el-form-item label="正常数据目录">
           <el-autocomplete v-model="build.path" :fetch-suggestions="suggestDirs" placeholder="设备正常时采集的数据目录（完整路径，含子目录）" style="width: 100%" />
@@ -367,14 +344,13 @@
     <model-editor :visible="editor.visible" :model="editor.model" :builders="builders" @close="editor.visible = false" @saved="onSaved" />
 
     <el-dialog title="派生测点" :visible.sync="derived.visible" width="760px" append-to-body>
-      <div class="muted small derived-hint">
-        派生测点由采集列换算得到，如涡轮流量计转速 f（Hz）由流量 q（L/h）按 q = K·f + q0 反算。修改后，用到这些测点的模型需要重建；三维与工作台刷新页面后生效。
-      </div>
+      <p class="muted small derived-hint">
+        派生测点由采集列换算，如涡轮流量计转速 f 由流量 q 按 q = K·f + q0 反算。修改后，用到这些测点的模型需要重建。
+      </p>
       <el-table :data="derived.items" size="mini" border>
         <el-table-column prop="name" label="派生测点" width="150" />
         <el-table-column prop="source" label="源测点" width="110" />
-        <el-table-column width="150">
-          <template slot="header">K（每 {{ derived.items[0] ? derived.items[0].unit || '单位' : '' }}）</template>
+        <el-table-column label="K" width="150">
           <template slot-scope="{ row }"><el-input v-model="row.K" size="mini" /></template>
         </el-table-column>
         <el-table-column label="q0" width="120">
@@ -406,6 +382,7 @@ import {
 import { setDerivedFields } from '@/utils/features'
 import { errorMessage } from '@/utils/request'
 import { COMPONENTS } from '@/views/dashboard/scene/components'
+import EquationView from './EquationView'
 import FitResult from './FitResult'
 import ModelEditor from './ModelEditor'
 
@@ -415,7 +392,7 @@ const DERIVE_LABELS = { temperature: '油温', density: '由油温算密度', vi
 
 export default {
   name: 'Simulation',
-  components: { FitResult, ModelEditor },
+  components: { EquationView, FitResult, ModelEditor },
   data() {
     return {
       loading: true,
@@ -428,7 +405,9 @@ export default {
       job: { state: 'idle' },
       profile: {},
       profileDirty: false,
-      detail: { visible: false, id: '', tab: 'info' },
+      selectedId: '',
+      tab: 'formulas',
+      openOutputs: {},
       conditions: {},
       predictions: {},
       build: { visible: false, model: null, engine: '', path: '' },
@@ -452,7 +431,7 @@ export default {
       return this.job.total ? Math.round((this.job.done / this.job.total) * 100) : 0
     },
     current() {
-      return this.models.find(m => m.id === this.detail.id) || null
+      return this.models.find(m => m.id === this.selectedId) || null
     },
     excludedFiles() {
       return (this.current && this.current.config.exclude_files) || []
@@ -465,7 +444,7 @@ export default {
     }
   },
   watch: {
-    'detail.tab'(tab) {
+    tab(tab) {
       if (tab === 'predict' && this.current) this.runPredict(this.current)
     }
   },
@@ -501,6 +480,8 @@ export default {
     },
     inputSource(i) {
       if (i.derived === 'density') return `由油温算燃油密度（${i.temperature_column}）`
+      if (i.derived === 'viscosity') return `由油温算运动黏度（${i.temperature_column}）`
+      if (i.constant !== undefined && i.constant !== null && !i.column && !(i.columns && i.columns.length)) return `常数 ${i.constant}`
       if (i.columns && i.columns.length) return `取中位数：${i.columns.join('、')}`
       return i.column || '—'
     },
@@ -511,10 +492,65 @@ export default {
       const r = this.groupRule(cfg)
       return r ? (r.outputs || [r.output]) : []
     },
-    openDetail(row) {
-      this.detail = { visible: true, id: row.id, tab: 'info' }
+    select(row) {
+      if (!row) return
+      this.disposeChart()
+      this.selectedId = row.id
+      this.tab = row.table && row.table.kind === 'formula' ? 'formulas' : 'io'
       this.picks = {}
+      this.openOutputs = {}
       this.curveVar = ''
+    },
+    disposeChart() {
+      if (this.chart) {
+        this.chart.dispose()
+        this.chart = null
+      }
+    },
+    /** 列表上的状态：颜色（ok / reference / off / pending）与一句话 */
+    statusOf(m) {
+      const mode = (this.profile[m.id] || {}).mode || 'decisive'
+      if (!m.table) return { tone: 'pending', text: '还没有模型结果' }
+      if (m.table.stale) return { tone: 'pending', text: '配置已修改，需要重建' }
+      if (mode === 'off') return { tone: 'off', text: '诊断中关闭' }
+      return { tone: mode === 'reference' ? 'reference' : 'ok', text: MODE_LABELS[mode] }
+    },
+    methodText(m) {
+      const engine = m.engine === 'surrogate' ? '数据代理' : (ENGINE_LABELS[m.engine] || m.engine)
+      const methods = (m.methods || []).map(x => METHOD_LABELS[x] || x)
+      return methods.length ? `${engine} · ${methods.join(' + ')}` : engine
+    },
+    /** 各输出换油温段误差（相对误差的输出）的范围 */
+    accuracyOf(m) {
+      const f = (m.table && m.table.formulas) || {}
+      const errs = Object.values(f).map(x => x.assessment).filter(a => a && a.mode === 'relative' && a.cv_error !== null && !a.constant)
+        .map(a => a.cv_error * 100)
+      if (!errs.length) return ''
+      const lo = Math.min(...errs)
+      const hi = Math.max(...errs)
+      return lo === hi || errs.length === 1 ? `${lo.toFixed(2)}%` : `${lo.toFixed(2)}–${hi.toFixed(2)}%`
+    },
+    warningsOf(m) {
+      const f = (m.table && m.table.formulas) || {}
+      return Object.values(f).reduce((n, x) => n + ((x.assessment && x.assessment.suggestions) || []).length, 0)
+    },
+    cvText(a) {
+      if (!a || a.cv_error === null || a.cv_error === undefined) return '—'
+      if (a.constant) return '恒定值'
+      return a.mode === 'absolute' ? `${Number(a.cv_error).toPrecision(2)} ${a.unit || ''}` : `${(a.cv_error * 100).toFixed(2)}%`
+    },
+    cvTone(a) {
+      if (!a || a.cv_error === null || a.constant || a.mode === 'absolute') return ''
+      return a.cv_error < 0.01 ? 'good' : a.cv_error < 0.03 ? '' : 'poor'
+    },
+    toggleOutput(name) {
+      this.$set(this.openOutputs, name, !this.openOutputs[name])
+    },
+    onMore(cmd) {
+      const m = this.current
+      if (cmd === 'reset') this.reset(m)
+      else if (cmd === 'restore') this.restoreConfig(m)
+      else if (cmd === 'delete') this.removeModel(m)
     },
     convText(i) {
       const parts = []
@@ -609,12 +645,6 @@ export default {
         this.derived.saving = false
       }
     },
-    onDetailClosed() {
-      if (this.chart) {
-        this.chart.dispose()
-        this.chart = null
-      }
-    },
     async restoreBuiltin(d) {
       try {
         this.applyStatus(await restoreBuiltinModel(d.id), true)
@@ -676,7 +706,10 @@ export default {
         }
         this.$set(this.conditions, m.id, c)
       }
-      if (this.detail.visible && !st.models.some(m => m.id === this.detail.id)) this.detail.visible = false
+      if (!st.models.some(m => m.id === this.selectedId)) {
+        this.selectedId = ''
+        if (st.models.length) this.select(st.models[0])
+      }
     },
     async load() {
       const wasRunning = this.running
@@ -684,12 +717,12 @@ export default {
         this.applyStatus(await getSimulationStatus(), true)
         if (wasRunning && this.job.state === 'done' && this.job.result) {
           const r = this.job.result
-          this.$message.success(`${this.job.model_name}基准表已更新：${r.model}，${r.files} 个正常数据文件，${r.created}`)
+          this.$message.success(`已建立“${this.job.model_name}”：${r.model}，${r.files} 个正常数据文件`)
           this.$delete(this.predictions, this.job.model_id)
           const m = this.models.find(x => x.id === this.job.model_id)
-          if (m && this.detail.visible && m.id === this.detail.id && this.detail.tab === 'predict') this.runPredict(m)
+          if (m && m.id === this.selectedId && this.tab === 'predict') this.runPredict(m)
         } else if (wasRunning && this.job.state === 'failed') {
-          this.$message.error(`建立基准表失败：${this.job.error}`)
+          this.$message.error(`建立模型失败：${this.job.error}`)
         }
       } finally {
         this.loading = false
@@ -713,14 +746,14 @@ export default {
       this.$delete(this.predictions, model.id)
       this.$delete(this.conditions, model.id)
       this.applyStatus(await getSimulationStatus(), true)
-      this.detail = { visible: true, id: model.id, tab: 'info' }
+      this.select(this.models.find(m => m.id === model.id))
     },
     async removeModel(m) {
       const builtin = m.source !== 'custom'
       try {
         await this.$confirm(builtin
           ? `删除模型“${m.name}”？删除后不再参与诊断；内置模型可以在页面右上角“恢复已删除的内置模型”中恢复。`
-          : `删除模型“${m.name}”及其基准表？删除后不能恢复。`, '删除模型', { type: 'warning', confirmButtonText: '删除' })
+          : `删除模型“${m.name}”及其结果？删除后不能恢复。`, '删除模型', { type: 'warning', confirmButtonText: '删除' })
       } catch (e) {
         return
       }
@@ -728,7 +761,7 @@ export default {
         const st = await deleteModel(m.id)
         this.$delete(this.predictions, m.id)
         this.$delete(this.conditions, m.id)
-        if (this.detail.id === m.id) this.detail.visible = false
+        if (this.selectedId === m.id) this.selectedId = ''
         this.applyStatus(st, true)
         this.$message.success(`已删除“${m.name}”`)
       } catch (e) {
@@ -753,7 +786,7 @@ export default {
         const { path } = await addDataDir(this.build.path.trim(), true)
         this.job = await buildModelTable(this.build.model.id, path, this.build.engine)
         this.build.visible = false
-        this.$message.info(`已开始建立“${this.build.model.name}”的基准表`)
+        this.$message.info(`正在建立“${this.build.model.name}”`)
         this.timer = setTimeout(this.load, 800)
       } catch (e) {
         this.$message.error(errorMessage(e))
@@ -761,13 +794,13 @@ export default {
     },
     async reset(m) {
       try {
-        await this.$confirm(`删除“${m.name}”重建的基准表，恢复使用随代码提供的默认表？`, '恢复默认', { type: 'warning' })
+        await this.$confirm(`删除“${m.name}”重建的结果，恢复使用随代码提供的结果？`, '恢复随代码提供的结果', { type: 'warning' })
       } catch (e) {
         return
       }
       this.applyStatus(await resetModelTable(m.id), true)
       this.$delete(this.predictions, m.id)
-      if (this.detail.tab === 'predict') this.runPredict(this.models.find(x => x.id === m.id))
+      if (this.tab === 'predict') this.runPredict(this.models.find(x => x.id === m.id))
     },
     async runPredict(m) {
       if (!m || !m.table) return
@@ -792,7 +825,7 @@ export default {
         .filter(p => p[1] !== undefined)
       await this.$nextTick()
       const dom = this.$refs.curve
-      if (!dom || this.detail.id !== m.id) return
+      if (!dom || this.selectedId !== m.id) return
       if (this.chart && this.chart.getDom() !== dom) {
         this.chart.dispose()
         this.chart = null
@@ -800,7 +833,7 @@ export default {
       if (!this.chart) this.chart = echarts.init(dom)
       const now = this.predictions[m.id].expected.find(e => e.name === out.name)
       this.chart.setOption({
-        title: { text: `${out.name}随${x.name}的模型曲线`, left: 0, textStyle: { fontSize: 13, fontWeight: 'normal' } },
+        title: { text: `${out.name}随${x.name}变化`, left: 0, textStyle: { fontSize: 13, fontWeight: 500, color: '#1e2b3c' } },
         grid: { left: 50, right: 20, top: 36, bottom: 36 },
         tooltip: {
           trigger: 'axis',
@@ -812,12 +845,13 @@ export default {
           type: 'line',
           data: curve,
           showSymbol: false,
-          lineStyle: { color: '#9ca3af', width: 2 },
+          lineStyle: { color: '#0b1626', width: 1.6 },
+          areaStyle: { color: 'rgba(11, 107, 203, 0.06)' },
           markPoint: now ? {
             symbol: 'circle',
             symbolSize: 9,
-            itemStyle: { color: '#2563eb' },
-            label: { show: true, position: 'top', formatter: `${now.value.toFixed(1)} ${out.unit}`, color: '#2563eb' },
+            itemStyle: { color: '#0b6bcb' },
+            label: { show: true, position: 'top', formatter: `${now.value.toFixed(1)} ${out.unit}`, color: '#0b6bcb' },
             data: [{ coord: [this.conditions[m.id][x.name], now.value] }]
           } : undefined
         }]
@@ -830,144 +864,542 @@ export default {
   }
 }
 </script>
+<style lang="scss" scoped>
+$ink: #0b1626;
+$steel: #1e2b3c;
+$mist: #6b7a90;
+$paper: #f3f5f8;
+$rule: #dfe5ec;
+$accent: #0b6bcb;
+$ok: #12805c;
+$caution: #b26a00;
+$off: #8a96a6;
 
-<style scoped>
-.model-table >>> .el-table__row {
+.sim-page {
+  padding: 20px 24px 28px;
+  color: $steel;
+  min-height: calc(100vh - 50px);
+  background: $paper;
+}
+
+.sim-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  h2 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 600;
+    color: $ink;
+    letter-spacing: 0.02em;
+  }
+}
+.head-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sim-body {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  min-height: 420px;
+}
+
+/* ---------- 模型列表 ---------- */
+.rail {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  background: $ink;
+  border-radius: 10px;
+  padding: 8px;
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+}
+.rail-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: #c7d2e0;
+  padding: 12px 12px 12px 16px;
+  border-radius: 6px;
   cursor: pointer;
+  font: inherit;
+  transition: background 0.15s;
+  &::before {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 12px;
+    bottom: 12px;
+    width: 3px;
+    border-radius: 2px;
+    background: var(--tone);
+  }
+  & + & {
+    margin-top: 2px;
+  }
+  &:hover {
+    background: rgba(255, 255, 255, 0.05);
+  }
+  &:focus-visible {
+    outline: 2px solid #38bdf8;
+    outline-offset: -2px;
+  }
+  &.active {
+    background: #fff;
+    color: $steel;
+    .rail-name {
+      color: $ink;
+    }
+    .rail-method,
+    .rail-meta {
+      color: $mist;
+    }
+  }
+  &.ok { --tone: #{$ok}; }
+  &.reference { --tone: #{$caution}; }
+  &.off { --tone: #{$off}; }
+  &.pending { --tone: repeating-linear-gradient(180deg, #{$caution} 0 4px, transparent 4px 7px); }
 }
-.model-name {
+.rail-name {
+  font-size: 14px;
   font-weight: 600;
+  color: #eef3fa;
+  line-height: 1.4;
 }
-.ellipsis {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+.rail-method {
+  font-size: 12px;
+  color: #8ea2bb;
 }
-.danger {
-  color: #f56c6c;
+.rail-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  font-size: 12px;
+  color: #8ea2bb;
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--tone);
+  }
+  .sep {
+    width: 1px;
+    height: 10px;
+    background: currentColor;
+    opacity: 0.4;
+  }
 }
-.detail {
-  padding: 18px 22px;
+.rail-progress {
+  height: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  margin-top: 6px;
+  span {
+    display: block;
+    height: 100%;
+    background: #38bdf8;
+    transition: width 0.3s;
+  }
 }
-.detail-head {
+.rail-empty {
+  color: #8ea2bb;
+  padding: 16px;
+  font-size: 13px;
+}
+.profile-bar {
+  position: sticky;
+  bottom: -8px;
+  margin: 8px -8px -8px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: #fde68a;
+  background: #13243b;
+  border-top: 1px solid rgba(253, 230, 138, 0.25);
+  border-radius: 0 0 10px 10px;
+}
+
+/* ---------- 详情 ---------- */
+.sheet {
+  background: #fff;
+  border: 1px solid $rule;
+  border-radius: 10px;
+  padding: 22px 26px 26px;
+  min-width: 0;
+}
+.sheet-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 420px;
+}
+.sheet-head {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 8px;
+  gap: 16px;
+  h3 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+    color: $ink;
+  }
 }
-.detail-title {
-  font-size: 18px;
-  font-weight: 600;
+.title-block {
+  min-width: 0;
 }
-.detail-actions {
+.desc {
+  margin: 6px 0 10px;
+  color: $mist;
+  font-size: 13px;
+  line-height: 1.6;
+  max-width: 72ch;
+}
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.badge {
+  font-size: 12px;
+  line-height: 20px;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: #eef2f7;
+  color: #3b4a5e;
+  &.custom,
+  &.override {
+    background: #fff4e0;
+    color: $caution;
+  }
+  &.mono {
+    font-family: Menlo, Consolas, monospace;
+    background: transparent;
+    border: 1px solid $rule;
+    color: $mist;
+  }
+}
+.sheet-actions {
+  display: flex;
+  gap: 8px;
   flex-shrink: 0;
 }
-.detail-tabs {
-  margin-top: 8px;
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 18px 0 4px;
+  border-top: 1px solid $rule;
+  border-bottom: 1px solid $rule;
+  .fact {
+    padding: 12px 16px;
+    min-width: 0;
+    & + .fact {
+      border-left: 1px solid $rule;
+    }
+    &:first-child {
+      padding-left: 0;
+    }
+  }
+  dt {
+    font-size: 12px;
+    color: $mist;
+    margin-bottom: 6px;
+  }
+  dd {
+    margin: 0;
+    font-size: 13px;
+    color: $steel;
+    small {
+      display: block;
+      color: $mist;
+      font-size: 12px;
+      margin-top: 2px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+  .mode-select {
+    width: 120px;
+  }
+  .sigma {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    .el-input-number {
+      width: 82px;
+    }
+    .unit {
+      color: $mist;
+    }
+  }
 }
-.section-head.sub {
-  margin: 16px 0 8px;
-}
-.rule {
-  line-height: 1.9;
-  color: #606266;
-}
-.page-header {
-  margin-bottom: 12px;
-}
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.tip {
-  margin-left: 4px;
-  color: #909399;
-  cursor: help;
-}
-.src-tag {
-  margin-left: 6px;
-}
-.box-card {
-  margin-bottom: 16px;
-}
-.card-head,
-.section-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.section {
-  margin-bottom: 18px;
-}
-.section-head {
-  font-weight: 500;
-  margin-bottom: 8px;
-}
-.grid-item {
-  display: block;
-  line-height: 1.8;
-}
-.note,
 .job {
-  margin-top: 10px;
-}
-.muted {
-  color: #909399;
-}
-.small {
-  font-size: 12px;
-  line-height: 1.7;
-}
-.warn {
-  color: #e6a23c;
-}
-.unit {
-  margin-left: 8px;
-  color: #909399;
-}
-.curve {
-  width: 100%;
-  height: 240px;
   margin-top: 12px;
+  font-size: 12px;
+  color: $mist;
 }
-.formula-head {
-  margin-bottom: 8px;
+
+.sheet-tabs {
+  margin-top: 10px;
+  ::v-deep .el-tabs__item {
+    font-size: 14px;
+    height: 44px;
+    line-height: 44px;
+  }
+  ::v-deep .el-tabs__active-bar {
+    background: $ink;
+  }
+  ::v-deep .el-tabs__item.is-active {
+    color: $ink;
+    font-weight: 600;
+  }
+}
+
+/* 公式 */
+.spec {
+  padding: 16px 0 14px;
+  border-bottom: 1px solid $rule;
+  &:first-of-type {
+    padding-top: 6px;
+  }
+}
+.spec-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.spec-sub {
+  font-size: 12px;
+  color: $mist;
+}
+.spec-missing {
+  color: $ink;
+}
+.spec-metric {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.method-tag {
+  padding: 0 6px;
+  line-height: 18px;
+  border-radius: 3px;
+  border: 1px solid $rule;
+  color: $mist;
+  &.formula {
+    border-color: #c9dcf2;
+    color: $accent;
+  }
+}
+.metric-label {
+  color: $mist;
+}
+.metric-value {
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: $steel;
+  &.good {
+    color: $ok;
+  }
+  &.poor {
+    color: $caution;
+  }
+}
+.flag {
+  color: $caution;
+  i {
+    margin-right: 2px;
+  }
+}
+.spec-actions {
+  margin-top: 2px;
+}
+.excluded-line {
+  font-size: 12px;
+  color: $mist;
+  margin-bottom: 4px;
 }
 .excluded {
   margin: 0 4px 4px 0;
 }
-.formula-card {
-  border: 1px solid #ebeef5;
-  border-radius: 6px;
-  padding: 10px 12px;
-  margin-bottom: 10px;
-}
-.formula-card-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 6px;
-}
-.grow {
-  flex: 1;
-}
 .exclude-bar {
   position: sticky;
   bottom: 0;
+  margin-top: 12px;
   background: #fffbeb;
   border: 1px solid #fde68a;
   padding: 8px 12px;
   border-radius: 6px;
+  font-size: 13px;
 }
-.derived-hint {
-  margin-bottom: 8px;
+
+/* 变量与输出 */
+.block-title {
+  margin: 18px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: $ink;
+  &:first-child {
+    margin-top: 4px;
+  }
+}
+.plain-table {
+  ::v-deep th {
+    background: #f7f9fb;
+    color: $mist;
+    font-weight: 500;
+  }
+}
+.rules {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 8px 16px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  dt {
+    color: $mist;
+  }
+  dd {
+    margin: 0;
+  }
+}
+
+/* 标定 / 试算 */
+.source-line {
+  font-size: 12px;
+  color: $mist;
+  margin: 10px 0 0;
+}
+.predict {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 24px;
+}
+.predict-form {
+  ::v-deep .el-form-item {
+    margin-bottom: 12px;
+  }
+  ::v-deep .el-form-item__label {
+    padding-bottom: 2px;
+    line-height: 1.6;
+  }
+  ::v-deep .el-input-number {
+    width: 100%;
+  }
+}
+.expect {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin-top: 4px;
+  th {
+    text-align: left;
+    font-weight: 400;
+    color: $mist;
+    padding: 6px 0;
+    border-bottom: 1px solid $rule;
+  }
+  td {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    padding: 6px 0;
+    border-bottom: 1px solid $rule;
+  }
+}
+.curve-head {
+  margin-top: 14px;
+  font-size: 12px;
+  color: $mist;
+}
+.curve {
+  width: 100%;
+  height: 260px;
+  margin-top: 6px;
 }
 .video {
-  max-width: 720px;
   width: 100%;
-  border-radius: 4px;
+  max-width: 760px;
+  border-radius: 6px;
   background: #000;
+}
+
+.muted {
+  color: $mist;
+}
+.small {
+  font-size: 12px;
+}
+.warn {
+  color: $caution;
+}
+.derived-hint {
+  margin: 0 0 10px;
+}
+::v-deep .danger-item {
+  color: #c0392b;
+}
+
+@media (max-width: 1100px) {
+  .sim-body {
+    grid-template-columns: 1fr;
+  }
+  .rail {
+    position: static;
+    max-height: none;
+  }
+  .facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    .fact:nth-child(3) {
+      border-left: 0;
+      padding-left: 0;
+    }
+  }
+  .predict {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 640px) {
+  .sheet-head {
+    flex-direction: column;
+  }
+  .facts {
+    grid-template-columns: 1fr;
+    .fact + .fact {
+      border-left: 0;
+      padding-left: 0;
+      border-top: 1px solid $rule;
+    }
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rail-item,
+  .rail-progress span {
+    transition: none;
+  }
 }
 </style>

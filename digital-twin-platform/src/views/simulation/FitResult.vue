@@ -2,9 +2,9 @@
   <div class="fit-result">
     <el-alert v-if="result.error" type="error" :closable="false" :title="result.error" />
     <template v-else>
-      <div class="formula-line">
+      <div v-if="showFormula" class="formula-line">
         <el-tag size="mini" :type="result.method === 'formula' ? 'warning' : ''">{{ METHOD_LABELS[result.method] || result.method }}</el-tag>
-        <code class="formula">{{ result.display }}</code>
+        <equation-view class="formula" :expression="result.display" size="small" :digits="result.method === 'autofit' ? 4 : 0" />
       </div>
       <div class="metrics">
         <div class="metric">
@@ -71,14 +71,17 @@
 <script>
 import * as echarts from 'echarts'
 import { METHOD_LABELS, ROLE_LABELS } from '@/api/simulation'
+import EquationView from './EquationView'
 
 const PALETTE = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#0891b2']
 
 export default {
   name: 'FitResult',
+  components: { EquationView },
   props: {
     result: { type: Object, required: true },
     adoptable: { type: Boolean, default: false },
+    showFormula: { type: Boolean, default: true },
     selectable: { type: Boolean, default: false }
   },
   data() {
@@ -196,13 +199,8 @@ export default {
   margin-bottom: 8px;
 }
 .formula {
-  font-family: Menlo, Consolas, monospace;
-  font-size: 12px;
-  word-break: break-all;
-  background: #f8fafc;
-  padding: 4px 8px;
-  border-radius: 4px;
   flex: 1;
+  min-width: 0;
 }
 .metrics {
   display: flex;
