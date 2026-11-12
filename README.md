@@ -168,6 +168,7 @@ python -m pump_test_bench.tools.build_simulation_table 健康数据目录 --defa
 用 `deploy\windows\build_installer.ps1` 一键生成 Windows 安装包 `BenchCheck-Setup-<版本>.exe`，目标电脑双击安装即可使用，
 不需要安装 Python、Node.js、Nginx；系统开机自动在后台运行，升级时配置与数据保留。
 **打包与安装的操作步骤见 [deploy/windows/README.md](deploy/windows/README.md)**（开头“操作步骤”一节照着做即可）。
+**改了代码以后重新打包：双击项目根目录的 `打包安装包.bat`。**
 
 开发电脑上也可以一条命令运行全部服务（含统一入口，代替 Nginx，需先编译前端）：
 `python -m pump_test_bench.app.services.supervisor`，然后打开 http://localhost:8080。

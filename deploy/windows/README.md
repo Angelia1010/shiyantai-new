@@ -60,9 +60,30 @@ powershell -ExecutionPolicy Bypass -File deploy\windows\build_installer.ps1 -Pip
 3. 装完会自动打开浏览器，用 `admin` 和刚设的密码登录。
 4. 以后从桌面“标准台校验系统”图标打开。电脑开机后系统会自动在后台运行，不用手动启动。
 
+### 改了代码以后：双击「打包安装包.bat」
+
+项目根目录的 **`打包安装包.bat`**，改完代码后双击它即可重新打包：
+
+1. 打包工具不在时自动下载；
+2. 询问新版本号，**直接回车 = 上一版本号末位加 1**（如 1.0.0 → 1.0.1）；
+3. 前端代码（`digital-twin-platform`）改过才重新编译，没改直接用上次编译的页面，省几分钟；
+4. 生成安装包后自动打开 `deploy\windows\output` 文件夹。
+
+打包前先关闭正在运行的前端开发服务（`npm run dev` 的窗口）。打完后 `deploy\windows\VERSION` 里是新版本号，记得一起提交到 git。
+
+也可以在 PowerShell 里带参数运行：
+
+```powershell
+.\打包安装包.bat -Version 1.2.0        # 直接指定版本号，不再询问
+.\打包安装包.bat -KeepVersion          # 不改版本号，重新打同一版本
+.\打包安装包.bat -RebuildFrontend      # 不管前端改没改都重新编译
+```
+
+把新安装包拷到目标电脑上直接运行即可升级：原来的密码、设置、诊断记录都会保留。
+
 ### 以后怎么做
 
-- **发新版本**：把 `deploy\windows\VERSION` 里的版本号改一下（比如改成 `1.0.1`），再执行一次第 4 步的命令，然后在目标电脑上直接运行新安装包。原来的密码、设置、诊断记录都会保留。
+- **发新版本**：见上面「改了代码以后」，双击 `打包安装包.bat`。
 - **服务出问题**：开始菜单“标准台校验系统”里有“服务状态”“重启服务”；日志在 `C:\ProgramData\BenchCheck\logs`。
 - **打包前**：关闭正在运行的前端开发服务（`npm run dev` 的窗口），否则可能因文件被占用而失败。
 - **打包报错**：窗口里出现红色的 **[失败]** 时，把整个 PowerShell 窗口的内容截图或复制下来，按提示处理或反馈。
@@ -116,6 +137,7 @@ powershell -ExecutionPolicy Bypass -File deploy\windows\build_installer.ps1 `
 
 | 文件 | 作用 |
 |---|---|
+| `..\..\打包安装包.bat`、`pack.ps1` | 改完代码后一键重新打包（自动加版本号、前端没改时跳过编译） |
 | `get_tools.ps1` | 下载打包工具（Node.js、Inno Setup）到 `tools\` |
 | `build_installer.ps1` | 一键打包脚本（优先使用 `tools\` 中的工具） |
 | `setup.iss` | 安装包脚本（Inno Setup）：安装向导、组件、快捷方式、卸载 |
