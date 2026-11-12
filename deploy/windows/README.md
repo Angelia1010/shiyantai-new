@@ -3,6 +3,68 @@
 把整个系统（后端服务、前端页面、Python 运行环境、默认模型与配置）做成一个安装包 `BenchCheck-Setup-<版本>.exe`。
 目标电脑**不需要**安装 Python、Node.js、Nginx，也不需要联网：双击安装，装完从桌面图标打开即可。
 
+## 操作步骤（照着做即可）
+
+分两部分：先在一台**能上网的 Windows 电脑**上生成安装包（只需要做一次），再把安装包拷到**目标电脑**上安装。
+
+### 第一部分：生成安装包（能上网的 Windows 电脑）
+
+**第 1 步：装两个工具（只装一次）**
+
+| 软件 | 下载地址 | 安装时注意 |
+|---|---|---|
+| Node.js 18 LTS | https://nodejs.org/zh-cn/download | 一路默认即可 |
+| Inno Setup 6 | https://jrsoftware.org/isdl.php | 一路默认即可 |
+
+Python 不用装，打包脚本会自己下载。
+
+**第 2 步：拿到最新代码**
+
+如果这台电脑上已经有代码，在代码目录里运行：
+
+```powershell
+git pull
+```
+
+如果没有，先用 `git clone` 把仓库下载下来。
+
+**第 3 步：运行打包脚本**
+
+1. 打开代码所在的文件夹（能看到 `deploy`、`pump_test_bench` 这些文件夹的那一层）。
+2. 在文件夹空白处按住 Shift 点右键，选“在此处打开 PowerShell 窗口”。
+3. 复制下面这条命令，粘贴进去回车：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy\windows\build_installer.ps1 -PipIndex https://pypi.tuna.tsinghua.edu.cn/simple -NpmRegistry https://registry.npmmirror.com
+```
+
+脚本会自动下载、安装依赖、编译前端、生成安装包，第一次大约需要 10–20 分钟。最后出现绿色的“完成”就成功了。
+
+**第 4 步：拿到安装包**
+
+安装包在 `deploy\windows\output\BenchCheck-Setup-1.0.0.exe`。
+
+### 第二部分：安装到目标电脑
+
+1. 把 `BenchCheck-Setup-1.0.0.exe` 用 U 盘拷过去，目标电脑不需要联网。
+2. 双击运行，按向导操作：
+   - 安装位置默认即可；
+   - 组件选“标准安装”；
+   - 如果要让别的电脑也能用浏览器访问，勾选“允许局域网内其他电脑访问”；
+   - 设置登录密码（用户名是 `admin`），端口用默认的 8080。
+3. 装完会自动打开浏览器，用 `admin` 和刚设的密码登录。
+4. 以后从桌面“标准台校验系统”图标打开。电脑开机后系统会自动在后台运行，不用手动启动。
+
+### 以后怎么做
+
+- **发新版本**：把 `deploy\windows\VERSION` 里的版本号改一下（比如改成 `1.0.1`），再执行一次第 3 步的命令，然后在目标电脑上直接运行新安装包。原来的密码、设置、诊断记录都会保留。
+- **服务出问题**：开始菜单“标准台校验系统”里有“服务状态”“重启服务”；日志在 `C:\ProgramData\BenchCheck\logs`。
+- **打包报错**：窗口里出现红色的 **[失败]** 时，把整个 PowerShell 窗口的内容截图或复制下来，按提示处理或反馈。
+
+---
+
+以下是详细说明。
+
 ## 一、打包（在一台能联网的 Windows 电脑上）
 
 ### 1. 准备（只需一次）
