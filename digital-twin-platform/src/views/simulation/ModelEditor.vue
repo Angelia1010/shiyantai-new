@@ -1,5 +1,5 @@
 <template>
-  <el-dialog :title="isNew ? '新建仿真模型' : `编辑模型：${form.name}`" :visible="visible" width="980px" top="4vh"
+  <el-dialog :title="isNew ? '新建仿真模型' : `编辑模型：${form.name}`" :visible="visible" width="980px" top="4vh" append-to-body
              :close-on-click-modal="false" @close="$emit('close')">
     <el-tabs v-model="tab" class="editor">
       <!-- 基本信息 -->

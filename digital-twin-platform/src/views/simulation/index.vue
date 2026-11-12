@@ -2,113 +2,229 @@
   <div class="app-container simulation-page">
     <div class="page-header">
       <h2 class="page-title">仿真模型</h2>
-      <el-button size="small" type="primary" icon="el-icon-plus" @click="openEditor(null)">新建模型</el-button>
+      <div>
+        <el-dropdown v-if="deletedBuiltins.length" trigger="click" @command="restoreBuiltin">
+          <el-button size="small" icon="el-icon-refresh-left">恢复已删除的内置模型（{{ deletedBuiltins.length }}）</el-button>
+          <el-dropdown-menu slot="dropdown">
+            <el-dropdown-item v-for="d in deletedBuiltins" :key="d.id" :command="d">{{ d.name }}</el-dropdown-item>
+          </el-dropdown-menu>
+        </el-dropdown>
+        <el-button size="small" type="primary" icon="el-icon-plus" @click="openEditor(null)">新建模型</el-button>
+      </div>
     </div>
 
     <el-card shadow="never" class="box-card">
       <div slot="header" class="card-head">
         <span>
-          诊断方案
+          模型与诊断方案
           <el-tooltip placement="right">
             <div slot="content">
-              自动诊断与手动诊断共用，手动诊断时可在“自动诊断”页临时调整。<br>
+              点击模型查看详细信息（输入、输出、规则、基准表与标定、工况试算）。<br>
               参与结论：偏离超过阈值时判预警/异常；仅作参考：只写进报告；关闭：不做该模型的对比。<br>
-              阈值 = max(下限, 倍数 × 标定离散 σ)，倍数越大越不容易报。
+              阈值 = max(下限, 倍数 × 标定离散 σ)，倍数越大越不容易报。诊断方案自动诊断与手动诊断共用。
             </div>
             <i class="el-icon-question tip" />
           </el-tooltip>
         </span>
         <el-button size="mini" type="primary" :disabled="!profileDirty" @click="saveProfile">保存方案</el-button>
       </div>
-      <el-table v-loading="loading" :data="models" size="small" border>
-        <el-table-column label="模型" min-width="200">
+      <el-table v-loading="loading" :data="models" size="small" border class="model-table" empty-text="还没有仿真模型，点击右上角“新建模型”"
+                @row-click="openDetail">
+        <el-table-column label="模型" min-width="220">
           <template slot-scope="{ row }">
-            <b>{{ row.name }}</b>
-            <el-tag v-if="row.source !== 'builtin'" size="mini" type="info" class="src-tag">{{ SOURCE_LABELS[row.source] }}</el-tag>
-            <div class="muted small">{{ row.description }}</div>
+            <span class="model-name">{{ row.name }}</span>
+            <el-tag size="mini" :type="row.source === 'builtin' ? '' : 'info'" class="src-tag">{{ SOURCE_LABELS[row.source] }}</el-tag>
+            <div class="muted small ellipsis">{{ row.description }}</div>
           </template>
         </el-table-column>
-        <el-table-column label="基准表" min-width="170">
+        <el-table-column label="方式" width="110">
+          <template slot-scope="{ row }">{{ ENGINE_LABELS[row.engine] || row.engine }}</template>
+        </el-table-column>
+        <el-table-column label="输入 / 输出" width="150">
+          <template slot-scope="{ row }">
+            {{ row.config.inputs.length }} 个输入 / {{ outputColumns(row.config).length }} 个测点
+            <div class="muted small">{{ systemsOf(row.config).join('、') }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="基准表" min-width="150">
           <template slot-scope="{ row }">
             <template v-if="row.table">
-              {{ row.table.model.label }}
-              <div class="muted small">{{ row.table.is_default ? '默认表' : '重建于' }} {{ row.table.created }}</div>
-              <div v-if="row.table.stale" class="warn small">配置已修改，需要重建</div>
+              <span v-if="row.table.stale" class="warn">需要重建</span>
+              <span v-else>{{ row.table.is_default ? '默认表' : '已重建' }}</span>
+              <div class="muted small">{{ row.table.created }}</div>
             </template>
             <span v-else class="warn">还没有基准表</span>
           </template>
         </el-table-column>
         <el-table-column label="参与方式" width="130">
           <template slot-scope="{ row }">
-            <el-select v-model="profile[row.id].mode" size="mini" @change="profileDirty = true">
-              <el-option v-for="(label, value) in MODE_LABELS" :key="value" :label="label" :value="value" />
-            </el-select>
+            <div @click.stop>
+              <el-select v-model="profile[row.id].mode" size="mini" @change="profileDirty = true">
+                <el-option v-for="(label, value) in MODE_LABELS" :key="value" :label="label" :value="value" />
+              </el-select>
+            </div>
           </template>
         </el-table-column>
         <el-table-column label="预警 / 异常倍数（σ）" width="220">
           <template slot-scope="{ row }">
-            <el-input-number v-model="profile[row.id].sigma_warn" size="mini" :min="1" :max="20" :step="0.5"
-                             controls-position="right" style="width: 90px" @change="profileDirty = true" />
-            /
-            <el-input-number v-model="profile[row.id].sigma_alarm" size="mini" :min="1" :max="20" :step="0.5"
-                             controls-position="right" style="width: 90px" @change="profileDirty = true" />
+            <div @click.stop>
+              <el-input-number v-model="profile[row.id].sigma_warn" size="mini" :min="1" :max="20" :step="0.5"
+                               controls-position="right" style="width: 90px" @change="profileDirty = true" />
+              /
+              <el-input-number v-model="profile[row.id].sigma_alarm" size="mini" :min="1" :max="20" :step="0.5"
+                               controls-position="right" style="width: 90px" @change="profileDirty = true" />
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="170" align="center">
+          <template slot-scope="{ row }">
+            <div @click.stop>
+              <el-button type="text" size="mini" @click="openDetail(row)">详情</el-button>
+              <el-button type="text" size="mini" @click="openEditor(row)">编辑</el-button>
+              <el-button type="text" size="mini" class="danger" @click="removeModel(row)">删除</el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
 
-    <el-tabs v-model="activeId" type="border-card" class="model-tabs">
-      <el-tab-pane v-for="m in models" :key="m.id" :name="m.id" :label="m.name">
-        <el-row :gutter="16">
-          <el-col :span="14">
-            <div class="section">
-              <div class="section-head">
-                <span>基准表</span>
-                <div>
-                  <el-button size="mini" icon="el-icon-edit" @click="openEditor(m)">编辑配置</el-button>
-                  <el-button v-if="m.source === 'custom'" size="mini" type="danger" plain @click="removeModel(m)">删除模型</el-button>
-                  <el-button v-if="m.source === 'override'" size="mini" @click="removeModel(m)">恢复内置配置</el-button>
-                  <el-button v-if="m.table && !m.table.is_default" size="mini" :disabled="running" @click="reset(m)">恢复默认表</el-button>
-                  <el-button size="mini" type="primary" :disabled="running" @click="openBuild(m)">{{ m.table ? '重建基准表' : '建立基准表' }}</el-button>
-                </div>
-              </div>
-              <template v-if="m.table">
-                <el-descriptions :column="2" size="small" border>
-                  <el-descriptions-item label="模型">
-                    <el-tag size="mini">{{ m.table.model.label }}</el-tag>
-                  </el-descriptions-item>
-                  <el-descriptions-item label="建立时间">{{ m.table.created }}</el-descriptions-item>
-                  <el-descriptions-item label="工况网格" :span="2">
-                    <span v-for="i in m.table.inputs" :key="i.name" class="grid-item">
-                      {{ i.name }}（{{ i.source }}）：{{ i.grid.join(' / ') }} {{ i.unit }}
-                    </span>
-                  </el-descriptions-item>
-                  <el-descriptions-item label="三维部件" :span="2">{{ m.components.join('、') }}</el-descriptions-item>
-                  <el-descriptions-item label="标定" :span="2">
-                    {{ m.table.calibration.files }} 个正常数据文件，{{ m.table.calibration.method }}
-                  </el-descriptions-item>
-                  <el-descriptions-item label="来源" :span="2">
-                    {{ m.table.is_default ? '随代码提供的默认表（2026-11 正常数据）' : m.table.source }}
-                  </el-descriptions-item>
-                </el-descriptions>
-                <el-alert v-if="m.table.stale" class="note" type="warning" :closable="false" show-icon
-                          title="模型配置已修改（输入或输出变了），这张基准表已作废，重建前该模型不参与诊断" />
-              </template>
-              <el-empty v-else description="还没有基准表" :image-size="70" />
+    <!-- 模型详情 -->
+    <el-drawer :visible.sync="detail.visible" size="72%" :with-header="false" @closed="onDetailClosed">
+      <div v-if="current" class="detail">
+        <div class="detail-head">
+          <div>
+            <span class="detail-title">{{ current.name }}</span>
+            <el-tag size="mini" :type="current.source === 'builtin' ? '' : 'info'" class="src-tag">{{ SOURCE_LABELS[current.source] }}</el-tag>
+            <el-tag size="mini" type="success" class="src-tag">{{ MODE_LABELS[(current.setting || {}).mode || 'decisive'] }}</el-tag>
+            <div class="muted small">{{ current.id }} · {{ current.description }}</div>
+          </div>
+          <div class="detail-actions">
+            <el-button size="mini" icon="el-icon-edit" @click="openEditor(current)">编辑配置</el-button>
+            <el-button v-if="current.source === 'override'" size="mini" @click="restoreConfig(current)">恢复内置配置</el-button>
+            <el-button v-if="current.table && !current.table.is_default" size="mini" :disabled="running" @click="reset(current)">恢复默认表</el-button>
+            <el-button size="mini" type="primary" :disabled="running" @click="openBuild(current)">{{ current.table ? '重建基准表' : '建立基准表' }}</el-button>
+            <el-button size="mini" type="danger" plain @click="removeModel(current)">删除模型</el-button>
+            <el-button size="mini" icon="el-icon-close" circle @click="detail.visible = false" />
+          </div>
+        </div>
 
-              <div v-if="job.state === 'running' && job.model_id === m.id" class="job">
-                <div class="muted">正在建立：{{ job.stage }} {{ job.total ? `${job.done}/${job.total}` : '' }}</div>
-                <el-progress :percentage="jobPercent" :stroke-width="10" />
+        <div v-if="job.state === 'running' && job.model_id === current.id" class="job">
+          <div class="muted">正在建立：{{ job.stage }} {{ job.total ? `${job.done}/${job.total}` : '' }}</div>
+          <el-progress :percentage="jobPercent" :stroke-width="10" />
+        </div>
+        <div v-else-if="job.state === 'done' && job.model_id === current.id && job.result" class="muted small job">
+          上次重建：{{ job.result.created }}，{{ job.operator }} 用 {{ job.source }}（{{ job.result.files }} 个文件）
+        </div>
+        <el-alert v-else-if="job.state === 'failed' && job.model_id === current.id" class="note" type="error"
+                  :closable="false" :title="`上次建立失败：${job.error}`" />
+
+        <el-tabs v-model="detail.tab" class="detail-tabs">
+          <!-- 模型信息 -->
+          <el-tab-pane label="模型信息" name="info">
+            <el-descriptions :column="2" size="small" border>
+              <el-descriptions-item label="模型方式">{{ ENGINE_LABELS[current.engine] || current.engine }}</el-descriptions-item>
+              <el-descriptions-item label="默认参与方式">{{ MODE_LABELS[current.config.default_mode || 'decisive'] }}</el-descriptions-item>
+              <el-descriptions-item label="三维部件" :span="2">{{ componentNames(current.config.components).join('、') || '—' }}</el-descriptions-item>
+              <el-descriptions-item label="适用条件" :span="2">
+                <template v-if="(current.config.active_if || []).length">
+                  <div v-for="(c, k) in current.config.active_if" :key="k">{{ conditionText(c) }}</div>
+                </template>
+                <span v-else>始终适用</span>
+              </el-descriptions-item>
+              <el-descriptions-item label="阈值" :span="2">{{ thresholdText(current.config) }}</el-descriptions-item>
+            </el-descriptions>
+
+            <div class="section-head sub">输入（工况）</div>
+            <el-table :data="current.config.inputs" size="mini" border>
+              <el-table-column prop="name" label="名称" width="110" />
+              <el-table-column label="取法 / 测点" min-width="220">
+                <template slot-scope="{ row }">{{ inputSource(row) }}</template>
+              </el-table-column>
+              <el-table-column label="备用测点" width="130">
+                <template slot-scope="{ row }">{{ (row.fallback_columns || []).join('、') || '—' }}</template>
+              </el-table-column>
+              <el-table-column prop="unit" label="单位" width="70" />
+              <el-table-column label="网格" min-width="160">
+                <template slot-scope="{ row }">{{ (row.grid || []).join(' / ') }}</template>
+              </el-table-column>
+              <el-table-column label="有效范围" width="110">
+                <template slot-scope="{ row }">{{ row.valid && row.valid.length ? row.valid.join(' ~ ') : '—' }}</template>
+              </el-table-column>
+            </el-table>
+
+            <div class="section-head sub">输出（测点）</div>
+            <el-table :data="current.config.outputs" size="mini" border>
+              <el-table-column label="所属系统" width="150">
+                <template slot-scope="{ row }">{{ row.system || '—' }}</template>
+              </el-table-column>
+              <el-table-column prop="name" label="名称" min-width="120" />
+              <el-table-column label="类型" width="60">
+                <template slot-scope="{ row }">{{ KIND_LABELS[row.kind] || row.kind }}</template>
+              </el-table-column>
+              <el-table-column prop="unit" label="单位" width="60" />
+              <el-table-column label="对应测点" min-width="170">
+                <template slot-scope="{ row }">{{ (row.columns || []).join('、') }}</template>
+              </el-table-column>
+              <el-table-column label="残差" width="60">
+                <template slot-scope="{ row }">{{ row.residual === 'absolute' ? '绝对' : '相对' }}</template>
+              </el-table-column>
+              <el-table-column label="单测点偏离" width="90">
+                <template slot-scope="{ row }">{{ row.single === 'notice' ? '补充依据' : '参与结论' }}</template>
+              </el-table-column>
+              <el-table-column label="三维部件" width="140">
+                <template slot-scope="{ row }">{{ componentNames([row.component]).join('') || '—' }}</template>
+              </el-table-column>
+            </el-table>
+
+            <div class="section-head sub">判定规则</div>
+            <div class="rule">
+              <div>单测点偏离：各测点扣除标定偏差后，偏离超过阈值判预警 / 异常。</div>
+              <div v-if="groupRule(current.config)">
+                整体偏移：{{ groupOutputs(current.config).join('、') }} 中至少 {{ groupRule(current.config).min_columns || 3 }} 个测点彼此一致、整体偏离时，
+                判为“{{ MEANING_LABELS[groupRule(current.config).meaning] }}”<template v-if="groupRule(current.config).driver">（沿 {{ groupRule(current.config).driver }} 判断）</template><template v-if="groupRule(current.config).input">（对应输入 {{ groupRule(current.config).input }}）</template>。
               </div>
-              <div v-else-if="job.state === 'done' && job.model_id === m.id && job.result" class="muted small job">
-                上次重建：{{ job.result.created }}，{{ job.operator }} 用 {{ job.source }}（{{ job.result.files }} 个文件）
-              </div>
-              <el-alert v-else-if="job.state === 'failed' && job.model_id === m.id" class="note" type="error"
-                        :closable="false" :title="`上次建立失败：${job.error}`" />
             </div>
 
-            <div v-if="m.table" class="section">
-              <div class="section-head">
+            <template v-if="current.engine === 'amesim' || (current.config.amesim && current.config.amesim.parameters && current.config.amesim.parameters.length)">
+              <div class="section-head sub">AMESim</div>
+              <el-descriptions :column="2" size="small" border>
+                <el-descriptions-item label="模型文件">{{ current.config.amesim.model_file }}</el-descriptions-item>
+                <el-descriptions-item label="服务地址">{{ current.config.amesim.url || '—' }}</el-descriptions-item>
+                <el-descriptions-item label="参数映射" :span="2">
+                  <div v-for="(p, k) in current.config.amesim.parameters" :key="k">
+                    {{ p.input }}{{ p.derive ? `（${DERIVE_LABELS[p.derive]}）` : '' }} → {{ Array.isArray(p.params) ? p.params.join('、') : (p.params || 'input.data') }}
+                  </div>
+                </el-descriptions-item>
+                <el-descriptions-item label="输出变量" :span="2">
+                  <div v-for="(v, k) in current.config.amesim.variables" :key="k">{{ k }} ← {{ v }}</div>
+                </el-descriptions-item>
+              </el-descriptions>
+            </template>
+          </el-tab-pane>
+
+          <!-- 基准表与标定 -->
+          <el-tab-pane label="基准表与标定" name="table">
+            <template v-if="current.table">
+              <el-descriptions :column="2" size="small" border>
+                <el-descriptions-item label="模型">
+                  <el-tag size="mini">{{ current.table.model.label }}</el-tag>
+                </el-descriptions-item>
+                <el-descriptions-item label="建立时间">{{ current.table.created }}</el-descriptions-item>
+                <el-descriptions-item label="工况网格" :span="2">
+                  <span v-for="i in current.table.inputs" :key="i.name" class="grid-item">
+                    {{ i.name }}（{{ i.source }}）：{{ i.grid.join(' / ') }} {{ i.unit }}
+                  </span>
+                </el-descriptions-item>
+                <el-descriptions-item label="标定" :span="2">
+                  {{ current.table.calibration.files }} 个正常数据文件，{{ current.table.calibration.method }}
+                </el-descriptions-item>
+                <el-descriptions-item label="来源" :span="2">
+                  {{ current.table.is_default ? '随代码提供的默认表（2026-11 正常数据）' : current.table.source }}
+                </el-descriptions-item>
+              </el-descriptions>
+              <el-alert v-if="current.table.stale" class="note" type="warning" :closable="false" show-icon
+                        title="模型配置已修改（输入或输出变了），这张基准表已作废，重建前该模型不参与诊断" />
+              <div class="section-head sub">
                 <span>
                   标定结果（模型 vs 正常数据）
                   <el-tooltip placement="right">
@@ -120,58 +236,62 @@
                   </el-tooltip>
                 </span>
               </div>
-              <el-table :data="m.table.calibration.columns" size="small" border max-height="320">
-                <el-table-column prop="column" label="测点" min-width="120" />
-                <el-table-column prop="output" label="模型输出" min-width="100" />
-                <el-table-column label="固有偏差" width="90" align="right">
+              <el-table :data="current.table.calibration.columns" size="small" border>
+                <el-table-column prop="column" label="测点" min-width="140" />
+                <el-table-column prop="output" label="模型输出" min-width="120" />
+                <el-table-column label="固有偏差" width="110" align="right">
                   <template slot-scope="{ row }">{{ val(row.bias, row, true) }}</template>
                 </el-table-column>
-                <el-table-column label="离散σ" width="80" align="right">
+                <el-table-column label="离散σ" width="100" align="right">
                   <template slot-scope="{ row }">{{ val(row.std, row) }}</template>
                 </el-table-column>
-                <el-table-column label="预警 / 异常" width="140" align="right">
+                <el-table-column label="预警 / 异常" width="170" align="right">
                   <template slot-scope="{ row }">±{{ val(row.warn, row) }} / ±{{ val(row.alarm, row) }}</template>
                 </el-table-column>
               </el-table>
-            </div>
-          </el-col>
+            </template>
+            <el-empty v-else description="还没有基准表，点击右上角“建立基准表”" :image-size="70" />
+          </el-tab-pane>
 
-          <el-col :span="10">
-            <div class="section">
-              <div class="section-head"><span>工况试算</span></div>
-              <el-form v-if="m.table && conditions[m.id]" size="small" label-width="80px" @submit.native.prevent>
-                <el-form-item v-for="i in m.table.inputs" :key="i.name" :label="i.name">
-                  <el-input-number v-model="conditions[m.id][i.name]" :step="stepOf(i)" :precision="precisionOf(i)" controls-position="right" />
-                  <span class="unit">{{ i.unit }}</span>
-                </el-form-item>
-                <el-form-item>
-                  <el-button type="primary" @click="runPredict(m)">计算预期值</el-button>
-                </el-form-item>
-              </el-form>
-              <template v-if="predictions[m.id]">
-                <el-alert v-if="predictions[m.id].outside.length" type="warning" :closable="false"
-                          :title="`超出基准表范围：${predictions[m.id].outside.join('、')}`" />
-                <el-table :data="predictions[m.id].expected" size="small" border>
-                  <el-table-column prop="name" label="模型输出" />
-                  <el-table-column label="预期值" align="right">
-                    <template slot-scope="{ row }">{{ fmt(row.value, row.unit) }}</template>
-                  </el-table-column>
-                </el-table>
-              </template>
-              <div :ref="`curve-${m.id}`" class="curve" />
-            </div>
+          <!-- 工况试算 -->
+          <el-tab-pane label="工况试算" name="predict" :disabled="!current.table">
+            <el-row v-if="current.table && conditions[current.id]" :gutter="16">
+              <el-col :span="10">
+                <el-form size="small" label-width="90px" @submit.native.prevent>
+                  <el-form-item v-for="i in current.table.inputs" :key="i.name" :label="i.name">
+                    <el-input-number v-model="conditions[current.id][i.name]" :step="stepOf(i)" :precision="precisionOf(i)" controls-position="right" />
+                    <span class="unit">{{ i.unit }}</span>
+                  </el-form-item>
+                  <el-form-item>
+                    <el-button type="primary" @click="runPredict(current)">计算预期值</el-button>
+                  </el-form-item>
+                </el-form>
+                <div ref="curve" class="curve" />
+              </el-col>
+              <el-col :span="14">
+                <template v-if="predictions[current.id]">
+                  <el-alert v-if="predictions[current.id].outside.length" type="warning" :closable="false"
+                            :title="`超出基准表范围：${predictions[current.id].outside.join('、')}`" />
+                  <el-table :data="predictions[current.id].expected" size="small" border>
+                    <el-table-column prop="name" label="模型输出" />
+                    <el-table-column label="预期值" align="right">
+                      <template slot-scope="{ row }">{{ fmt(row.value, row.unit) }}</template>
+                    </el-table-column>
+                  </el-table>
+                </template>
+              </el-col>
+            </el-row>
+          </el-tab-pane>
 
-            <div v-if="m.media && m.media.video" class="section">
-              <div class="section-head"><span>仿真动画</span></div>
-              <video class="video" controls preload="metadata" :src="publicPath + m.media.video">您的浏览器不支持视频播放。</video>
-              <div class="muted small">{{ m.media.caption }}</div>
-            </div>
-          </el-col>
-        </el-row>
-      </el-tab-pane>
-    </el-tabs>
+          <el-tab-pane v-if="current.config.media && current.config.media.video" label="仿真动画" name="media">
+            <video class="video" controls preload="metadata" :src="publicPath + current.config.media.video">您的浏览器不支持视频播放。</video>
+            <div class="muted small">{{ current.config.media.caption }}</div>
+          </el-tab-pane>
+        </el-tabs>
+      </div>
+    </el-drawer>
 
-    <el-dialog :title="`重建基准表：${build.model ? build.model.name : ''}`" :visible.sync="build.visible" width="560px">
+    <el-dialog :title="`重建基准表：${build.model ? build.model.name : ''}`" :visible.sync="build.visible" width="560px" append-to-body>
       <el-form v-if="build.model" label-width="110px" size="small">
         <el-form-item label="模型引擎">
           <el-radio-group v-model="build.engine">
@@ -197,12 +317,15 @@
 import * as echarts from 'echarts'
 import { addDataDir, getDataDirs } from '@/api/files'
 import {
-  MODE_LABELS, buildModelTable, deleteModel, getSimulationStatus, predictModel, resetModelTable, saveDiagnosisProfile
+  ENGINE_LABELS, KIND_LABELS, MEANING_LABELS, MODE_LABELS, buildModelTable, deleteModel, getSimulationStatus, predictModel,
+  resetModelTable, restoreBuiltinModel, saveDiagnosisProfile
 } from '@/api/simulation'
 import { errorMessage } from '@/utils/request'
+import { COMPONENTS } from '@/views/dashboard/scene/components'
 import ModelEditor from './ModelEditor'
 
-const SOURCE_LABELS = { custom: '自定义', override: '已修改' }
+const SOURCE_LABELS = { builtin: '内置', custom: '自定义', override: '内置·已修改' }
+const DERIVE_LABELS = { temperature: '油温', density: '由油温算密度', viscosity: '由油温算黏度' }
 
 // 工况试算的初始值（没有的输入取网格中点）
 const DEFAULT_CONDITION = { 电传转速: 2000, 进口压力: 0.15, 油温: 36, 质量流量: 290, 燃油密度: 782, 汇流温度: 36, 流量: 370 }
@@ -214,17 +337,22 @@ export default {
     return {
       loading: true,
       models: [],
+      deletedBuiltins: [],
       job: { state: 'idle' },
       profile: {},
       profileDirty: false,
-      activeId: '',
+      detail: { visible: false, id: '', tab: 'info' },
       conditions: {},
       predictions: {},
       build: { visible: false, model: null, engine: '', path: '' },
       publicPath: process.env.BASE_URL,
       editor: { visible: false, model: null },
       MODE_LABELS,
-      SOURCE_LABELS
+      SOURCE_LABELS,
+      ENGINE_LABELS,
+      KIND_LABELS,
+      MEANING_LABELS,
+      DERIVE_LABELS
     }
   },
   computed: {
@@ -234,27 +362,92 @@ export default {
     jobPercent() {
       return this.job.total ? Math.round((this.job.done / this.job.total) * 100) : 0
     },
+    current() {
+      return this.models.find(m => m.id === this.detail.id) || null
+    },
     notReady() {
       return this.build.model ? this.build.model.engines.filter(e => !e.ready) : []
     }
   },
   watch: {
-    activeId(id) {
-      const m = this.models.find(x => x.id === id)
-      if (m && m.table && !this.predictions[id]) this.runPredict(m)
-      this.$nextTick(this.resize)
+    'detail.tab'(tab) {
+      if (tab === 'predict' && this.current) this.runPredict(this.current)
     }
   },
   created() {
-    this.charts = {}
+    this.chart = null
+    window.addEventListener('resize', this.resize)
     this.load()
   },
   beforeDestroy() {
     clearTimeout(this.timer)
     window.removeEventListener('resize', this.resize)
-    Object.values(this.charts).forEach(c => c.dispose())
+    if (this.chart) this.chart.dispose()
   },
   methods: {
+    outputColumns(cfg) {
+      return [].concat(...(cfg.outputs || []).map(o => o.columns || []))
+    },
+    systemsOf(cfg) {
+      return [...new Set((cfg.outputs || []).map(o => o.system).filter(Boolean))]
+    },
+    componentNames(keys) {
+      return (keys || []).filter(Boolean).map(k => (COMPONENTS[k] ? COMPONENTS[k].label : k))
+    },
+    conditionText(c) {
+      const parts = []
+      if (c.min !== undefined && c.min !== null) parts.push(`≥ ${c.min}`)
+      if (c.max !== undefined && c.max !== null) parts.push(`≤ ${c.max}`)
+      return `${c.column} ${parts.join(' 且 ')}${c.note ? `（${c.note}）` : ''}`
+    },
+    thresholdText(cfg) {
+      const th = cfg.thresholds || {}
+      return `预警 ${th.sigma_warn || 3}σ / 异常 ${th.sigma_alarm || 5}σ（诊断方案可单独调整），并不低于各类型的阈值下限`
+    },
+    inputSource(i) {
+      if (i.derived === 'density') return `由油温算燃油密度（${i.temperature_column}）`
+      if (i.columns && i.columns.length) return `取中位数：${i.columns.join('、')}`
+      return i.column || '—'
+    },
+    groupRule(cfg) {
+      return (cfg.rules || {}).group_shift || null
+    },
+    groupOutputs(cfg) {
+      const r = this.groupRule(cfg)
+      return r ? (r.outputs || [r.output]) : []
+    },
+    openDetail(row) {
+      this.detail = { visible: true, id: row.id, tab: 'info' }
+    },
+    onDetailClosed() {
+      if (this.chart) {
+        this.chart.dispose()
+        this.chart = null
+      }
+    },
+    async restoreBuiltin(d) {
+      try {
+        this.applyStatus(await restoreBuiltinModel(d.id), true)
+        this.$message.success(`已恢复内置模型“${d.name}”`)
+      } catch (e) {
+        this.$message.error(errorMessage(e))
+      }
+    },
+    async restoreConfig(m) {
+      try {
+        await this.$confirm(`放弃对“${m.name}”配置的修改，恢复内置配置？`, '恢复内置配置', { type: 'warning' })
+      } catch (e) {
+        return
+      }
+      try {
+        this.applyStatus(await deleteModel(m.id, true), true)
+        this.$delete(this.predictions, m.id)
+        this.$delete(this.conditions, m.id)
+        this.$message.success('已恢复内置配置')
+      } catch (e) {
+        this.$message.error(errorMessage(e))
+      }
+    },
     val(v, row, signed = false) {
       const sign = signed && v > 0 ? '+' : ''
       if (row.mode === 'absolute') return `${sign}${v.toFixed(2)} ${row.unit}`
@@ -271,6 +464,7 @@ export default {
     },
     applyStatus(st, keepProfile = false) {
       this.models = st.models
+      this.deletedBuiltins = st.deleted_builtins || []
       this.job = st.job || { state: 'idle' }
       const p = {}
       for (const m of st.models) {
@@ -288,7 +482,7 @@ export default {
         }
         this.$set(this.conditions, m.id, c)
       }
-      if (!this.activeId && st.models.length) this.activeId = st.models[0].id
+      if (this.detail.visible && !st.models.some(m => m.id === this.detail.id)) this.detail.visible = false
     },
     async load() {
       const wasRunning = this.running
@@ -299,7 +493,7 @@ export default {
           this.$message.success(`${this.job.model_name}基准表已更新：${r.model}，${r.files} 个正常数据文件，${r.created}`)
           this.$delete(this.predictions, this.job.model_id)
           const m = this.models.find(x => x.id === this.job.model_id)
-          if (m && m.id === this.activeId) this.runPredict(m)
+          if (m && this.detail.visible && m.id === this.detail.id && this.detail.tab === 'predict') this.runPredict(m)
         } else if (wasRunning && this.job.state === 'failed') {
           this.$message.error(`建立基准表失败：${this.job.error}`)
         }
@@ -324,18 +518,15 @@ export default {
       this.editor.visible = false
       this.$delete(this.predictions, model.id)
       this.$delete(this.conditions, model.id)
-      if (this.charts[model.id]) {
-        this.charts[model.id].dispose()
-        delete this.charts[model.id]
-      }
       this.applyStatus(await getSimulationStatus(), true)
-      this.activeId = model.id
+      this.detail = { visible: true, id: model.id, tab: 'info' }
     },
     async removeModel(m) {
-      const restore = m.source === 'override'
+      const builtin = m.source !== 'custom'
       try {
-        await this.$confirm(restore ? `放弃对“${m.name}”配置的修改，恢复内置配置？`
-          : `删除自定义模型“${m.name}”及其基准表？`, restore ? '恢复内置配置' : '删除模型', { type: 'warning' })
+        await this.$confirm(builtin
+          ? `删除模型“${m.name}”？删除后不再参与诊断；内置模型可以在页面右上角“恢复已删除的内置模型”中恢复。`
+          : `删除模型“${m.name}”及其基准表？删除后不能恢复。`, '删除模型', { type: 'warning', confirmButtonText: '删除' })
       } catch (e) {
         return
       }
@@ -343,8 +534,9 @@ export default {
         const st = await deleteModel(m.id)
         this.$delete(this.predictions, m.id)
         this.$delete(this.conditions, m.id)
-        if (!restore) this.activeId = ''
+        if (this.detail.id === m.id) this.detail.visible = false
         this.applyStatus(st, true)
+        this.$message.success(`已删除“${m.name}”`)
       } catch (e) {
         this.$message.error(errorMessage(e))
       }
@@ -381,7 +573,7 @@ export default {
       }
       this.applyStatus(await resetModelTable(m.id), true)
       this.$delete(this.predictions, m.id)
-      this.runPredict(this.models.find(x => x.id === m.id))
+      if (this.detail.tab === 'predict') this.runPredict(this.models.find(x => x.id === m.id))
     },
     async runPredict(m) {
       if (!m || !m.table) return
@@ -403,15 +595,15 @@ export default {
       const curve = xs.map((v, k) => [v, (results[k].expected.find(e => e.name === out.name) || {}).value])
         .filter(p => p[1] !== undefined)
       await this.$nextTick()
-      const el = this.$refs[`curve-${m.id}`]
-      const dom = Array.isArray(el) ? el[0] : el
-      if (!dom) return
-      if (!this.charts[m.id]) {
-        this.charts[m.id] = echarts.init(dom)
-        window.addEventListener('resize', this.resize)
+      const dom = this.$refs.curve
+      if (!dom || this.detail.id !== m.id) return
+      if (this.chart && this.chart.getDom() !== dom) {
+        this.chart.dispose()
+        this.chart = null
       }
+      if (!this.chart) this.chart = echarts.init(dom)
       const now = this.predictions[m.id].expected.find(e => e.name === out.name)
-      this.charts[m.id].setOption({
+      this.chart.setOption({
         title: { text: `${out.name}随${x.name}的模型曲线`, left: 0, textStyle: { fontSize: 13, fontWeight: 'normal' } },
         grid: { left: 50, right: 20, top: 36, bottom: 36 },
         tooltip: {
@@ -434,15 +626,57 @@ export default {
           } : undefined
         }]
       }, true)
+      this.chart.resize()
     },
     resize() {
-      Object.values(this.charts).forEach(c => c.resize())
+      if (this.chart) this.chart.resize()
     }
   }
 }
 </script>
 
 <style scoped>
+.model-table >>> .el-table__row {
+  cursor: pointer;
+}
+.model-name {
+  font-weight: 600;
+}
+.ellipsis {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.danger {
+  color: #f56c6c;
+}
+.detail {
+  padding: 18px 22px;
+}
+.detail-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.detail-title {
+  font-size: 18px;
+  font-weight: 600;
+}
+.detail-actions {
+  flex-shrink: 0;
+}
+.detail-tabs {
+  margin-top: 8px;
+}
+.section-head.sub {
+  margin: 16px 0 8px;
+}
+.rule {
+  line-height: 1.9;
+  color: #606266;
+}
 .page-header {
   margin-bottom: 12px;
 }
@@ -503,6 +737,7 @@ export default {
   margin-top: 12px;
 }
 .video {
+  max-width: 720px;
   width: 100%;
   border-radius: 4px;
   background: #000;

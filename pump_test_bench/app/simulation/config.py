@@ -66,8 +66,43 @@ def _dir_models(d: Optional[Path]) -> Dict[str, Dict]:
     return {m["id"]: m for m in (_load(p) for p in sorted(d.glob("*.json")))}
 
 
-def list_models() -> List[Dict]:
+HIDDEN_FILE = "_deleted_builtin.list"   # 用户删除的内置模型编号（JSON 数组；扩展名不是 .json，不会被当作模型配置读入）
+
+
+def _hidden_path() -> Optional[Path]:
+    d = user_model_dir()
+    return d / HIDDEN_FILE if d else None
+
+
+def hidden_builtins() -> List[str]:
+    """用户删除的内置模型。"""
+    p = _hidden_path()
+    if not p or not p.exists():
+        return []
+    try:
+        return [str(x) for x in json.loads(p.read_text(encoding="utf-8"))]
+    except ValueError:
+        return []
+
+
+def set_builtin_hidden(model_id: str, hidden: bool) -> None:
+    p = _hidden_path()
+    if p is None:
+        raise ValueError("没有服务配置，不能删除内置模型")
+    ids = [x for x in hidden_builtins() if x != model_id] + ([model_id] if hidden else [])
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(ids, ensure_ascii=False), encoding="utf-8")
+
+
+def deleted_builtins() -> List[Dict]:
+    """已删除、可恢复的内置模型 [{id, name}]。"""
     builtin = _dir_models(sim_config_dir())
+    return [{"id": i, "name": builtin[i]["name"]} for i in hidden_builtins() if i in builtin]
+
+
+def list_models() -> List[Dict]:
+    hidden = set(hidden_builtins())
+    builtin = {k: v for k, v in _dir_models(sim_config_dir()).items() if k not in hidden}
     custom = _dir_models(user_model_dir())
     out = []
     for mid in dict.fromkeys(list(builtin) + list(custom)):

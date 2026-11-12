@@ -20,7 +20,8 @@
     POST   /simulation/models/<id>/predict  工况试算 {condition: {输入名: 值}}
     POST   /simulation/models           新建仿真模型（配置见 config/simulation/*.json）
     PUT    /simulation/models/<id>      修改仿真模型配置
-    DELETE /simulation/models/<id>      删除自定义模型 / 恢复内置模型的默认配置
+    DELETE /simulation/models/<id>      删除模型（内置模型删除后可恢复）；?restore=1 时只放弃对内置模型配置的修改
+    POST   /simulation/models/<id>/restore  恢复已删除的内置模型
     GET    /simulation/columns          可选的测点列
     PUT    /simulation/profile          保存诊断方案 {models: {模型 id: {mode, sigma_warn?, sigma_alarm?}}}
     GET    /tasks/<id>/report.docx      报告（Word）
@@ -243,8 +244,16 @@ def simulation_update(model_id: str):
 
 @app.delete("/simulation/models/<model_id>")
 def simulation_delete(model_id: str):
-    result = sim_service.delete_model(model_id)
-    logger.info("用户 %s 删除仿真模型 %s", g.user, model_id)
+    restore = request.args.get("restore") in ("1", "true")
+    result = sim_service.delete_model(model_id, restore=restore)
+    logger.info("用户 %s %s仿真模型 %s", g.user, "恢复内置配置：" if restore else "删除", model_id)
+    return jsonify({**result, **sim_service.status()})
+
+
+@app.post("/simulation/models/<model_id>/restore")
+def simulation_restore(model_id: str):
+    result = sim_service.restore_builtin(model_id)
+    logger.info("用户 %s 恢复内置仿真模型 %s", g.user, model_id)
     return jsonify({**result, **sim_service.status()})
 
 

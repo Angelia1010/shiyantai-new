@@ -11,7 +11,7 @@ export function getSimulationStatus() {
   return request({ url: `${BASE}/status`, method: 'get' })
 }
 
-/** 后台重建某个模型的基准表：path = 正常数据目录，engine = surrogate | formula | amesim */
+/** 后台重建某个模型的基准表：path = 正常数据目录，engine = surrogate | amesim */
 export function buildModelTable(modelId, path, engine) {
   return request({ url: `${BASE}/models/${encodeURIComponent(modelId)}/table`, method: 'post', data: { path, engine } })
 }
@@ -44,9 +44,14 @@ export function updateModel(modelId, config) {
   return request({ url: `${BASE}/models/${encodeURIComponent(modelId)}`, method: 'put', data: config })
 }
 
-/** 删除自定义模型 / 恢复内置模型的默认配置 */
-export function deleteModel(modelId) {
-  return request({ url: `${BASE}/models/${encodeURIComponent(modelId)}`, method: 'delete' })
+/** 删除模型（内置模型删除后可恢复）；restore = true 时只放弃对内置模型配置的修改 */
+export function deleteModel(modelId, restore = false) {
+  return request({ url: `${BASE}/models/${encodeURIComponent(modelId)}`, method: 'delete', params: restore ? { restore: 1 } : {} })
+}
+
+/** 恢复已删除的内置模型 */
+export function restoreBuiltinModel(modelId) {
+  return request({ url: `${BASE}/models/${encodeURIComponent(modelId)}/restore`, method: 'post' })
 }
 
 /** 可选的测点列（试验台导出文件的表头） */

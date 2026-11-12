@@ -7,7 +7,8 @@ from typing import Dict, List, Optional
 from pump_test_bench.app.simulation.calibration import build_reference
 from pump_test_bench.app.simulation.check import thresholds
 from pump_test_bench.app.simulation.config import (
-    KINDS, builtin_ids, delete_user_model, list_models, load_model_cfg, save_user_model, validate_model
+    KINDS, builtin_ids, delete_user_model, deleted_builtins, list_models, load_model_cfg, save_user_model,
+    set_builtin_hidden, validate_model
 )
 from pump_test_bench.app.simulation.table import delete_user_table, is_stale, load_table, predict, save_table, table_path
 
@@ -103,13 +104,16 @@ def model_status(mcfg: Dict, profile: Dict) -> Dict:
 def status() -> Dict:
     from pump_test_bench.app.diagnosis.settings import MODES, profile
     prof = profile()
-    return {"models": [model_status(m, prof) for m in list_models()], "job": job_status(), "modes": MODES,
+    return {"models": [model_status(m, prof) for m in list_models()], "deleted_builtins": deleted_builtins(),
+            "job": job_status(), "modes": MODES,
             "kinds": KINDS, "engine_labels": ENGINE_LABELS}
 
 
 def save_model(data: Dict, model_id: Optional[str] = None) -> Dict:
     """新建（model_id 为空）或修改模型配置。改了输入、输出后旧基准表作废，需要重建。"""
     existing = {m["id"] for m in list_models()}
+    if model_id is None and str(data.get("id", "")).strip() in {m["id"] for m in deleted_builtins()}:
+        raise ValueError(f"模型编号 {data.get('id')} 属于已删除的内置模型，请换一个编号，或先恢复该内置模型")
     if model_id is None and str(data.get("id", "")).strip() in existing:
         raise ValueError(f"模型编号 {data.get('id')} 已存在，请换一个")
     if model_id is not None and model_id not in existing:
@@ -122,15 +126,29 @@ def save_model(data: Dict, model_id: Optional[str] = None) -> Dict:
     return model_status(load_model_cfg(cfg["id"]), profile())
 
 
-def delete_model(model_id: str) -> Dict:
-    """删除自定义模型（连同其基准表）；内置模型只能删除修改过的配置，恢复为内置配置。"""
+def delete_model(model_id: str, restore: bool = False) -> Dict:
+    """删除模型（连同重建的基准表）。内置模型删除后从列表中隐藏，可在页面上恢复；
+    restore=True 时只放弃对内置模型配置的修改，恢复为内置配置。"""
     cfg = load_model_cfg(model_id)
-    if cfg.get("_source") == "builtin":
-        raise ValueError("内置模型不能删除，可以在诊断方案中把它设为“关闭”")
+    is_builtin = model_id in builtin_ids()
+    if restore:
+        if cfg.get("_source") != "override":
+            raise ValueError("该模型没有修改过的配置可以恢复")
+        delete_user_model(model_id)
+        return {"removed": model_id, "restored": True}
     delete_user_model(model_id)
-    if model_id not in builtin_ids():
-        delete_user_table(model_id)
-    return {"removed": model_id, "restored": model_id in builtin_ids()}
+    delete_user_table(model_id)
+    if is_builtin:
+        set_builtin_hidden(model_id, True)
+    return {"removed": model_id, "restored": False}
+
+
+def restore_builtin(model_id: str) -> Dict:
+    """恢复已删除的内置模型（使用内置配置与默认基准表）。"""
+    if model_id not in [m["id"] for m in deleted_builtins()]:
+        raise ValueError(f"没有已删除的内置模型：{model_id}")
+    set_builtin_hidden(model_id, False)
+    return {"restored": model_id}
 
 
 def known_columns() -> List[str]:

@@ -331,6 +331,24 @@ def test_custom_simulation_model_crud(task_client, env, token):
     assert r.status_code == 200 and r.get_json()["table"]["stale"] is True
     assert "torque" not in [c["id"] for c, _ in load_sims()]  # 基准表作废，不参与诊断
 
-    assert task_client.delete("/simulation/models/bench", headers=auth(token)).status_code == 400  # 内置模型不能删
     r = task_client.delete("/simulation/models/torque", headers=auth(token)).get_json()
     assert r["removed"] == "torque" and "torque" not in [m["id"] for m in r["models"]]
+
+    # 内置模型也可以删除：从列表与诊断中去掉，可以恢复
+    r = task_client.delete("/simulation/models/turbine_large", headers=auth(token)).get_json()
+    assert "turbine_large" not in [m["id"] for m in r["models"]]
+    assert r["deleted_builtins"] == [{"id": "turbine_large", "name": "涡轮流量计模型（大流量管路）"}]
+    assert "turbine_large" not in [c["id"] for c, _ in load_sims()]
+    clash = {**model, "id": "turbine_large"}
+    assert task_client.post("/simulation/models", headers=auth(token), json=clash).status_code == 400
+    r = task_client.post("/simulation/models/turbine_large/restore", headers=auth(token)).get_json()
+    assert "turbine_large" in [m["id"] for m in r["models"]] and r["deleted_builtins"] == []
+    assert task_client.post("/simulation/models/turbine_large/restore", headers=auth(token)).status_code == 400
+
+    # 修改过的内置模型：可以只放弃修改（恢复内置配置）
+    bench = next(m for m in task_client.get("/simulation/status", headers=auth(token)).get_json()["models"] if m["id"] == "bench")
+    task_client.put("/simulation/models/bench", headers=auth(token), json={**bench["config"], "description": "改过"})
+    r = task_client.delete("/simulation/models/bench?restore=1", headers=auth(token)).get_json()
+    bench = next(m for m in r["models"] if m["id"] == "bench")
+    assert bench["source"] == "builtin" and bench["description"] != "改过"
+    assert task_client.delete("/simulation/models/bench?restore=1", headers=auth(token)).status_code == 400
