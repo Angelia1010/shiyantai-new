@@ -8,6 +8,7 @@ set "PY="
 if exist "%ProgramFiles%\BenchCheck\python\python.exe" set "PY=%ProgramFiles%\BenchCheck\python\python.exe"
 if not defined PY if exist "%~dp0deploy\windows\build\stage\python\python.exe" set "PY=%~dp0deploy\windows\build\stage\python\python.exe"
 if not defined PY set "PY=python"
-"%PY%" -m pump_test_bench.tools.simulate_live_data --healthy "%~dp0标准台性能录取数据\标准台性能录取数据" %*
+REM 始终运行仓库里的最新脚本（安装版自带的 Python 默认只读安装目录里的程序）
+"%PY%" -c "import sys, runpy; sys.path.insert(0, r'%~dp0.'); runpy.run_module('pump_test_bench.tools.simulate_live_data', run_name='__main__', alter_sys=True)" --healthy "%~dp0标准台性能录取数据\标准台性能录取数据" %*
 echo.
 pause
