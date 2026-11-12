@@ -26,15 +26,6 @@ export function diagnoseTask(taskId, density) {
   return request({ url: `${BASE}/tasks/${encodeURIComponent(taskId)}/diagnose`, method: 'post', data: { density } })
 }
 
-/**
- * 诊断并附上与 AMESim 仿真数据的对比（对比结果作为辅助证据写入报告）。
- * data: { experiment_data: {变量: [数值]}, simulation_data: {变量: [数值]}, threshold?, exceeded_limit?, density? }
- * 返回 { preliminary, report }
- */
-export function preliminaryDiagnose(taskId, data) {
-  return request({ url: `${BASE}/tasks/${encodeURIComponent(taskId)}/preliminary`, method: 'post', data })
-}
-
 export function getReport(taskId) {
   return request({ url: `${BASE}/tasks/${encodeURIComponent(taskId)}/report`, method: 'get' })
 }

@@ -19,10 +19,7 @@
     <div class="step-content" v-if="currentStep === 0">
       <config-step
         :config="config"
-        :variable-configs="variableConfigs"
         @next="handleConfigNext"
-        @add-variable="addVariable"
-        @remove-variable="removeVariable"
       />
     </div>
 
@@ -54,7 +51,6 @@
       <result-display-step
         :diagnosis-result="diagnosisResult"
         :experiment-series="experimentSeries"
-        :simulation-data="simulationData"
         @prev="currentStep = 2"
         @restart="handleRestart"
         @download-report="downloadReport"
@@ -91,32 +87,15 @@ export default {
       statusMessage: '等待启动',
       config: {
         dataPath: '',
-        ameModel: '',
         diagnosisMode: 'realtime',
         autoDiagnosis: true,
-        enableSimulation: false,
-        electricalSpeed: null,
         mediumDensity: null, // 当前燃油 20 ℃ 密度；与工作台、自动诊断共用（诊断设置），留空按健康基准的油品
         groupSize: 5
       },
-      // 试验变量 ↔ AMESim 仿真结果文件
-      variableConfigs: [
-        { name: '供油压力1-1', fileName: 'pressureGY11.data' },
-        { name: '供油压力1-2', fileName: 'pressureGY12.data' },
-        { name: '供油流量1-1', fileName: 'flowRateGY11.data' },
-        { name: '供油流量1-2', fileName: 'flowRateGY12.data' },
-        { name: '回油压力1-1', fileName: 'pressureHY11.data' },
-        { name: '回油压力1-2', fileName: 'pressureHY12.data' },
-        { name: '回油压力2-1', fileName: 'pressureHY21.data' },
-        { name: '回油压力2-2', fileName: 'pressureHY22.data' },
-        { name: '回油流量1-1', fileName: 'flowRateHY11.data' },
-        { name: '回油流量1-2', fileName: 'flowRateHY12.data' }
-      ],
       selectedFiles: [],
       logs: [],
       diagnosisResult: null,
-      experimentSeries: {},
-      simulationData: {}
+      experimentSeries: {}
     }
   },
   created() {
@@ -162,12 +141,6 @@ export default {
     },
 
     // ------------------------------------------------------------ 步骤导航
-    addVariable() {
-      this.variableConfigs.push({ name: '', fileName: '' })
-    },
-    removeVariable(index) {
-      if (this.variableConfigs.length > 1) this.variableConfigs.splice(index, 1)
-    },
     async handleConfigNext() {
       if (!this.config.dataPath.trim()) {
         this.$message.warning('请输入试验数据路径')
@@ -216,8 +189,7 @@ export default {
         statusMessage: '等待启动',
         logs: [],
         diagnosisResult: null,
-        experimentSeries: {},
-        simulationData: {}
+        experimentSeries: {}
       })
     },
     downloadReport(taskId) {
@@ -231,7 +203,6 @@ export default {
       this.addLog('开始自动诊断流程', 'info')
       this.pipeline = new DiagnosisPipeline({
         config: this.config,
-        variableConfigs: this.variableConfigs,
         log: this.addLog,
         onStep: (step, message) => {
           this.currentProcessStep = step
@@ -294,7 +265,6 @@ export default {
         this.dashboardWindow = window.open(`${window.location.pathname}#/`, 'shiyantai_dashboard')
       }
       const { path } = await setWatchPath(this.config.dataPath, false, true)
-      if (this.config.enableSimulation) this.addLog('实时模式下不运行 AMESim 仿真，只做流量计与传感器诊断', 'warn')
       this.addLog(`开始监控目录（含子目录）：${path}`, 'success')
       this.addLog('后端将在每个数据文件写完后自动诊断，离开本页也会继续；点“停止”可关闭自动诊断', 'info')
       this.realtimeSince = Date.now() - 1000
@@ -350,9 +320,8 @@ export default {
     async processFile(fileName) {
       this.addLog(`开始处理：${fileName}`, 'info')
       try {
-        const { taskId, report, experimentSeries, simulationData } = await this.pipeline.processFile(fileName)
+        const { taskId, report, experimentSeries } = await this.pipeline.processFile(fileName)
         this.experimentSeries = experimentSeries
-        this.simulationData = simulationData
         if (!report) {
           this.addLog(`${fileName} 已展示（未开启自动诊断）`, 'success')
           return

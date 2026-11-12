@@ -81,7 +81,7 @@
       <el-col :span="16">
         <el-card shadow="never" class="chart-card">
           <div slot="header">
-            <span>数据对比图表</span>
+            <span>实测曲线与模型预期</span>
             <div class="chart-controls">
               <el-select 
                 v-model="selectedField" 
@@ -96,34 +96,14 @@
                   :value="field"
                 />
               </el-select>
-              <el-button-group style="margin-left: 10px;">
-                <el-button 
-                  size="small" 
-                  :type="chartMode === 'experiment' ? 'primary' : ''"
-                  @click="chartMode = 'experiment'; updateChart()"
-                >
-                  试验数据
-                </el-button>
-                <el-button 
-                  size="small" 
-                  :type="chartMode === 'simulation' ? 'primary' : ''"
-                  @click="chartMode = 'simulation'; updateChart()"
-                  :disabled="!hasSimulation"
-                >
-                  仿真数据
-                </el-button>
-                <el-button 
-                  size="small" 
-                  :type="chartMode === 'compare' ? 'primary' : ''"
-                  @click="chartMode = 'compare'; updateChart()"
-                  :disabled="!hasSimulation"
-                >
-                  对比
-                </el-button>
-              </el-button-group>
             </div>
           </div>
           <div ref="chartContainer" class="chart-container"></div>
+        </el-card>
+
+        <el-card shadow="never" class="indicators-card" v-if="diagnosisResult && diagnosisResult.model">
+          <div slot="header">仿真模型对比</div>
+          <model-compare :model="diagnosisResult.model" />
         </el-card>
 
         <el-card shadow="never" class="indicators-card" v-if="diagnosisResult && diagnosisResult.indicators.length">
@@ -156,24 +136,22 @@
 import * as echarts from 'echarts'
 import { RESULT_TAG, SEVERITY_LABELS } from '@/utils/report'
 import CauseList from '@/components/CauseList'
+import ModelCompare from '@/components/ModelCompare'
 
 const SEVERITY_TAG = { info: 'info', notice: 'info', warning: 'warning', abnormal: 'danger' }
 
 export default {
   name: 'ResultDisplayStep',
-  components: { CauseList },
+  components: { CauseList, ModelCompare },
   props: {
     // utils/report.js summarizeReport() 的结果
     diagnosisResult: { type: Object, default: null },
     // { 变量: [每组均值] }
-    experimentSeries: { type: Object, default: () => ({}) },
-    // { 变量: [仿真值] }
-    simulationData: { type: Object, default: () => ({}) }
+    experimentSeries: { type: Object, default: () => ({}) }
   },
   data() {
     return {
       selectedField: '',
-      chartMode: 'experiment',
       SEVERITY_TAG,
       SEVERITY_LABELS
     }
@@ -182,8 +160,10 @@ export default {
     fields() {
       return Object.keys(this.experimentSeries)
     },
-    hasSimulation() {
-      return Object.keys(this.simulationData).length > 0
+    /** 当前字段的模型预期（报告 model.rows 中同名测点） */
+    modelRow() {
+      const model = this.diagnosisResult && this.diagnosisResult.model
+      return (model && model.rows || []).find(r => r.column === this.selectedField) || null
     },
     /** 需要展示的发现（不含“提示”级别） */
     shownFindings() {
@@ -194,6 +174,9 @@ export default {
     }
   },
   watch: {
+    diagnosisResult() {
+      this.$nextTick(this.updateChart)
+    },
     fields: {
       handler(fields) {
         if (!fields.includes(this.selectedField)) {
@@ -222,30 +205,53 @@ export default {
     },
     updateChart() {
       if (!this.chart || !this.selectedField) return
-      const series = []
-      if (this.chartMode !== 'simulation') {
-        series.push({ name: '试验数据', values: this.experimentSeries[this.selectedField] || [], color: '#409eff' })
+      const values = this.experimentSeries[this.selectedField] || []
+      const row = this.modelRow
+      const line = {
+        name: '实测',
+        type: 'line',
+        data: values,
+        smooth: true,
+        showSymbol: false,
+        lineStyle: { width: 2 },
+        itemStyle: { color: '#409eff' }
       }
-      if (this.chartMode !== 'experiment') {
-        series.push({ name: '仿真数据', values: this.simulationData[this.selectedField] || [], color: '#67c23a', dashed: true })
+      if (row) {
+        const lo = row.expected * (1 - row.warn)
+        const hi = row.expected * (1 + row.warn)
+        line.markLine = {
+          silent: true,
+          symbol: 'none',
+          lineStyle: { color: '#909399', type: 'dashed' },
+          label: { formatter: `模型预期 ${row.expected.toFixed(row.unit === 'MPa' ? 3 : 1)} ${row.unit}`, color: '#606266' },
+          data: [{ yAxis: row.expected }]
+        }
+        line.markArea = {
+          silent: true,
+          itemStyle: { color: 'rgba(144, 147, 153, 0.12)' },
+          label: { show: true, position: 'insideTopLeft', color: '#909399', formatter: `预警范围 ±${(row.warn * 100).toFixed(1)}%` },
+          data: [[{ yAxis: lo }, { yAxis: hi }]]
+        }
       }
-      const length = Math.max(0, ...series.map(s => s.values.length))
+      const all = values.concat(row ? [row.expected * (1 - row.alarm), row.expected * (1 + row.alarm)] : [])
+      const finite = all.filter(v => Number.isFinite(v))
       this.chart.setOption({
-        title: { text: `${this.selectedField} 数据曲线`, left: 'center', textStyle: { fontSize: 14 } },
+        title: {
+          text: row ? `${this.selectedField} · 实测与模型预期` : `${this.selectedField}（该测点不在仿真模型输出中）`,
+          left: 'center',
+          textStyle: { fontSize: 14 }
+        },
         tooltip: { trigger: 'axis' },
-        legend: { data: series.map(s => s.name), top: 30 },
-        grid: { left: '3%', right: '4%', bottom: '3%', top: 80, containLabel: true },
-        xAxis: { type: 'category', data: Array.from({ length }, (_, i) => i) },
-        yAxis: { type: 'value', name: this.selectedField },
-        series: series.map(s => ({
-          name: s.name,
-          type: 'line',
-          data: s.values,
-          smooth: true,
-          showSymbol: false,
-          lineStyle: { width: 2, type: s.dashed ? 'dashed' : 'solid' },
-          itemStyle: { color: s.color }
-        }))
+        grid: { left: '3%', right: '4%', bottom: '3%', top: 50, containLabel: true },
+        xAxis: { type: 'category', data: values.map((_, i) => i), name: '特征组' },
+        yAxis: {
+          type: 'value',
+          name: row ? `${this.selectedField}（${row.unit}）` : this.selectedField,
+          min: finite.length ? Math.min(...finite) : null,
+          max: finite.length ? Math.max(...finite) : null,
+          axisLabel: { formatter: v => Number(v.toPrecision(4)) }
+        },
+        series: [line]
       }, true)
     }
   }

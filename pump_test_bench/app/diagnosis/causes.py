@@ -139,15 +139,53 @@ def infer_causes(findings: List[Dict], loops: List[Dict]) -> List[Dict]:
             f"对 {f['label']} 做零点校准（停流、充满油）；零点正常则送检标定。",
             alternatives=["燃油密度设置有误（换了油品但没有更新 20 ℃ 密度）", "油温传感器偏差（会带偏密度修正）"]))
 
-    # 6) 其余：按测点归并
+    # 6) 与仿真模型比较发现的系统性偏离：各表一致、整体偏离模型预期（互校看不到）
+    system = take(lambda x: x["category"] == "model_system")
+    if system:
+        f = system[0]
+        follow = "同步变化，说明实际流量确实变了" in f["detail"]
+        low = (f.get("value") or 0) < 0
+        extra = take(lambda x: x["category"] == "model_pressure")
+        if low and follow:
+            name = "被试泵出力低于预期"
+            why = ("各流量计彼此一致，但整体低于仿真模型在该工况下的预期，与流量相关的压力也同步降低，"
+                   "说明实际流量减少，而不是某只表的问题")
+            alt = ["电传转速信号偏高（模型按偏高的转速估算了更大的流量）", "进口供油不足或吸入不畅（检查燃油泵、进口滤网）",
+                   "流量控制阀开度与该档位的设定不符"]
+            advice = "检查被试泵容积效率（内泄漏、配流面磨损），核对电传转速信号；可在相同工况下复测确认。"
+        elif low:
+            name = "流量测量整体偏低"
+            why = ("各流量计彼此一致，但整体低于模型预期，而与流量相关的压力没有随之降低，"
+                   "更像是共同影响所有流量计的测量问题，而不是实际流量变化")
+            alt = ["油品与标定时不同（粘度影响涡轮流量计系数）", "被试泵出力下降（若压力测点本身也有偏差）"]
+            advice = "核对当前油品与流量计标定条件；用质量流量计与密度换算校核。"
+        else:
+            name = "系统流量高于预期"
+            why = "各流量计彼此一致，但整体高于仿真模型在该工况下的预期"
+            alt = ["电传转速信号偏低", "流量控制阀开度大于该档位的设定", "仿真基准表与当前设备状态不符（检修后未重建）"]
+            advice = "核对电传转速信号与阀开度设定；设备检修后请重建仿真基准表。"
+        causes.append(_cause(name, system + extra, why, advice, location="主油路", alternatives=alt))
+
+    # 7) 没有冗余表的压力测点偏离模型预期
+    for f in [f for f in pool if f["category"] == "model_pressure"]:
+        if f not in pool:
+            continue
+        items = take(lambda x, t=f["target"]: x["target"] == t)
+        causes.append(_cause(
+            f"{f['label']} 压力测点偏离", items,
+            "该压力测点没有冗余表可以互校；与仿真模型在同一工况下的预期相比偏离较大，而流量与其他压力都正常，"
+            "更可能是该压力传感器零点或量程漂移",
+            f"用标准压力表比对 {f['label']}，停机泄压后检查零点。",
+            alternatives=["该处管路阻力变化（滤网堵塞、阀开度变化）"]))
+
+    # 8) 其余：按测点归并
     names = {"noise": "读数波动过大", "spike": "读数毛刺", "trend": "偏差持续变化", "temperature": "温度传感器偏差",
-             "zero": "零点偏移", "simulation": "与仿真偏差较大"}
+             "zero": "零点偏移"}
     advice = {"noise": "检查信号屏蔽与接地，远离变频器/加热器动力线。",
               "spike": "检查接插件是否松动、前置放大器触发门限。",
               "trend": "故障可能正在发展，建议尽快停机检查。",
               "temperature": "用标准温度计比对两只传感器，检查安装深度与接线。",
-              "zero": "在停流状态下做零点校准。",
-              "simulation": "核对仿真模型参数（转速、阀开度）与实际工况是否一致。"}
+              "zero": "在停流状态下做零点校准。"}
     signal = ("noise", "spike")
     while pool:
         f = pool[0]
@@ -162,6 +200,17 @@ def infer_causes(findings: List[Dict], loops: List[Dict]) -> List[Dict]:
                "temperature": "同一位置的两只温度传感器读数相差过大，至少一只有偏差"}.get(f["category"], f["detail"])
         causes.append(_cause(f"{f['label']} {names.get(f['category'], f['title'])}", items, why,
                              advice.get(f["category"], "检查该测点。")))
+
+    # 模型对比的“注意”级发现：作为已有原因的补充依据（例如泄漏时，回油侧低于模型预期而供油侧与模型一致）
+    loop_cols = set(group) | {(lp.get("mass") or {}).get("column") for lp in loops if lp.get("mass")}
+    for f in findings:
+        if f["category"] != "model" or f["severity"] not in (NOTICE,):
+            continue
+        for c in causes:
+            related = {c["target"]} | (loop_cols if c["location"] in ("主油路", "回油管路") or c["component"] == "回油管路" else set())
+            if f["target"] in related or (c["target"] == f["target"]):
+                c["evidence"].append(f"模型对比：{f['detail']}")
+                break
 
     causes.sort(key=lambda c: -SEVERITY_RANK[c["severity"]])
     return causes

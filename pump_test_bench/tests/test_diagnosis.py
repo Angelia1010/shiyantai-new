@@ -1,4 +1,6 @@
 """诊断算法：用合成的健康数据 + 故障注入检验检出与定位。"""
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -191,3 +193,75 @@ def test_causes_merge_symptoms():
     df = faults.drift(faults.drift(healthy_frame(), "回油流量1-1", -0.04), "回油流量1-2", -0.04)
     names = [c["name"] for c in diagnose_frame(df)["causes"]]
     assert names[0] == "两只回油流量计同时偏低", names
+
+
+# ---------------------------------------------------------------- 仿真模型（默认基准表：正常数据的代理模型）
+REAL = Path(__file__).resolve().parents[2] / "标准台性能录取数据" / "标准台性能录取数据" / "36-38摄氏度" / "S4975-P0.15.txt"
+
+
+def _real():
+    from pump_test_bench.app.core.data_reader import read_table
+    return read_table(REAL)[1].copy()
+
+
+def test_model_check_on_healthy_file():
+    body = diagnose_frame(_real())
+    assert body["result"] == "normal"
+    model = body["model"]
+    assert model["available"] and model["system"] is None
+    assert all(abs(r["residual"]) < r["warn"] for r in model["rows"])
+
+
+def test_pump_wear_found_only_by_model():
+    df = _real()
+    t = np.arange(len(df)) / 100
+    cols = {c: pd.to_numeric(df[c]).to_numpy(dtype=float) for c in gen.PUMP_COLUMNS}
+    for c, v in gen.pump_wear(cols, gen.profile("const", t), None, ratio=0.08).items():
+        df[c] = v
+    assert diagnose_frame(df, sim_table=None)["result"] == "normal"  # 各表一致，互校看不出
+    body = diagnose_frame(df)
+    assert body["result"] == "abnormal" and body["causes"][0]["name"] == "被试泵出力低于预期"
+    assert body["model"]["system"]["pressures_follow"] is True
+
+
+def test_pressure_sensor_drift_found_by_model():
+    df = _real()
+    df["P5低压压力"] = pd.to_numeric(df["P5低压压力"]) + 0.02
+    body = diagnose_frame(df)
+    assert body["causes"][0]["name"] == "P5低压压力 压力测点偏离"
+
+
+def test_amesim_model_adapter_with_fake_client():
+    """AMESim 适配：按配置设置参数、运行、取末段稳态均值（用假客户端，不需要 AMESim）。"""
+    from pump_test_bench.app.simulation.config import load_sim_config
+    from pump_test_bench.app.simulation.models import AmesimModel
+
+    class Fake:
+        def __init__(self):
+            self.calls = []
+
+        def __getattr__(self, name):
+            def call(*args):
+                self.calls.append((name,) + args)
+                if name == "get_simulation_results":
+                    rows = [{"时间(s)": t, **{k: (100.0 if t >= 15 else 0.0) for k in args[0]}} for t in range(21)]
+                    return {"data": rows}
+                return {}
+            return call
+
+    cfg = json_copy(load_sim_config())
+    cfg["amesim"]["model_file"] = "pump.ame"
+    cfg["amesim"]["variables"] = {"系统流量": "qout@pump01"}
+    cfg["amesim"]["parameters"] = [p for p in cfg["amesim"]["parameters"] if "待填写" not in str(p)]
+    fake = Fake()
+    out = AmesimModel(cfg, fake).run({"电传转速": 1980, "进口压力": 0.15, "油温": 36})
+    assert out == {"系统流量": 100.0}  # 末 5 秒稳态
+    names = [c[0] for c in fake.calls]
+    assert names[:2] == ["init_api", "open_model"] and "run_simulation" in names
+    assert ("set_comp_parameter", "ordiam@flowcontrol01", "7") in fake.calls  # 1980 rpm → 2000 档
+    assert any(c[0] == "write_input_data" and c[1][0] == 1980 for c in fake.calls)
+
+
+def json_copy(d):
+    import json
+    return json.loads(json.dumps(d))

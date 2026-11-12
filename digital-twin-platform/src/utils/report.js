@@ -38,6 +38,7 @@ export function summarizeReport(taskId, fileName, report) {
     findings,
     causes: report.causes || [],
     history: report.history || null,
+    model: report.model || null,
     loops: report.loops || [],
     repairAdvice: report.repair_advice || '',
     // 三维模型中需要告警闪烁的部件（异常优先）

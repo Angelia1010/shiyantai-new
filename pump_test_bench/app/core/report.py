@@ -13,7 +13,8 @@
       "history": {...}?   # 历次诊断的长期漂移检查（见 pump_test_bench/app/diagnosis/history.py）
       "loops": [...], "indicators": [{name, reference, value, abnormal?}],
       "diagnosis": {fault_name, location, analysis}, "repair_advice": str,
-      "algorithm": {version, config, baseline}, "simulation": {...}?
+      "algorithm": {version, config, baseline},
+      "model": {available, model, condition, rows: [{column, output, measured, expected, residual, ...}], system}?
     }
 """
 from datetime import datetime

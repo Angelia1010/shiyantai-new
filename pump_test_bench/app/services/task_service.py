@@ -10,11 +10,14 @@
     POST   /tasks/delete                批量删除 {task_ids: [...]}
     GET    /tasks/<id>                  任务详情
     POST   /tasks/<id>/diagnose         诊断 {density?}（当前燃油 20 ℃ 密度；不填时用诊断设置里的值）
-    POST   /tasks/<id>/preliminary      诊断 + AMESim 仿真对比 {experiment_data, simulation_data, threshold?, exceeded_limit?, density?}
     GET    /tasks/<id>/report           报告（JSON）
     GET    /diagnosis/settings          诊断设置（当前燃油 20 ℃ 密度等）
     PUT    /diagnosis/settings          修改诊断设置 {fuel_density_20?, fuel_note?}
     GET    /diagnosis/history           历次诊断的关键指标（趋势图用）?days=&limit=
+    GET    /simulation/status           仿真模型：配置、基准表与标定结果、重建任务状态
+    POST   /simulation/table            后台重建仿真基准表 {path: 正常数据目录, model?: surrogate|amesim}
+    DELETE /simulation/table            删除数据目录下的基准表，恢复默认表
+    POST   /simulation/predict          工况试算 {condition: {电传转速, 进口压力, 油温}}
     GET    /tasks/<id>/report.docx      报告（Word）
     POST   /logs                        前端日志 {source, logs: [{level, message}]}
 
@@ -26,11 +29,11 @@ from typing import Dict, Optional
 
 from flask import g, jsonify, request, send_file
 
-from pump_test_bench.app.core import preliminary as prelim
 from pump_test_bench.app.core.data_reader import TABLE_SUFFIXES
 from pump_test_bench.app.db import tasks as repo
 from pump_test_bench.app.diagnosis import settings as diag_settings
 from pump_test_bench.app.diagnosis.runner import run_task_diagnosis
+from pump_test_bench.app.simulation import service as sim_service
 from shared.auth import check_credentials, issue_token
 from shared.config import get_settings
 from shared.flask_app import ApiError, create_app, json_body
@@ -128,23 +131,6 @@ def diagnose(task_id: str):
     return jsonify(run_task_diagnosis(task, _task_file(task), g.user, density=density))
 
 
-@app.post("/tasks/<task_id>/preliminary")
-def preliminary(task_id: str):
-    """仿真对比作为辅助证据并入诊断报告（不再决定是否做精确诊断）。"""
-    task = _require_task(task_id)
-    data = json_body()
-    result = prelim.compare(
-        data.get("experiment_data") or {},
-        data.get("simulation_data") or {},
-        threshold=data.get("threshold"),
-        exceeded_limit=data.get("exceeded_limit"),
-    )
-    if result["total_compared"] == 0:
-        raise ValueError("试验数据与仿真数据没有可对比的同名变量")
-    report = run_task_diagnosis(task, _task_file(task), g.user, density=_density(data), simulation=result)
-    return jsonify({"preliminary": result, "report": report})
-
-
 @app.get("/tasks/<task_id>/report")
 def get_report(task_id: str):
     _require_task(task_id)
@@ -203,6 +189,37 @@ def diagnosis_history():
         items.append({"task_id": item["task_id"], "file_name": item["file_name"], "mode": item["mode"],
                       "time": item["updated_at"], **m})
     return jsonify({"items": items, "days": days, "source": source})
+
+
+# ---------------------------------------------------------------- 仿真模型
+@app.get("/simulation/status")
+def simulation_status():
+    return jsonify(sim_service.status())
+
+
+@app.post("/simulation/table")
+def simulation_build():
+    data = json_body()
+    model = data.get("model") or None
+    if model not in (None, "surrogate", "amesim"):
+        raise ValueError("model 只能是 surrogate 或 amesim")
+    directory, files = sim_service.resolve_source(data.get("path"))
+    try:
+        job = sim_service.start_build(files, model or sim_service.load_sim_config()["model"]["type"],
+                                      str(directory), g.user)
+    except RuntimeError as exc:
+        raise ApiError(str(exc), 409) from None
+    return jsonify(job), 202
+
+
+@app.delete("/simulation/table")
+def simulation_reset():
+    return jsonify({"removed": sim_service.reset_table(), **sim_service.status()})
+
+
+@app.post("/simulation/predict")
+def simulation_predict():
+    return jsonify(sim_service.try_predict(json_body().get("condition") or {}))
 
 
 # ---------------------------------------------------------------- 前端日志

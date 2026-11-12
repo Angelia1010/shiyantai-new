@@ -117,6 +117,26 @@ def aeration(cols: Cols, g, rng, ratio: float) -> Cols:
     return out
 
 
+# 与流量相关的压力随流量的变化：P ∝ Q^e（e 由正常数据在中等流量处拟合，见仿真基准表）
+FLOW_PRESSURE = {"P5低压压力": 0.9, "P6定压压力": 0.9, "回油压力1-2": 0.65}
+ALL_FLOW_METERS = ["供油流量1-1", "供油流量1-2", "齿轮流量计"] + RETURN_METERS
+PUMP_COLUMNS = ALL_FLOW_METERS + [MASS] + list(FLOW_PRESSURE)
+
+
+def pump_wear(cols: Cols, g, rng, ratio: float) -> Cols:
+    """被试泵容积效率下降（内泄漏增大、配流面磨损）：同一转速下实际流量减少 ratio，
+    所有流量计（含质量流量计）同比例减少，下游与流量相关的压力按 P ∝ Q^e 同步降低。各表彼此仍然一致。"""
+    out = {c: cols[c] * (1 - ratio * g) for c in ALL_FLOW_METERS + [MASS]}
+    for c, e in FLOW_PRESSURE.items():
+        out[c] = cols[c] * (1 - ratio * g) ** e
+    return out
+
+
+def pressure_offset(cols: Cols, g, rng, col: str, offset: float) -> Cols:
+    """压力传感器零点漂移：膜片疲劳、温漂或安装应力，读数多一个固定值（MPa）。该测点没有冗余表。"""
+    return {col: cols[col] + offset * g}
+
+
 def temp_offset(cols: Cols, g, rng, col: str, offset: float) -> Cols:
     """温度传感器偏移：热电阻老化、接线电阻、安装不到位（未插到油里）。"""
     return {col: cols[col] + offset * g}
@@ -149,6 +169,7 @@ class Fault:
     conditions: Sequence[str] = field(default_factory=lambda: ("B",))
     at: float = 0.4
     expect_by: Dict[str, str] = field(default_factory=dict)   # 个别工况的预期结论不同时
+    cols: Sequence[str] = ()                                   # 需要读取的列（默认按 col 参数或回油侧）
 
 
 # 代表性工况（健康源文件）：低温中流量 / 中温中流量 / 高温大流量 / 中温小流量
@@ -212,6 +233,16 @@ FAULTS: List[Fault] = [
     Fault("F14", "F14_油温传感器偏移", "油温传感器偏移（密度修正被带偏）", TEMP, temp_offset,
           {"col": TEMP, "offset": 8.0}, "const", "+8℃", "abnormal",
           "同位置两只温度传感器不一致（异常）", ("B", "C")),
+    Fault("F16", "F16_被试泵出力下降", "被试泵容积效率下降（实际流量减少，各表仍一致）", "被试泵", pump_wear,
+          {"ratio": 0.05}, "const", "5%", "warning",
+          "被试泵出力低于预期（预警）；不用仿真模型时判为正常", ("B", "C"), cols=PUMP_COLUMNS),
+    Fault("F16", "F16_被试泵出力下降", "被试泵容积效率下降（实际流量减少，各表仍一致）", "被试泵", pump_wear,
+          {"ratio": 0.08}, "const", "8%", "abnormal",
+          "被试泵出力低于预期（异常）；不用仿真模型时判为正常", ("A", "B", "C"), cols=PUMP_COLUMNS),
+    Fault("F17", "F17_压力传感器零漂", "压力传感器零点漂移（P5低压压力 +0.02 MPa）", "P5低压压力", pressure_offset,
+          {"col": "P5低压压力", "offset": 0.02}, "const", "+0.02MPa", "abnormal",
+          "P5低压压力 压力测点偏离（无冗余表，只能靠模型发现）；高流量时压力大，同样漂移的相对值小（预警）", ("B", "C"),
+          expect_by={"C": "warning"}),
     Fault("F15", "F15_油温传感器断路", "油温热电阻断路（读数固定约157.6℃）", TEMP, temp_open,
           {"col": TEMP}, "step", "30%处断路", "abnormal",
           "供油温度1-1 超出量程（异常）", ("B",), 0.3),
@@ -285,7 +316,7 @@ def generate(src_root: Path, out: Path, seed: int = 2026) -> List[Dict]:
             folder, name, label = CONDITIONS[key]
             src = src_root / folder / name
             raw = cache.setdefault(key, read_raw(src))
-            needed = {fault.kwargs.get("col")} if "col" in fault.kwargs else set(RETURN_METERS + [MASS])
+            needed = set(fault.cols) or ({fault.kwargs["col"]} if "col" in fault.kwargs else set(RETURN_METERS + [MASS]))
             cols = {c: column(raw, c) for c in needed}
             g = profile(fault.profile, raw.t, fault.at)
             rng = np.random.default_rng(seed + n * 10 + ord(key))
@@ -310,7 +341,7 @@ def diagnose(out: Path, rows: List[Dict]) -> None:
     baseline = json.loads(Path(DEFAULT_BASELINE).read_text(encoding="utf-8"))
     for r in rows:
         _, df = read_table(out / r["文件"])
-        rep = diagnose_frame(df, None, None, baseline)
+        rep = diagnose_frame(df, baseline=baseline)
         res = rep.get("result") or rep.get("diagnosis_result")
         r["实际结论"] = res
         r["实际诊断"] = "；".join(c["name"] for c in rep.get("causes", [])) or rep.get("summary", "")

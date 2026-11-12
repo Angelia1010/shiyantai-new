@@ -134,6 +134,11 @@
           </el-table>
         </template>
 
+        <template v-if="reportDialog.report.model">
+          <div class="section-title">仿真模型对比</div>
+          <model-compare :model="reportDialog.report.model" style="margin-bottom: 20px" />
+        </template>
+
         <div class="section-title">检测明细</div>
         <el-table :data="reportDialog.report.indicators" border size="small" style="margin-bottom: 20px">
           <el-table-column prop="name" label="项目" />
@@ -165,6 +170,7 @@
 import { deleteTasks, downloadReport, getReport, listTasks } from '@/api/tasks'
 import { RESULT_TAG, SEVERITY_LABELS, resultLabel } from '@/utils/report'
 import CauseList from '@/components/CauseList'
+import ModelCompare from '@/components/ModelCompare'
 import HistoryTrend from './HistoryTrend'
 
 const STATUS_LABELS = { Created: '待诊断', Completed: '已完成', Failed: '失败' }
@@ -175,7 +181,7 @@ const DAY_MS = 24 * 3600 * 1000
 
 export default {
   name: 'Tasks',
-  components: { CauseList, HistoryTrend },
+  components: { CauseList, HistoryTrend, ModelCompare },
   data() {
     return {
       STATUS_LABELS,

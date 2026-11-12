@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from pump_test_bench.app.core import flow_meter, preliminary
+from pump_test_bench.app.core import flow_meter
 from pump_test_bench.app.core.data_reader import read_page, read_table
 from pump_test_bench.app.core.report import build_report, render_docx
 from pump_test_bench.tests.conftest import SAMPLE_TXT, SAMPLE_XLSX
@@ -25,26 +25,6 @@ def test_read_txt_and_excel_pages(sample_dir):
     assert page0["total_rows"] == len(page0["columns"]["回油流量1-1"]) + len(page1["columns"]["回油流量1-1"])
     # NaN 被转换成 None，可以直接序列化为 JSON
     assert page0["columns"]["燃油泵实际转速"][0] is None
-
-
-def test_preliminary_compare():
-    exp = {"a": [1.0, 1.0], "b": [10.0], "c": [5.0], "d": [2.0], "e": [3.0]}
-    sim = {"a": [1.0], "b": [20.0], "c": [10.0], "d": [4.0], "e": [6.0], "only_sim": [1.0]}
-    result = preliminary.compare(exp, sim, threshold=0.15, exceeded_limit=3)
-    assert result["total_compared"] == 5
-    assert result["exceeded_count"] == 4
-    assert result["is_abnormal"] is True
-    assert preliminary.compare(exp, sim, exceeded_limit=4)["is_abnormal"] is False
-    with pytest.raises(ValueError):
-        preliminary.compare([], sim)
-
-
-def test_preliminary_near_zero_variables_use_absolute_tolerance():
-    # 回油压力约 0.05 MPa：相对偏差 30% 但绝对只差 0.015 MPa，不算超限
-    r = preliminary.compare({"回油压力1-1": [0.05]}, {"回油压力1-1": [0.065]})
-    assert r["details"][0]["exceeded"] is False and "绝对" in r["details"][0]["deviation_text"]
-    r = preliminary.compare({"回油压力1-1": [0.05]}, {"回油压力1-1": [0.09]})
-    assert r["details"][0]["exceeded"] is True
 
 
 def test_report_docx_renders(env):

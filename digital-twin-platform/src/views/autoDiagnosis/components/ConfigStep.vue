@@ -88,99 +88,18 @@
 
     <el-card shadow="never" class="sub-card">
       <div slot="header">
-        <span>AMESim仿真配置</span>
-        <el-switch 
-          v-model="localConfig.enableSimulation" 
-          style="float: right;"
-          active-text="启用"
-          inactive-text="禁用"
-        />
+        <span>仿真模型</span>
+        <el-button type="text" style="float: right; padding: 0" @click="$router.push('/simulation')">管理仿真模型</el-button>
       </div>
-      
-      <el-form label-width="120px" :disabled="!localConfig.enableSimulation">
-        <el-row :gutter="20">
-          <el-col :span="12">
-            <el-form-item label="模型文件路径">
-              <el-input 
-                v-model="localConfig.ameModel" 
-                placeholder="如: pump_model.ame"
-                clearable
-              >
-                <template #prepend>
-                  <i class="el-icon-document"></i>
-                </template>
-              </el-input>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="电传转速">
-              <el-select 
-                v-model="localConfig.electricalSpeed" 
-                placeholder="自动（按实测电传转速）"
-                clearable
-                style="width: 100%;"
-              >
-                <el-option 
-                  v-for="item in electricalSpeedOptions" 
-                  :key="item.value" 
-                  :label="item.label" 
-                  :value="item.value"
-                />
-              </el-select>
-            </el-form-item>
-          </el-col>
-        </el-row>
-        <div class="form-tip">
-          <i class="el-icon-info"></i> 选择电传转速后，将自动配置对应的三个流量控制参数
-        </div>
-
-        <el-divider content-position="left">
-          <i class="el-icon-setting"></i> 仿真结果文件配置
-        </el-divider>
-        
-        <div class="variable-grid" v-if="variableConfigs.length > 0">
-          <div 
-            v-for="(item, index) in variableConfigs" 
-            :key="index"
-            class="variable-item"
-          >
-            <div class="variable-header">
-              <span class="variable-index">
-                <i class="el-icon-coin"></i> 变量 {{ index + 1 }}
-              </span>
-              <el-button 
-                type="text" 
-                icon="el-icon-delete"
-                :disabled="variableConfigs.length <= 1"
-                @click="$emit('remove-variable', index)"
-                class="delete-btn"
-              />
-            </div>
-            <el-input 
-              v-model="item.name" 
-              placeholder="变量名称"
-              size="small"
-              class="variable-input"
-            />
-            <el-input 
-              v-model="item.fileName" 
-              placeholder="数据文件名（如 xxx.data）"
-              size="small"
-              class="variable-input"
-            />
-          </div>
-        </div>
-        
-        <el-button 
-          type="primary" 
-          size="small" 
-          icon="el-icon-plus"
-          @click="$emit('add-variable')"
-          class="add-variable-btn"
-        >
-          添加变量
-        </el-button>
-      </el-form>
+      <div v-if="simStatus && simStatus.table" class="sim-info">
+        诊断时自动按实测工况（{{ simStatus.table.inputs.map(i => i.name).join('、') }}）查仿真基准表，
+        与模型预期值比较。当前模型：<b>{{ simStatus.table.model.label }}</b>，
+        基准表建立于 {{ simStatus.table.created }}，标定用了 {{ simStatus.table.calibration.files }} 个正常数据文件。
+      </div>
+      <div v-else-if="simStatus" class="sim-info warn">
+        还没有仿真基准表，诊断时不做模型对比。可在“仿真模型”页用正常数据建立。
+      </div>
+      <div v-else class="sim-info">正在读取仿真模型状态...</div>
     </el-card>
 
     <div class="action-bar">
@@ -194,6 +113,7 @@
 
 <script>
 import { getDataDirs } from '@/api/files'
+import { getSimulationStatus } from '@/api/simulation'
 
 export default {
   name: 'ConfigStep',
@@ -201,24 +121,15 @@ export default {
     config: {
       type: Object,
       required: true
-    },
-    variableConfigs: {
-      type: Array,
-      required: true
     }
   },
   data() {
     return {
-      // 与 pipeline.js 的 ORDIAM_BY_SPEED_LEVEL 对应；括号内为文件名中常见的工况编号
-      electricalSpeedOptions: [
-        { value: null, label: '自动（按实测电传转速）' },
-        { value: 1000, label: '约 1000 rpm（S1295）' },
-        { value: 1500, label: '约 1500 rpm（S2990）' },
-        { value: 2000, label: '约 2000 rpm（S4975）' },
-        { value: 2500, label: '约 2500 rpm（S7700）' },
-        { value: 3000, label: '约 3000 rpm（S9980）' }
-      ]
+      simStatus: null
     }
+  },
+  created() {
+    getSimulationStatus().then(st => { this.simStatus = st }).catch(() => { this.simStatus = { table: null } })
   },
   computed: {
     localConfig: {
@@ -251,6 +162,14 @@ export default {
 </script>
 
 <style scoped>
+.sim-info {
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.8;
+}
+.sim-info.warn {
+  color: #e6a23c;
+}
 .config-step-card {
   max-height: calc(100vh - 280px);
   overflow-y: auto;
@@ -294,46 +213,11 @@ export default {
   color: #606266;
 }
 
-.variable-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
-  margin-bottom: 16px;
-}
 
-.variable-item {
-  border: 1px solid #dcdfe6;
-  border-radius: 6px;
-  padding: 14px;
-  background-color: #fafafa;
-  transition: all 0.3s ease;
-}
 
-.variable-item:hover {
-  border-color: #409eff;
-  box-shadow: 0 2px 12px rgba(64, 158, 255, 0.15);
-  background-color: #fff;
-}
 
-.variable-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px dashed #e4e7ed;
-}
 
-.variable-index {
-  font-size: 13px;
-  font-weight: 600;
-  color: #303133;
-}
 
-.variable-index i {
-  margin-right: 4px;
-  color: #409eff;
-}
 
 .delete-btn {
   padding: 0;
@@ -349,17 +233,8 @@ export default {
   color: #c0c4cc;
 }
 
-.variable-input {
-  margin-bottom: 8px;
-}
 
-.variable-input:last-child {
-  margin-bottom: 0;
-}
 
-.add-variable-btn {
-  margin-top: 8px;
-}
 
 .action-bar {
   margin-top: 20px;

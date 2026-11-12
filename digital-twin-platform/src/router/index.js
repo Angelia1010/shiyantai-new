@@ -51,6 +51,16 @@ export const constantRoutes = [
     }]
   },
   {
+    path: '/simulation',
+    component: Layout,
+    children: [{
+      path: '',
+      name: 'Simulation',
+      component: () => import('@/views/simulation/index'),
+      meta: { title: '仿真模型', icon: 'el-icon-cpu' }
+    }]
+  },
+  {
     path: '/assistant',
     component: Layout,
     children: [{

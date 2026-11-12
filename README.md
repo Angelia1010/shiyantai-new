@@ -1,15 +1,15 @@
 # 503 标准试验台数字化校验系统
 
-燃油泵标准试验台的数据监控与故障诊断平台：实时监控试验台导出的数据文件，计算特征并在三维/二维模型上展示，结合 AMESim 仿真做初步诊断，再用流量计模型做精确诊断，生成 Word 诊断报告；另提供基于本地大模型的数据分析与问答。
+燃油泵标准试验台的数据监控与故障诊断平台：实时监控试验台导出的数据文件，计算特征并在三维/二维模型上展示，用流量计互校、质量-体积校核与仿真模型（健康参考模型）对比做诊断并归纳原因，生成 Word 诊断报告；另提供基于本地大模型的数据分析与问答。
 
 ## 架构
 
 ```
 浏览器 ── digital-twin-platform（Vue 2 + Element UI）
-   │  /api/task   ──►  任务服务     pump_test_bench/app/services/task_service.py   :5001  登录、任务、诊断、报告
-   │  /api/file   ──►  文件服务     pump_test_bench/app/services/file_service.py   :5002  列文件、分页读取、实时监控
-   │  /api/ai     ──►  大模型服务   pump_test_bench/app/services/llm_service.py    :8999  数据分析与问答 ──► Ollama
-   └  /api/amesim ──►  AMESim 服务  AMESim_server/src/AmeSimuSessionServer.py      :5003  仿真（AMESim 自带 Python）
+   │  /api/task   ──►  任务服务     pump_test_bench/app/services/task_service.py   :5001  登录、任务、诊断、报告、仿真模型
+   │                        └─ 重建仿真基准表（AMESim 模型时）──►  AMESim 服务  AMESim_server/src/AmeSimuSessionServer.py  :5003
+   │  /api/file   ──►  文件服务     pump_test_bench/app/services/file_service.py   :5002  列文件、分页读取、实时监控、自动诊断
+   └  /api/ai     ──►  大模型服务   pump_test_bench/app/services/llm_service.py    :8999  数据分析与问答 ──► Ollama
 ```
 
 - 开发时由 `vue.config.js` 的代理转发 `/api/*`，生产环境由 Nginx 转发（`deploy/nginx.conf`）。
@@ -52,7 +52,7 @@ python -m pump_test_bench.tools.replay_data pump_test_bench/samples/标准台样
 ### 诊断（`pump_test_bench/app/diagnosis/`）
 
 **何时诊断**：实时监控时，数据文件写完后由文件服务在后台自动诊断（任务类型“自动诊断”，可在工作台“数据目录”
-或“自动诊断”页开关）；也可以在“自动诊断”页选择文件批量诊断，并可选附上 AMESim 仿真对比。
+或“自动诊断”页开关）；也可以在“自动诊断”页选择文件批量诊断。
 
 **怎么诊断**（`engine.py`）：
 
@@ -67,7 +67,7 @@ python -m pump_test_bench.tools.replay_data pump_test_bench/samples/标准台样
 5. 零点：无流量管路上流量计应接近 0；传感器自检：卡死/冻结、掉零、超量程、噪声、毛刺、偏差渐变，
    同位置两只温度传感器互校。已知损坏的测点（如 T6、T7）在 `bench.json` 的 `ignored_sensors` 中屏蔽，不重复报警；
 6. 原经验公式（质量流量→涡轮转速→理论流量，`app/core/flow_meter.py`）只在报告中作参考；
-7. AMESim 仿真对比（有仿真数据时）作为辅助证据，接近 0 的变量按绝对容差比较。
+7. **模型残差**：按实测工况查仿真基准表，与健康参考模型的预期值比较（见下方“仿真模型”）。
 
 结论分四级：正常 / 预警 / 异常 / 无法判定。
 
@@ -94,6 +94,34 @@ python -m pump_test_bench.tools.validate_diagnosis 健康数据目录          #
 python -m pump_test_bench.tools.generate_fault_data 健康数据目录 --out 故障数据  # 生成 15 类物理故障的异常数据文件（原格式）+ 故障清单.csv
 ```
 
+### 仿真模型（`pump_test_bench/app/simulation/`）
+
+仿真模型是试验台的**健康参考模型**：给定工况（电传转速、进口压力、油温），给出健康系统各测点的预期值
+（系统流量、质量流量、各压力、电传扭矩）。它补的是互校看不到的问题：
+
+- **系统性偏离**：各流量计彼此一致，但整体低于模型预期 → 被试泵出力下降（或转速信号偏高等）。
+  再看与流量相关的压力是否按模型关系同步变化，区分“实际流量确实变了”与“测量整体偏了”；
+- **没有冗余表的测点**：各压力只能与模型预期比较，例如压力传感器零点漂移。
+
+运行方式：**离线**把模型在工况网格（5 档转速 × 3 档进口压力 × 4 段油温）上算一遍，存为“仿真基准表”，
+并用正常数据**标定**每个测点的固有偏差与离散（阈值 = max(下限, 3σ)）；**在线**诊断时按实测工况插值，毫秒级，
+实时自动诊断也能用，不需要一直开着 AMESim。
+
+模型有两种（`config/simulation.json` 的 `model.type`）：
+
+- `surrogate` **数据代理模型**：由正常数据拟合的二次响应面，用于 AMESim 接入前跑通整套流程。随代码提供的
+  `config/simulation_table_default.json` 由 2026-11 的 60 个正常文件生成（系统流量离散约 1.2%，压力 1.6–4.5%）。
+  它只学到了健康数据的规律，能发现偏离，但不能模拟没见过的部件故障；
+- `amesim` **AMESim 模型**：补全 `simulation.json` 中 `amesim` 段（模型文件、各输入怎样设置到模型、各输出的变量路径），
+  启动 AMESim 服务后重建基准表即可切换，诊断流程不变。
+
+前端“仿真模型”页可查看基准表与标定结果、用正常数据重建基准表、做工况试算，并播放仿真动画。命令行：
+
+```bash
+python -m pump_test_bench.tools.build_simulation_table 健康数据目录                 # 保存到数据目录 simulation_table.json
+python -m pump_test_bench.tools.build_simulation_table 健康数据目录 --model amesim  # 用 AMESim
+```
+
 ## 快速开始（Windows）
 
 1. **配置**：复制 `.env.example` 为 `.env`，至少填写 `SECRET_KEY`、`ADMIN_PASSWORD`。数据目录在前端填写，不需要改 `.env`。
@@ -103,7 +131,7 @@ python -m pump_test_bench.tools.generate_fault_data 健康数据目录 --out 故
    powershell -ExecutionPolicy Bypass -File pump_test_bench/start_project.ps1
    ```
    也可以在仓库根目录分别运行 `python -m pump_test_bench.app.services.task_service`（以及 `file_service`、`llm_service`）。
-3. **AMESim 服务**（需要仿真时）：设置环境变量 `AME`，运行 `AMESim_server/startAmeServer.bat`，模型文件放在 `AMESim_server/model/`。
+3. **AMESim 服务**（只在用 AMESim 重建仿真基准表时需要）：设置环境变量 `AME`，运行 `AMESim_server/startAmeServer.bat`，模型文件放在 `AMESim_server/model/`。
 4. **大模型**（需要智能助手时）：按 `DeepSeek-model/README.md` 部署 Ollama。
 5. **前端**：
    ```bash
@@ -119,17 +147,20 @@ python -m pump_test_bench.tools.generate_fault_data 健康数据目录 --out 故
 ```
 shared/                     各后端服务共用：配置、鉴权、路径校验、日志、Flask 应用工厂
 pump_test_bench/
-  app/core/                 数据解析与读取、实时监控、仿真对比、报告生成、原经验公式
+  app/core/                 数据解析与读取、实时监控、报告生成、原经验公式
   app/diagnosis/            诊断：稳定段、流量计互校、泄漏、质量-体积校核、传感器自检、健康基准、故障注入
-  config/                   诊断配置 bench.json、默认健康基准 baseline_default.json
+  app/simulation/           仿真模型：代理模型/AMESim 适配、仿真基准表、标定、模型残差检查
+  config/                   诊断配置 bench.json、默认健康基准 baseline_default.json、
+                            仿真配置 simulation.json、默认仿真基准表 simulation_table_default.json
   app/db/tasks.py           任务存储（SQLite，自动迁移旧版 fault_diagnosis_tasks_2 表）
   app/llm/                  大模型客户端、会话存储、窗口分析
   app/services/             三个 HTTP 服务
   samples/                  样例数据（测试也用它）；标准台样例/ 为试验台实际导出格式（含无表头、末行未写完）
   tools/                    replay_data（回放数据模拟试验台）、build_baseline（建立健康基准）、
-                            validate_diagnosis（故障注入验证）、generate_fault_data（生成异常数据文件）
+                            validate_diagnosis（故障注入验证）、generate_fault_data（生成异常数据文件）、
+                            build_simulation_table（建立仿真基准表）
   tests/                    后端测试
-AMESim_server/              AMESim 仿真服务与 Python/Java 客户端示例
+AMESim_server/              AMESim 仿真服务与 Python/Java 客户端（后端重建仿真基准表时调用）
 DeepSeek-model/             本地大模型部署说明与可选的独立推理接口
 digital-twin-platform/      前端
   src/views/dashboard/      工作台；三维场景在 scene/（部件、材质、视角配置见 scene/components.js）

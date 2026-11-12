@@ -74,19 +74,6 @@ def _write_healthy(path, **kwargs):
     return path
 
 
-def test_simulation_comparison_is_attached_to_report(task_client, sample_dir, token):
-    _write_healthy(sample_dir / "ok.csv")
-    task_id = task_client.post("/tasks", headers=auth(token),
-                               json={"path": str(sample_dir), "file_name": "ok.csv"}).get_json()["task_id"]
-    resp = task_client.post(f"/tasks/{task_id}/preliminary", headers=auth(token), json={
-        "experiment_data": {"v": [1.0, 1.0]}, "simulation_data": {"v": [1.02]}})
-    assert resp.status_code == 200
-    body = resp.get_json()
-    assert body["preliminary"]["is_abnormal"] is False
-    assert body["report"]["simulation"]["total_compared"] == 1
-    assert task_client.get(f"/tasks/{task_id}", headers=auth(token)).get_json()["result"] == "normal"
-
-
 def test_failed_diagnosis_marks_task(task_client, sample_dir, token):
     import pandas as pd
     pd.DataFrame({"压力": [1.0]}).to_excel(sample_dir / "empty.xlsx", index=False)
@@ -248,3 +235,37 @@ def test_history_splits_mass_zero_drift(task_client, sample_dir, token):
     hist = task_client.get("/diagnosis/history?source=file", headers=auth(token)).get_json()
     assert [round(i["flow"], -1) for i in hist["items"]] == [150, 300, 500]
     assert task_client.get("/diagnosis/history?source=live", headers=auth(token)).get_json()["items"] == []
+
+
+def test_simulation_endpoints(task_client, env, token):
+    """仿真模型：状态（默认基准表）→ 工况试算 → 用正常数据重建基准表（后台任务）→ 恢复默认。"""
+    import shutil
+    import time as _time
+    from pump_test_bench.tests.conftest import REPO_ROOT
+    st = task_client.get("/simulation/status", headers=auth(token)).get_json()
+    assert st["table"]["is_default"] and st["table"]["model"]["type"] == "surrogate"
+    assert any(c["column"] == "回油流量1-1" for c in st["table"]["calibration"]["columns"])
+
+    pred = task_client.post("/simulation/predict", headers=auth(token),
+                            json={"condition": {"电传转速": 2000, "进口压力": 0.15, "油温": 36}}).get_json()
+    flow = next(e for e in pred["expected"] if e["name"] == "系统流量")
+    assert 350 < flow["value"] < 390 and pred["outside"] == []
+    assert task_client.post("/simulation/predict", headers=auth(token), json={"condition": {}}).status_code == 400
+
+    src = REPO_ROOT / "标准台性能录取数据" / "标准台性能录取数据"
+    healthy = env / "healthy"
+    for folder in ("36-38摄氏度", "45-50摄氏度"):
+        shutil.copytree(src / folder, healthy / folder)
+    r = task_client.post("/simulation/table", headers=auth(token), json={"path": str(healthy)})
+    assert r.status_code == 202
+    for _ in range(200):
+        job = task_client.get("/simulation/status", headers=auth(token)).get_json()["job"]
+        if job["state"] != "running":
+            break
+        _time.sleep(0.1)
+    assert job["state"] == "done", job
+    st = task_client.get("/simulation/status", headers=auth(token)).get_json()
+    assert not st["table"]["is_default"] and st["table"]["calibration"]["files"] == 30
+
+    st = task_client.delete("/simulation/table", headers=auth(token)).get_json()
+    assert st["removed"] and st["table"]["is_default"]

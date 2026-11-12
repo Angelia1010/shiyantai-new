@@ -177,6 +177,10 @@
                 <b>{{ f.title }}</b> · {{ f.detail }}
               </div>
             </template>
+            <template v-if="detail.model">
+              <div class="section-title">仿真模型对比</div>
+              <model-compare :model="detail.model" dark />
+            </template>
             <div class="section-title">检测明细</div>
             <table class="indicators">
               <tr v-for="(item, i) in detail.indicators" :key="i" :class="{ bad: item.abnormal }">
@@ -264,6 +268,7 @@ import screenfull from 'screenfull'
 import { getDataDirs, getLiveFrames, removeDataDir, setAutoDiagnose, setWatchPath } from '@/api/files'
 import { downloadReport, getDiagnosisSettings, getReport, listTasks, saveDiagnosisSettings } from '@/api/tasks'
 import CauseList from '@/components/CauseList'
+import ModelCompare from '@/components/ModelCompare'
 import { errorMessage } from '@/utils/request'
 import { MessageType, openChannel } from '@/utils/broadcastChannel'
 import { fieldUnit, formatValue } from '@/utils/features'
@@ -303,7 +308,7 @@ function formatTime(ms) {
 
 export default {
   name: 'Dashboard',
-  components: { TestBenchView, TrendChart, CauseList },
+  components: { TestBenchView, TrendChart, CauseList, ModelCompare },
   data() {
     return {
       featureMap: {},

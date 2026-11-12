@@ -64,6 +64,10 @@ class AMESimClient:
         """variables 形如 {"speed": "pin@pump01", "flow": "qout@pump01"}。"""
         return self._call("POST", "/simulation/results", json={"variables": variables})
 
+    def write_input_data(self, values):
+        """把一组 Y 值写成模型目录下的一维表格 input.data（X 从 0.1 起，步长 0.1）。"""
+        return self._call("POST", "/simulation/input-data", json={"data": list(values)})
+
     def close_api(self):
         return self._call("POST", "/close")
 

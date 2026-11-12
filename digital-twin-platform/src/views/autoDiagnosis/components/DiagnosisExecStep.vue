@@ -19,7 +19,7 @@
           >
             <el-step title="数据监控" :description="getStepDesc(1)" />
             <el-step title="数据预处理" :description="getStepDesc(2)" />
-            <el-step title="系统仿真" :description="getStepDesc(3)" />
+            <el-step title="仿真模型对比" :description="getStepDesc(3)" />
             <el-step title="故障诊断" :description="getStepDesc(4)" />
             <el-step title="报告生成" :description="getStepDesc(5)" />
           </el-steps>
