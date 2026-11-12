@@ -197,11 +197,36 @@ Step "生成安装包"
 $isccDir = Split-Path $iscc
 # 有完整的中文语言文件就用它；没有时 setup.iss 用项目自带的 ChineseSimplified-partial.isl
 $chs = Join-Path $isccDir "Languages\ChineseSimplified.isl"
-$isccArgs = @("/Q", "/DAppVersion=$Version", "/DStageDir=$Stage", "/DOutputDir=$Out")
-if (Test-Path $chs) { $isccArgs += "/DChineseIsl=$chs" }
-Invoke-Checked $iscc ($isccArgs + @((Join-Path $Here "setup.iss"))) "Inno Setup 编译"
+# 杀毒软件常在安装包 exe 刚写出时锁住扫描，导致“另一个程序正在使用此文件”：
+# 每次编译到新的临时目录，失败时等几秒重试，成功后再移到 output
+$exeName = "BenchCheck-Setup-$Version.exe"
+$exe = Join-Path $Out $exeName
+$compiled = $null
+for ($try = 1; $try -le 3; $try++) {
+    $tmpOut = Join-Path $Build ("iscc-out-" + (Get-Date -Format "HHmmss") + "-$try")
+    New-Item -ItemType Directory -Force -Path $tmpOut | Out-Null
+    $isccArgs = @("/DAppVersion=$Version", "/DStageDir=$Stage", "/DOutputDir=$tmpOut")
+    if (Test-Path $chs) { $isccArgs += "/DChineseIsl=$chs" }
+    & $iscc @($isccArgs + @((Join-Path $Here "setup.iss")))
+    if ($LASTEXITCODE -eq 0 -and (Test-Path (Join-Path $tmpOut $exeName))) { $compiled = Join-Path $tmpOut $exeName; break }
+    if ($try -lt 3) {
+        Write-Host "`n第 $try 次编译失败（退出码 $LASTEXITCODE），10 秒后重试…" -ForegroundColor Yellow
+        Start-Sleep -Seconds 10
+    }
+}
+if (-not $compiled) {
+    Fail ("Inno Setup 编译失败。如果提示“另一个程序正在使用此文件”，多半是杀毒软件在扫描生成的安装包：" +
+          "请在 Windows 安全中心 → 病毒和威胁防护 → 排除项 中添加文件夹 $Here ，然后重新运行。")
+}
+Start-Sleep -Seconds 2
+if (Test-Path $exe) { Remove-Item $exe -Force -ErrorAction SilentlyContinue }
+if (Test-Path $exe) {
+    $exe = Join-Path $Out ("BenchCheck-Setup-$Version-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".exe")
+    Write-Host "原来的安装包文件被占用，新安装包另存为 $exe" -ForegroundColor Yellow
+}
+Move-Item $compiled $exe -Force
+Get-ChildItem $Build -Directory -Filter "iscc-out-*" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
-$exe = Join-Path $Out "BenchCheck-Setup-$Version.exe"
 $exeMb = [math]::Round((Get-Item $exe).Length / 1MB, 1)
 Write-Host "`n完成：$exe（$exeMb MB）" -ForegroundColor Green
 Write-Host "把这个文件拷到目标电脑，双击安装即可。"
