@@ -1,0 +1,4 @@
+# Windows 脚本保持 CRLF 换行（批处理与 PowerShell 在 LF 下可能出错）
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.iss text eol=crlf

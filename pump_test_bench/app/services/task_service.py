@@ -49,6 +49,7 @@ from shared.config import get_settings
 from shared.flask_app import ApiError, create_app, json_body
 from shared.logging_setup import setup_logging
 from shared.paths import resolve_data_dir, resolve_data_file
+from shared.serve import serve_app
 
 SERVICE_NAME = "task_service"
 logger = logging.getLogger(SERVICE_NAME)
@@ -328,7 +329,7 @@ def main() -> None:
     setup_logging(SERVICE_NAME)
     repo.init_db()
     logger.info("任务服务启动：http://%s:%s", settings.bind_host, settings.task_service_port)
-    app.run(host=settings.bind_host, port=settings.task_service_port, threaded=True)
+    serve_app(app, settings.bind_host, settings.task_service_port)
 
 
 if __name__ == "__main__":

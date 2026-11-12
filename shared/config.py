@@ -2,7 +2,8 @@
 
 配置来源（优先级从高到低）：
 1. 进程环境变量；
-2. 仓库根目录下的 ``.env`` 文件（格式 ``KEY=VALUE``，可参考 ``.env.example``）；
+2. ``.env`` 文件（格式 ``KEY=VALUE``，可参考 ``.env.example``）：环境变量 ``BENCH_ENV_FILE`` 指定的文件，
+   没有指定时为仓库根目录下的 ``.env``。安装包部署时 .env 与数据都放在 ProgramData 下，程序目录只读；
 3. 本文件中的默认值。
 
 ``SECRET_KEY`` 与 ``ADMIN_PASSWORD`` 没有默认值，缺失时服务启动即报错，
@@ -43,6 +44,12 @@ def _env_int(name: str, default: int) -> int:
 def _env_float(name: str, default: float) -> float:
     value = _env(name)
     return float(value) if value else default
+
+
+def env_file() -> Path:
+    """使用的 .env 文件。"""
+    value = os.environ.get("BENCH_ENV_FILE", "").strip()
+    return Path(value) if value else REPO_ROOT / ".env"
 
 
 def _env_path(name: str, default: Path) -> Path:
@@ -86,7 +93,7 @@ class ConfigError(RuntimeError):
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    _load_dotenv(REPO_ROOT / ".env")
+    _load_dotenv(env_file())
 
     secret_key = _env("SECRET_KEY")
     admin_password = _env("ADMIN_PASSWORD")
@@ -94,7 +101,7 @@ def get_settings() -> Settings:
     if missing:
         raise ConfigError(
             f"缺少必需的配置项：{', '.join(missing)}。"
-            f"请复制仓库根目录的 .env.example 为 .env 并填写。"
+            f"请复制仓库根目录的 .env.example 为 .env 并填写（当前读取：{env_file()}）。"
         )
 
     roots_value = _env("DATA_ROOTS")

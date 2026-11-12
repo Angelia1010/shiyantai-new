@@ -36,6 +36,7 @@ from shared.config import get_settings
 from shared.flask_app import create_app, json_body
 from shared.logging_setup import setup_logging
 from shared.paths import register_data_dir, registered_dirs, resolve_data_dir, resolve_data_file, unregister_data_dir
+from shared.serve import serve_app
 
 SERVICE_NAME = "file_service"
 logger = logging.getLogger(SERVICE_NAME)
@@ -199,7 +200,7 @@ def main() -> None:
     monitor = get_monitor()
     monitor.restore(resolve_data_dir)
     try:
-        app.run(host=settings.bind_host, port=settings.file_service_port, threaded=True)
+        serve_app(app, settings.bind_host, settings.file_service_port)
     finally:
         monitor.stop()
 

@@ -163,7 +163,16 @@ python -m pump_test_bench.tools.build_simulation_table 健康数据目录 --mode
 python -m pump_test_bench.tools.build_simulation_table 健康数据目录 --default          # 写入随代码提供的默认结果（显示各输出公式与误差）
 ```
 
-## 快速开始（Windows）
+## 安装包部署（推荐给现场电脑）
+
+用 `deploy\windows\build_installer.ps1` 一键生成 Windows 安装包 `BenchCheck-Setup-<版本>.exe`，目标电脑双击安装即可使用，
+不需要安装 Python、Node.js、Nginx；系统开机自动在后台运行，升级时配置与数据保留。打包与安装步骤见
+[deploy/windows/README.md](deploy/windows/README.md)。
+
+开发电脑上也可以一条命令运行全部服务（含统一入口，代替 Nginx，需先编译前端）：
+`python -m pump_test_bench.app.services.supervisor`，然后打开 http://localhost:8080。
+
+## 快速开始（Windows，开发）
 
 1. **配置**：复制 `.env.example` 为 `.env`，至少填写 `SECRET_KEY`、`ADMIN_PASSWORD`。数据目录在前端填写，不需要改 `.env`。
 2. **后端**：
