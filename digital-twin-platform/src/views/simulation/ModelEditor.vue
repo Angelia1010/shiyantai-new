@@ -179,7 +179,7 @@
                   <i class="el-icon-lock" /> 内置模型：该输出的计算由后端配置，可以验证精度
                 </div>
                 <el-form v-else inline size="mini" class="options">
-                  <el-form-item v-if="builders.length > 1" label="计算方式">
+                  <el-form-item v-if="builders.length > 1" label="建模方式">
                     <el-select v-model="row.method" style="width: 130px" @change="onMethod(row)">
                       <el-option v-for="b in builders" :key="b.kind" :label="b.label" :value="b.kind" :disabled="!b.available" />
                     </el-select>

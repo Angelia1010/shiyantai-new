@@ -3,13 +3,6 @@
     <header class="sim-head">
       <h2>仿真模型</h2>
       <div class="head-actions">
-        <el-dropdown v-if="deletedBuiltins.length" trigger="click" @command="restoreBuiltin">
-          <el-button size="small" plain icon="el-icon-refresh-left">恢复已删除的内置模型（{{ deletedBuiltins.length }}）</el-button>
-          <el-dropdown-menu slot="dropdown">
-            <el-dropdown-item v-for="d in deletedBuiltins" :key="d.id" :command="d">{{ d.name }}</el-dropdown-item>
-          </el-dropdown-menu>
-        </el-dropdown>
-        <el-button size="small" plain icon="el-icon-setting" @click="openDerived">派生测点</el-button>
         <el-button size="small" type="primary" icon="el-icon-plus" @click="openEditor(null)">新建模型</el-button>
       </div>
     </header>
@@ -88,22 +81,6 @@
               <span class="unit">σ</span>
             </dd>
           </div>
-          <div class="fact">
-            <dt>模型结果</dt>
-            <dd v-if="current.table">
-              <span :class="{ warn: current.table.stale }">{{ current.table.stale ? '配置已修改，需要重建' : (current.table.is_default ? '随代码提供' : '已重建') }}</span>
-              <small>{{ current.table.created }}</small>
-            </dd>
-            <dd v-else class="warn">还没有，点“建立模型”</dd>
-          </div>
-          <div class="fact">
-            <dt>标定数据</dt>
-            <dd v-if="current.table">
-              {{ current.table.calibration.files }} 个正常数据文件
-              <small>{{ current.table.calibration.method }}</small>
-            </dd>
-            <dd v-else>—</dd>
-          </div>
         </dl>
 
         <div v-if="job.state === 'running' && job.model_id === current.id" class="job">
@@ -125,7 +102,7 @@
             <div class="spec-table" role="table">
               <div class="spec-row spec-header" role="row">
                 <span role="columnheader">输出</span>
-                <span role="columnheader">计算方式</span>
+                <span role="columnheader">建模方式</span>
                 <span role="columnheader" class="num">
                   换油温误差
                   <el-tooltip content="留一温度组交叉验证：用其余油温段的数据建模，预测这一段；阈值按它定" placement="top"><i class="el-icon-question" /></el-tooltip>
@@ -201,7 +178,7 @@
                 <template slot-scope="{ row }">{{ row.system || '—' }}</template>
               </el-table-column>
               <el-table-column prop="name" label="名称" min-width="130" />
-              <el-table-column v-if="current.engine === 'surrogate'" label="计算方式" width="96">
+              <el-table-column v-if="current.engine === 'surrogate'" label="建模方式" width="96">
                 <template slot-scope="{ row }">{{ METHOD_LABELS[row.method || 'autofit'] || row.method }}</template>
               </el-table-column>
               <el-table-column label="对应测点" min-width="180">
@@ -352,31 +329,6 @@
 
     <model-editor :visible="editor.visible" :model="editor.model" :builders="builders" @close="editor.visible = false" @saved="onSaved" />
 
-    <el-dialog title="派生测点" :visible.sync="derived.visible" width="760px" append-to-body>
-      <p class="muted small derived-hint">
-        派生测点由采集列换算，如涡轮流量计转速 f 由流量 q 按 q = K·f + q0 反算。修改后，用到这些测点的模型需要重建。
-      </p>
-      <el-table :data="derived.items" size="mini" border>
-        <el-table-column prop="name" label="派生测点" width="150" />
-        <el-table-column prop="source" label="源测点" width="110" />
-        <el-table-column label="K" width="150">
-          <template slot-scope="{ row }"><el-input v-model="row.K" size="mini" /></template>
-        </el-table-column>
-        <el-table-column label="q0" width="120">
-          <template slot-scope="{ row }"><el-input v-model="row.q0" size="mini" /></template>
-        </el-table-column>
-        <el-table-column label="下限" width="80">
-          <template slot-scope="{ row }"><el-input v-model="row.min" size="mini" /></template>
-        </el-table-column>
-        <el-table-column label="换算">
-          <template slot-scope="{ row }"><span class="small">({{ row.source }} − {{ row.q0 }}) ÷ {{ row.K }}</span></template>
-        </el-table-column>
-      </el-table>
-      <span slot="footer">
-        <el-button @click="derived.visible = false">取消</el-button>
-        <el-button type="primary" :loading="derived.saving" @click="saveDerivedItems">保存</el-button>
-      </span>
-    </el-dialog>
   </div>
 </template>
 
@@ -385,10 +337,9 @@ import * as echarts from 'echarts'
 import { addDataDir, getDataDirs } from '@/api/files'
 import {
   ENGINE_LABELS, KIND_LABELS, MEANING_LABELS, METHOD_LABELS, MODE_LABELS, ROLE_LABELS, buildModelTable, deleteModel,
-  getDerived, getSimulationStatus, predictModel, resetModelTable, restoreBuiltinModel, saveDerived, saveDiagnosisProfile,
+  getSimulationStatus, predictModel, resetModelTable, saveDiagnosisProfile,
   updateModel
 } from '@/api/simulation'
-import { setDerivedFields } from '@/utils/features'
 import { errorMessage } from '@/utils/request'
 import { COMPONENTS } from '@/views/dashboard/scene/components'
 import FitResult from './FitResult'
@@ -405,9 +356,7 @@ export default {
     return {
       loading: true,
       models: [],
-      deletedBuiltins: [],
       builders: [],
-      derived: { visible: false, items: [], saving: false },
       curveVar: '',
       picks: {},
       job: { state: 'idle' },
@@ -606,48 +555,6 @@ export default {
       cfg.exclude_files = (cfg.exclude_files || []).filter(f => f !== file)
       await this.saveConfig(m, cfg, `已恢复 ${file}，请重建模型`)
     },
-    async openDerived() {
-      try {
-        const { items } = await getDerived()
-        this.derived.items = items.map(i => ({
-          ...i,
-          K: +(1 / i.scale).toPrecision(8),
-          q0: +(-(i.offset || 0) / i.scale).toPrecision(8),
-          min: i.min === undefined ? '' : i.min
-        }))
-        this.derived.visible = true
-      } catch (e) {
-        this.$message.error(errorMessage(e))
-      }
-    },
-    async saveDerivedItems() {
-      this.derived.saving = true
-      try {
-        const items = this.derived.items.map(i => {
-          const K = Number(i.K)
-          const q0 = Number(i.q0 || 0)
-          if (!K) throw new Error(`${i.name} 的 K 不能为 0`)
-          return { name: i.name, source: i.source, scale: 1 / K, offset: -q0 / K, min: i.min === '' ? undefined : Number(i.min) }
-        })
-        const saved = await saveDerived(items)
-        setDerivedFields(saved.items)
-        this.derived.visible = false
-        this.applyStatus(await getSimulationStatus(), true)
-        this.$message.success('已保存；用到这些测点的模型已标记为需要重建')
-      } catch (e) {
-        this.$message.error(errorMessage(e))
-      } finally {
-        this.derived.saving = false
-      }
-    },
-    async restoreBuiltin(d) {
-      try {
-        this.applyStatus(await restoreBuiltinModel(d.id), true)
-        this.$message.success(`已恢复内置模型“${d.name}”`)
-      } catch (e) {
-        this.$message.error(errorMessage(e))
-      }
-    },
     async restoreConfig(m) {
       try {
         await this.$confirm(`放弃对“${m.name}”配置的修改，恢复内置配置？`, '恢复内置配置', { type: 'warning' })
@@ -682,7 +589,6 @@ export default {
     },
     applyStatus(st, keepProfile = false) {
       this.models = st.models
-      this.deletedBuiltins = st.deleted_builtins || []
       if (st.builders) this.builders = st.builders
       this.job = st.job || { state: 'idle' }
       const p = {}
@@ -747,7 +653,7 @@ export default {
       const builtin = m.source !== 'custom'
       try {
         await this.$confirm(builtin
-          ? `删除模型“${m.name}”？删除后不再参与诊断；内置模型可以在页面右上角“恢复已删除的内置模型”中恢复。`
+          ? `删除模型“${m.name}”？删除后不再参与诊断。`
           : `删除模型“${m.name}”及其结果？删除后不能恢复。`, '删除模型', { type: 'warning', confirmButtonText: '删除' })
       } catch (e) {
         return
@@ -1098,7 +1004,7 @@ $off: #8a96a6;
 
 .facts {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, max-content);
   margin: 18px 0 4px;
   border-top: 1px solid $rule;
   border-bottom: 1px solid $rule;
@@ -1372,9 +1278,6 @@ $off: #8a96a6;
 .warn {
   color: $caution;
 }
-.derived-hint {
-  margin: 0 0 10px;
-}
 ::v-deep .danger-item {
   color: #c0392b;
 }
@@ -1386,13 +1289,6 @@ $off: #8a96a6;
   .rail {
     position: static;
     max-height: none;
-  }
-  .facts {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    .fact:nth-child(3) {
-      border-left: 0;
-      padding-left: 0;
-    }
   }
   .predict {
     grid-template-columns: 1fr;
