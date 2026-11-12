@@ -360,3 +360,26 @@ def test_diagnosis_plugins_extend_without_engine_changes():
         for n in ("test_vibration", "test_agent", "test_broken"):
             plugins.unregister(n)
     assert "reviews" not in diagnose_frame(_real())
+
+
+def test_builtin_formula_fits_coefficients_from_data():
+    """后端配置的内置公式：系数可由正常数据拟合（如涡轮流量计 K 系数）。"""
+    from pump_test_bench.app.simulation.calibration import collect_samples
+    from pump_test_bench.app.simulation.config import validate_model
+    from pump_test_bench.app.simulation.surrogate import fit_model
+    from pump_test_bench.tests.conftest import REPO_ROOT
+    cfg = validate_model({
+        "id": "turb_k", "name": "涡轮（K 拟合）", "engine": {"type": "surrogate"},
+        "active_if": [{"column": "回油流量1-1", "min": 20}],
+        "inputs": [{"name": "m", "column": "回油质量流量2", "scale": 1 / 3600, "unit": "kg/s"},
+                   {"name": "rho", "derived": "density", "temperature_column": "回油温度1-1", "unit": "kg/m³"}],
+        "outputs": [{"name": "f", "unit": "Hz", "kind": "flow", "columns": ["回油流量1-1转速", "回油流量1-2转速"],
+                     "method": "formula", "formula": {"expression": "(m * 3600 / rho * 1000 - q0) / K", "coefficients": {
+                         "q0": {"value": 0, "fit": False}, "K": {"value": 0.3, "fit": True}}}}],
+    })
+    files = sorted((REPO_ROOT / "标准台性能录取数据" / "标准台性能录取数据" / "36-38摄氏度").glob("*.txt"))
+    out = fit_model(collect_samples(files, cfg), cfg)["outputs"]["f"]
+    assert out["coefficients"]["K"] == pytest.approx(0.3049, rel=0.01)
+    assert out["assessment"]["cv_error"] < 0.005
+    with pytest.raises(ValueError, match="系数表"):
+        validate_model({**cfg, "outputs": [{**cfg["outputs"][0], "formula": {"expression": "a * m"}}]})

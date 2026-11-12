@@ -2,10 +2,6 @@
   <div class="fit-result">
     <el-alert v-if="result.error" type="error" :closable="false" :title="result.error" />
     <template v-else>
-      <div v-if="showFormula" class="formula-line">
-        <el-tag size="mini" :type="result.method === 'formula' ? 'warning' : ''">{{ METHOD_LABELS[result.method] || result.method }}</el-tag>
-        <equation-view class="formula" :expression="result.display" size="small" :digits="result.method === 'autofit' ? 4 : 0" />
-      </div>
       <div class="metrics">
         <div class="metric">
           <div class="muted">换油温段的误差
@@ -26,14 +22,8 @@
           <span v-for="(e, g) in a.per_group" :key="g" class="group-err" :title="g">{{ shortGroup(g) }} {{ err(e) }}</span>
         </div>
       </div>
-      <div v-if="fittedCoefs.length" class="coef-line">
-        由数据拟合的系数：
-        <span v-for="c in fittedCoefs" :key="c.name" class="coef"><code>{{ c.name }}</code> = {{ c.value }}</span>
-        <el-button v-if="adoptable" type="text" size="mini" @click="$emit('adopt', result.coefficients)">采用拟合值并改为固定</el-button>
-      </div>
       <div v-if="result.info && result.info.roles && result.method === 'autofit'" class="muted small">
         变量角色：<span v-for="(r, n) in result.info.roles" :key="n" class="role">{{ n }}·{{ ROLE_LABELS[r] || r }}</span>
-        <span v-if="result.info.terms">；共 {{ result.info.terms }} 项</span>
       </div>
       <div v-if="result.info && result.info.note" class="muted small">{{ result.info.note }}</div>
       <el-alert v-for="(s, k) in a.suggestions" :key="k" class="note" type="warning" :closable="false" :title="s" show-icon />
@@ -70,30 +60,22 @@
 
 <script>
 import * as echarts from 'echarts'
-import { METHOD_LABELS, ROLE_LABELS } from '@/api/simulation'
-import EquationView from './EquationView'
+import { ROLE_LABELS } from '@/api/simulation'
 
 const PALETTE = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#0891b2']
 
 export default {
   name: 'FitResult',
-  components: { EquationView },
   props: {
     result: { type: Object, required: true },
-    adoptable: { type: Boolean, default: false },
-    showFormula: { type: Boolean, default: true },
     selectable: { type: Boolean, default: false }
   },
   data() {
-    return { METHOD_LABELS, ROLE_LABELS, xVar: '', picked: [] }
+    return { ROLE_LABELS, xVar: '', picked: [] }
   },
   computed: {
     a() {
       return this.result.assessment || {}
-    },
-    fittedCoefs() {
-      const names = (this.result.info && this.result.info.fitted) || []
-      return names.map(n => ({ name: n, value: Number(this.result.coefficients[n]).toPrecision(7) }))
     },
     variableNames() {
       const p = (this.a.points || [])[0]
@@ -192,16 +174,6 @@ export default {
 </script>
 
 <style scoped>
-.formula-line {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.formula {
-  flex: 1;
-  min-width: 0;
-}
 .metrics {
   display: flex;
   flex-wrap: wrap;
@@ -215,13 +187,6 @@ export default {
   display: inline-block;
   margin-right: 8px;
   font-size: 12px;
-}
-.coef-line {
-  font-size: 12px;
-  margin-bottom: 4px;
-}
-.coef {
-  margin-right: 10px;
 }
 .role {
   margin-right: 8px;

@@ -172,7 +172,7 @@ def calibrate(fit_points: Dict[str, List[tuple]], spread_points: Optional[Dict[s
                 "std": float(spread.std()), "n": int(len(pts)), "max_abs": float(np.max(np.abs(spread))),
                 "z_ranges": ranges}
         if item["mode"] == "relative" and abs(mean_bias) > LARGE_BIAS:
-            item["warning"] = (f"模型与现场平均相差 {mean_bias * 100:+.1f}%，诊断时会扣除，但请核对公式、系数和单位"
+            item["warning"] = (f"模型与现场平均相差 {mean_bias * 100:+.1f}%，诊断时会扣除，但请在后端模型配置中核对系数和单位"
                                "（例如流量计 K 系数、质量流量的单位）")
         cols[col] = item
     return {"columns": cols}
@@ -229,14 +229,14 @@ def build_reference(paths: List[Path], sim_cfg: Dict, kind: Optional[str] = None
                         spread.setdefault(col, []).append(
                             (_zs(sim_cfg, s["condition"], ranges), residual(s["measured"][col], p, mode), s["group"]))
         calib = calibrate(_residuals(table, data["samples"], sim_cfg, ranges), spread, sim_cfg, ranges)
-        calib["method"] = f"数据代理模型，按 {len(set(data['groups']))} 个数据目录留一交叉验证"
+        calib["method"] = f"按 {len(set(data['groups']))} 个数据目录留一交叉验证"
         if failed:
             calib["failed_outputs"] = failed
     else:
         table = build_table(make_model(sim_cfg, kind), sim_cfg, lambda i, n: say("运行模型", i, n))
         ranges = {s["name"]: [min(s["grid"]), max(s["grid"])] for s in sim_cfg["inputs"] if s.get("grid")}
         calib = calibrate(_residuals(table, samples, sim_cfg, ranges), None, sim_cfg, ranges)
-        calib["method"] = "AMESim 模型，固有偏差按留一组交叉验证"
+        calib["method"] = "仿真结果，固有偏差按留一组交叉验证"
 
     calib.update({"files": len(samples), "source": source})
     table["calibration"] = calib

@@ -112,7 +112,7 @@ def register_engine(kind: str, factory: Callable[[Dict], SimulationModel], label
     ENGINE_LABELS[kind] = label
 
 
-register_engine("amesim", AmesimModel, "AMESim 模型")
+register_engine("amesim", AmesimModel, "仿真（AMESim）")
 
 
 def make_model(cfg: Dict, kind: Optional[str] = None) -> SimulationModel:

@@ -5,7 +5,7 @@
 所以新增一种建模方法（如基于大模型分析的代理模型构建）只需要实现 fit()，并注册到 builders/__init__.py。
 
 约定：
-- 结果一律是“公式 + 系数”（FitResult），可以显示、可以转为自定义公式手工修改，诊断时直接计算；
+- 结果一律是“公式 + 系数”（FitResult），保存在后端（接口不返回），诊断时直接计算；
 - fit() 只用传入的数据，不读文件、不访问网络之外的状态；交叉验证时会在每一折上再调用它；
   代价高的构建器（如需要调用大模型）可以在结果里给出 refit：交叉验证时改用 refit 指定的方式只重估系数，
   例如 {"method": "formula", "expression": ..., "coefficients": {...}, "fit": [...]}。
@@ -65,6 +65,8 @@ class SurrogateBuilder:
     label = ""
     description = ""
     options: List[OptionSpec] = []
+    # 是否可以在页面上选择。False 的方式只能在后端配置文件中使用（如内置模型的公式），页面上不显示其内容
+    user_selectable = True
 
     def available(self) -> bool:
         """是否可用（例如需要外部服务的构建器在未配置时返回 False，页面上置灰）。"""
@@ -78,4 +80,5 @@ class SurrogateBuilder:
 
     def describe(self) -> Dict:
         return {"kind": self.kind, "label": self.label, "description": self.description,
-                "options": [o.to_dict() for o in self.options], "available": self.available()}
+                "options": [o.to_dict() for o in self.options], "available": self.available(),
+                "user_selectable": self.user_selectable}

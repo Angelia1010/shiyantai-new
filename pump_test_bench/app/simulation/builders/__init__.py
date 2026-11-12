@@ -36,13 +36,18 @@ def get_builder(kind: str) -> SurrogateBuilder:
         raise ValueError(f"未知的计算方式：{kind}（可用：{'、'.join(_BUILDERS)}）") from None
 
 
-def list_builders() -> List[Dict]:
+def list_builders(user_only: bool = False) -> List[Dict]:
+    """user_only：只列页面上可以选择的方式。"""
     _load_plugins()
-    return [b.describe() for b in _BUILDERS.values()]
+    return [b.describe() for b in _BUILDERS.values() if b.user_selectable or not user_only]
+
+
+def is_user_selectable(kind: str) -> bool:
+    return get_builder(kind).user_selectable
 
 
 register(AutoFitBuilder())
 register(FormulaBuilder())
 
 __all__ = ["DEFAULT_METHOD", "ROLES", "FitData", "FitResult", "OptionSpec", "SurrogateBuilder",
-           "get_builder", "list_builders", "register", "suggest_roles"]
+           "get_builder", "is_user_selectable", "list_builders", "register", "suggest_roles"]

@@ -86,8 +86,8 @@ def structure(roles: Dict[str, str], degrees: Dict[str, int], interactions: bool
 
 class AutoFitBuilder(SurrogateBuilder):
     kind = "autofit"
-    label = "自动拟合"
-    description = "按变量角色确定公式结构（主变量最高三次、次变量二次、环境变量一次，加交叉项），用正常数据拟合；结果可转为自定义公式"
+    label = "数据拟合"
+    description = "由正常数据拟合：按变量角色确定结构（主变量最高三次、次变量二次、环境变量一次，加交叉项）"
     options = [
         OptionSpec("max_degree", "主变量最高次数", "number", 3, min=1, max=4, help="泵的流量-转速关系一般需要 3 次"),
         OptionSpec("interactions", "交叉项", "select", True,

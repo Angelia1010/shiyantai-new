@@ -124,8 +124,8 @@ def assess(output: Dict, data: Dict, fit: FitResult, cv_pred: np.ndarray) -> Dic
         big = abs(bias) > 0.05 if mode == "relative" else (const_err and abs(bias) > 0.5 * const_err)
         if big:
             text = f"{bias * 100:+.1f}%" if mode == "relative" else f"{bias:+.4g} {output.get('unit', '')}"
-            suggestions.append(f"公式与现场平均相差 {text}：诊断时会作为固有偏差扣除，但请核对公式、系数和单位"
-                               "（如流量计 K 系数、质量流量单位），或把部分系数改为“由数据拟合”")
+            suggestions.append(f"模型与现场平均相差 {text}：诊断时会作为固有偏差扣除，但请在后端模型配置中核对系数和单位"
+                               "（如流量计 K 系数、质量流量单位）")
 
     # 异常样本：先去掉残差随预期值的平滑变化（固有偏差），再看稳健 z 分数
     outliers = []
@@ -221,8 +221,8 @@ def formula_table(cfg: Dict, fitted: Dict, source: str = "") -> Dict:
             "assessment": {k: a[k] for k in ("mode", "unit", "cv_error", "fit_error", "const_error", "per_group",
                                             "constant", "suggestions", "outliers")},
         }
-    labels = {"autofit": "自动拟合", "formula": "自定义公式"}
-    methods = sorted({labels.get(f["method"], f["method"]) for f in formulas.values()})
+    kinds = {f["method"] for f in formulas.values()}
+    label = "内置模型" if "formula" in kinds else "数据拟合"
     return {
         "version": 3,
         "kind": "formula",
@@ -230,7 +230,7 @@ def formula_table(cfg: Dict, fitted: Dict, source: str = "") -> Dict:
         "model_name": cfg["name"],
         "signature": signature(cfg),
         "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "model": {"type": "surrogate", "label": "数据代理模型（" + "+".join(methods) + "）"},
+        "model": {"type": "surrogate", "label": label},
         "roles": fitted["roles"],
         "inputs": [{"name": s["name"], "unit": s.get("unit", ""), "range": ranges.get(s["name"]),
                     "grid": _display_grid(ranges.get(s["name"])), "role": fitted["roles"].get(s["name"]),

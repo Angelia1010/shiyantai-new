@@ -1,4 +1,5 @@
-"""自定义公式：公式由用户填写，系数可以固定，也可以由正常数据拟合。
+"""内置公式：公式写在后端模型配置文件（config/simulation/*.json）中，用于内置模型（如涡轮流量计的回归公式）。
+页面上不显示、也不能选择这种方式（user_selectable = False）；系数可以固定，也可以由正常数据拟合。
 
 输出配置：
     "method": "formula",
@@ -25,8 +26,9 @@ def coefficient_table(output: Dict) -> Dict[str, Dict]:
 
 class FormulaBuilder(SurrogateBuilder):
     kind = "formula"
-    label = "自定义公式"
-    description = "公式由你填写（如厂家公式、物理关系或自己回归的结果）；系数可以固定，也可以由正常数据拟合"
+    label = "内置公式"
+    description = "公式写在后端模型配置文件中（如厂家公式、回归结果）；系数可以固定，也可以由正常数据拟合"
+    user_selectable = False
     options = [
         OptionSpec("expression", "公式", "formula", "", help="变量用变量页中的名字，其余名字为系数"),
         OptionSpec("coefficients", "系数", "coefficients", {}),

@@ -5,7 +5,7 @@ import threading
 import time
 from typing import Dict, List, Optional
 
-from pump_test_bench.app.simulation.builders import ROLES, list_builders
+from pump_test_bench.app.simulation.builders import DEFAULT_METHOD, ROLES, is_user_selectable, list_builders
 from pump_test_bench.app.simulation.calibration import MIN_FILES, build_reference, collect_samples
 from pump_test_bench.app.simulation.check import thresholds
 from pump_test_bench.app.simulation.config import (
@@ -16,7 +16,46 @@ from pump_test_bench.app.simulation.models import ENGINE_LABELS as GRID_ENGINE_L
 from pump_test_bench.app.simulation.table import delete_user_table, is_stale, load_table, predict, save_table, table_path
 
 logger = logging.getLogger(__name__)
-ENGINE_LABELS = {SURROGATE: "数据代理模型", **GRID_ENGINE_LABELS}
+ENGINE_LABELS = {SURROGATE: "数据拟合", **GRID_ENGINE_LABELS}
+HIDDEN_OUTPUT_KEYS = ("formula",)  # 内置模型的公式只在后端配置文件中，接口不返回
+
+
+# --------------------------------------------------------------------------- 内置公式对页面不可见
+def _hidden(output: Dict) -> bool:
+    return not is_user_selectable(output.get("method") or DEFAULT_METHOD)
+
+
+def public_config(mcfg: Dict) -> Dict:
+    """返回给页面的模型配置：去掉内置公式。"""
+    cfg = {k: v for k, v in mcfg.items() if not k.startswith("_")}
+    cfg["outputs"] = [{k: v for k, v in o.items() if k not in HIDDEN_OUTPUT_KEYS} for o in mcfg["outputs"]]
+    return cfg
+
+
+def merge_hidden(data: Dict, model_id: Optional[str]) -> Dict:
+    """页面提交的配置不含内置公式：按输出名称从现有配置补回；页面不能新选内置公式这种方式。"""
+    data = dict(data)
+    old = {}
+    if model_id:
+        try:
+            old = {o["name"]: o for o in load_model_cfg(model_id)["outputs"]}
+        except ValueError:
+            old = {}
+    outputs = []
+    for o in data.get("outputs") or []:
+        o = dict(o)
+        prev = old.get(o.get("name"))
+        if prev is not None and _hidden(prev) and o.get("method") in (None, "", prev.get("method")):
+            o["method"] = prev["method"]
+            for key in HIDDEN_OUTPUT_KEYS:
+                if key in prev:
+                    o[key] = prev[key]
+        elif o.get("method") and not is_user_selectable(o["method"]):
+            raise ValueError(f"输出“{o.get('name')}”：这种计算方式只能在后端模型配置文件中设置，页面上请选择“数据拟合”")
+        outputs.append(o)
+    data["outputs"] = outputs
+    return data
+
 
 _job_lock = threading.Lock()
 _job: Dict = {"state": "idle"}
@@ -71,10 +110,12 @@ def _engines(mcfg: Dict) -> List[Dict]:
 
 
 def _formula_summary(table: Dict) -> Dict:
+    """各输出的方式与检验结果（不含公式与系数）。"""
     out = {}
     for name, f in (table.get("formulas") or {}).items():
-        out[name] = {k: f.get(k) for k in ("method", "expression", "coefficients", "display", "info", "fitted_from_data",
-                                           "assessment")}
+        info = {k: v for k, v in (f.get("info") or {}).items() if k in ("roles", "terms", "note")}
+        out[name] = {"method": f.get("method"), "info": info, "fitted_from_data": f.get("fitted_from_data"),
+                     "assessment": f.get("assessment")}
     return out
 
 
@@ -103,7 +144,7 @@ def model_status(mcfg: Dict, profile: Dict) -> Dict:
     return {
         "id": mcfg["id"], "name": mcfg["name"], "description": mcfg.get("description", ""),
         "source": mcfg.get("_source", "builtin"),
-        "config": {k: v for k, v in mcfg.items() if not k.startswith("_")},
+        "config": public_config(mcfg),
         "components": mcfg.get("components", []), "engine": mcfg["engine"]["type"], "engines": _engines(mcfg),
         "methods": methods,
         "inputs": [{k: i.get(k) for k in ("name", "column", "columns", "derived", "temperature_column", "unit", "grid")}
@@ -119,7 +160,7 @@ def status() -> Dict:
     prof = profile()
     return {"models": [model_status(m, prof) for m in list_models()], "deleted_builtins": deleted_builtins(),
             "job": job_status(), "modes": MODES, "kinds": KINDS, "engine_labels": ENGINE_LABELS,
-            "builders": list_builders(), "roles": ROLES}
+            "builders": list_builders(user_only=True), "roles": ROLES}
 
 
 def save_model(data: Dict, model_id: Optional[str] = None) -> Dict:
@@ -132,7 +173,7 @@ def save_model(data: Dict, model_id: Optional[str] = None) -> Dict:
     if model_id is not None and model_id not in existing:
         raise ValueError(f"没有这个仿真模型：{model_id}")
     from pump_test_bench.app.diagnosis.settings import profile
-    cfg = validate_model(data, model_id)
+    cfg = validate_model(merge_hidden(data, model_id), model_id)
     if model_id is None:
         cfg.setdefault("order", 10 + len(existing))
     save_user_model(cfg)
@@ -199,8 +240,10 @@ def reset_table(model_id: str) -> bool:
 
 
 def preview(data: Dict, path_text: str, outputs: Optional[List[str]] = None) -> Dict:
-    """不保存：按提交的配置用某个正常数据目录拟合并评估（编辑页的“验证公式”“试拟合”）。"""
-    cfg = validate_model(dict(data, id=data.get("id") or "preview"), data.get("id") or "preview")
+    """不保存：按提交的配置用某个正常数据目录拟合并评估（编辑页的“试拟合”“验证精度”）。"""
+    mid = data.get("id") or "preview"
+    known = {m["id"] for m in list_models()}
+    cfg = validate_model(merge_hidden(dict(data, id=mid), mid if mid in known else None), mid)
     if not is_surrogate(cfg):
         raise ValueError("只有数据代理模型可以预览拟合")
     from pump_test_bench.app.simulation.surrogate import fit_model
@@ -212,8 +255,13 @@ def preview(data: Dict, path_text: str, outputs: Optional[List[str]] = None) -> 
                          + (f"、且{need}" if need else "") + f"），至少需要 {MIN_FILES} 个")
     fitted = fit_model(samples, cfg, outputs)
     result = {}
-    for name, r in fitted["outputs"].items():
-        result[name] = {k: v for k, v in r.items() if not k.startswith("_") and k != "refit"}
+    for name, r in fitted["outputs"].items():  # 不返回公式与系数
+        if "error" in r:
+            result[name] = {"method": r.get("method"), "error": r["error"]}
+            continue
+        info = {k: v for k, v in (r.get("info") or {}).items() if k in ("roles", "terms", "note")}
+        result[name] = {"method": r["method"], "info": info, "fitted_from_data": r["fitted_from_data"],
+                        "assessment": r["assessment"]}
     return {"files": len(samples), "groups": sorted({str(g) for g in fitted["data"]["groups"]}),
             "roles": fitted["roles"], "ranges": fitted["ranges"], "outputs": result,
             "excluded": cfg.get("exclude_files", [])}

@@ -59,7 +59,7 @@ export function getColumns() {
   return request({ url: `${BASE}/columns`, method: 'get' })
 }
 
-export const ENGINE_LABELS = { surrogate: '数据代理模型', amesim: 'AMESim 模型' }
+export const ENGINE_LABELS = { surrogate: '数据拟合', amesim: '仿真（AMESim）' }
 export const KIND_LABELS = { flow: '流量', pressure: '压力', temperature: '温度', torque: '扭矩', speed: '转速', other: '其他' }
 export const MEANING_LABELS = {
   pump: '实际流量变化（被试泵出力，再看压力是否同步）',
@@ -81,24 +81,6 @@ export function saveDerived(items) {
   return request({ url: `${BASE}/derived`, method: 'put', data: { items } })
 }
 
-export const METHOD_LABELS = { autofit: '自动拟合', formula: '自定义公式' }
+// 各输出的计算方式：页面上新建只能“数据拟合”；内置模型的公式写在后端配置文件中，页面上不显示
+export const METHOD_LABELS = { autofit: '数据拟合', formula: '内置模型' }
 export const ROLE_LABELS = { auto: '自动', main: '主变量', secondary: '次变量', environment: '环境变量', off: '不使用' }
-export const FUNCTION_HELP = {
-  exp: 'e 的 x 次方', log: '自然对数', log10: '常用对数', sqrt: '平方根', abs: '绝对值',
-  min: '最小值 min(a, b)', max: '最大值 max(a, b)', clip: '限幅 clip(x, 下限, 上限)', if: '条件 if(条件, 成立时, 不成立时)'
-}
-const FUNCTION_NAMES = new Set(['exp', 'log', 'ln', 'log10', 'sqrt', 'abs', 'min', 'max', 'clip', 'if', 'where'])
-
-/** 公式中不是变量、不是函数的名字 = 系数（与后端 formula.py 的规则一致） */
-export function coefficientNames(expression, variables) {
-  const text = String(expression || '').replace(/^[^=<>!()]*?(?<![<>=!])=(?!=)/, '')
-  const vars = new Set(variables || [])
-  const names = []
-  const re = /(?<![A-Za-z0-9_.一-鿿])([A-Za-z_一-鿿][A-Za-z0-9_一-鿿]*)/g
-  let m
-  while ((m = re.exec(text)) !== null) {
-    const n = m[1]
-    if (!vars.has(n) && !FUNCTION_NAMES.has(n) && !names.includes(n)) names.push(n)
-  }
-  return names
-}

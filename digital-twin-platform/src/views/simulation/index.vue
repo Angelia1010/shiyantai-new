@@ -116,42 +116,51 @@
                   title="模型配置已修改，原结果已作废，重建前该模型不参与诊断" />
 
         <el-tabs v-model="tab" class="sheet-tabs">
-          <!-- 公式 -->
-          <el-tab-pane v-if="current.table && current.table.kind === 'formula'" label="公式" name="formulas">
+          <!-- 拟合精度 -->
+          <el-tab-pane v-if="current.table && current.table.kind === 'formula'" label="精度" name="formulas">
             <div v-if="excludedFiles.length" class="excluded-line">
               已排除 {{ excludedFiles.length }} 个文件：
               <el-tag v-for="f in excludedFiles" :key="f" size="mini" closable class="excluded" @close="includeFile(f)">{{ f }}</el-tag>
             </div>
-            <article v-for="o in current.config.outputs" :key="o.name" class="spec">
-              <header class="spec-head">
-                <span class="spec-sub">{{ [o.system, o.unit].filter(Boolean).join('，') || '—' }}</span>
-                <div v-if="formulaOf(o.name)" class="spec-metric">
-                  <span :class="['method-tag', formulaOf(o.name).method]">{{ METHOD_LABELS[formulaOf(o.name).method] || formulaOf(o.name).method }}</span>
-                  <span class="metric-label">换油温误差</span>
-                  <span :class="['metric-value', cvTone(formulaOf(o.name).assessment)]">{{ cvText(formulaOf(o.name).assessment) }}</span>
-                  <span v-if="!formulaOf(o.name).assessment.constant && (formulaOf(o.name).assessment.suggestions || []).length" class="flag"
-                        title="有改进建议，见检验详情">
-                    <i class="el-icon-warning-outline" />{{ formulaOf(o.name).assessment.suggestions.length }}
+            <div class="spec-table" role="table">
+              <div class="spec-row spec-header" role="row">
+                <span role="columnheader">输出</span>
+                <span role="columnheader">计算方式</span>
+                <span role="columnheader" class="num">
+                  换油温误差
+                  <el-tooltip content="留一温度组交叉验证：用其余油温段的数据建模，预测这一段；阈值按它定" placement="top"><i class="el-icon-question" /></el-tooltip>
+                </span>
+                <span role="columnheader" class="num">用平均值的误差</span>
+                <span role="columnheader" />
+              </div>
+              <template v-for="o in current.config.outputs">
+                <div :key="o.name" :class="['spec-row', { open: openOutputs[o.name] }]" role="row">
+                  <span class="spec-out">
+                    <b>{{ o.name }}</b>
+                    <small>{{ [o.system, o.unit].filter(Boolean).join('，') }}</small>
+                  </span>
+                  <template v-if="formulaOf(o.name)">
+                    <span><span :class="['method-tag', formulaOf(o.name).method]">{{ METHOD_LABELS[formulaOf(o.name).method] || formulaOf(o.name).method }}</span></span>
+                    <span :class="['num', 'metric-value', cvTone(formulaOf(o.name).assessment)]">{{ cvText(formulaOf(o.name).assessment) }}</span>
+                    <span class="num muted">{{ constText(formulaOf(o.name).assessment) }}</span>
+                    <span class="spec-tools">
+                      <span v-if="!formulaOf(o.name).assessment.constant && (formulaOf(o.name).assessment.suggestions || []).length" class="flag"
+                            title="有改进建议，见详情">
+                        <i class="el-icon-warning-outline" />{{ formulaOf(o.name).assessment.suggestions.length }}
+                      </span>
+                      <el-button type="text" size="mini" :icon="openOutputs[o.name] ? 'el-icon-arrow-up' : 'el-icon-arrow-down'"
+                                 @click="toggleOutput(o.name)">{{ openOutputs[o.name] ? '收起' : '详情' }}</el-button>
+                    </span>
+                  </template>
+                  <span v-else class="spec-missing">
+                    {{ current.table.calibration.failed_outputs[o.name] ? `未建立：${current.table.calibration.failed_outputs[o.name]}` : '没有结果，重建模型后显示' }}
                   </span>
                 </div>
-              </header>
-              <template v-if="formulaOf(o.name)">
-                <equation-view :expression="formulaOf(o.name).display" :lhs="o.name" :digits="formulaOf(o.name).method === 'autofit' ? 4 : 0"
-                               :variables="current.config.inputs.map(i => i.name)" />
-                <div class="spec-actions">
-                  <el-button type="text" size="mini" :icon="openOutputs[o.name] ? 'el-icon-arrow-up' : 'el-icon-arrow-down'"
-                             @click="toggleOutput(o.name)">{{ openOutputs[o.name] ? '收起检验详情' : '检验详情' }}</el-button>
-                  <el-button v-if="formulaOf(o.name).method !== 'formula'" type="text" size="mini" @click="toCustomFormula(o.name)">
-                    转为自定义公式
-                  </el-button>
+                <div v-if="openOutputs[o.name] && formulaOf(o.name)" :key="`${o.name}-detail`" class="spec-detail">
+                  <fit-result :result="formulaOf(o.name)" selectable @pick="onPick(o.name, $event)" />
                 </div>
-                <fit-result v-if="openOutputs[o.name]" :result="formulaOf(o.name)" :show-formula="false" selectable
-                            @pick="onPick(o.name, $event)" />
               </template>
-              <el-alert v-else-if="current.table.calibration.failed_outputs[o.name]" type="error" :closable="false"
-                        :title="`未建立：${current.table.calibration.failed_outputs[o.name]}`" />
-              <p v-else class="muted"><b class="spec-missing">{{ o.name }}</b>：没有该输出的结果，重建模型后显示</p>
-            </article>
+            </div>
             <div v-if="pickedCount" class="exclude-bar">
               已选 {{ pickedCount }} 个可疑样本
               <el-button size="mini" type="warning" @click="excludePicked">排除这些样本并重建</el-button>
@@ -382,7 +391,6 @@ import {
 import { setDerivedFields } from '@/utils/features'
 import { errorMessage } from '@/utils/request'
 import { COMPONENTS } from '@/views/dashboard/scene/components'
-import EquationView from './EquationView'
 import FitResult from './FitResult'
 import ModelEditor from './ModelEditor'
 
@@ -392,7 +400,7 @@ const DERIVE_LABELS = { temperature: '油温', density: '由油温算密度', vi
 
 export default {
   name: 'Simulation',
-  components: { EquationView, FitResult, ModelEditor },
+  components: { FitResult, ModelEditor },
   data() {
     return {
       loading: true,
@@ -515,10 +523,16 @@ export default {
       if (mode === 'off') return { tone: 'off', text: '诊断中关闭' }
       return { tone: mode === 'reference' ? 'reference' : 'ok', text: MODE_LABELS[mode] }
     },
+    /** 模型的方式：内置模型（后端配置的计算） / 数据拟合 / 仿真 */
     methodText(m) {
-      const engine = m.engine === 'surrogate' ? '数据代理' : (ENGINE_LABELS[m.engine] || m.engine)
-      const methods = (m.methods || []).map(x => METHOD_LABELS[x] || x)
-      return methods.length ? `${engine} · ${methods.join(' + ')}` : engine
+      if (m.engine !== 'surrogate') return ENGINE_LABELS[m.engine] || m.engine
+      const methods = m.methods || []
+      if (methods.includes('formula')) return methods.length > 1 ? '内置模型 + 数据拟合' : '内置模型'
+      return '数据拟合'
+    },
+    constText(a) {
+      if (!a || a.const_error === null || a.const_error === undefined || a.constant) return '—'
+      return a.mode === 'absolute' ? `${Number(a.const_error).toPrecision(2)} ${a.unit || ''}` : `${(a.const_error * 100).toFixed(1)}%`
     },
     /** 各输出换油温段误差（相对误差的输出）的范围 */
     accuracyOf(m) {
@@ -575,25 +589,6 @@ export default {
         this.$message.error(errorMessage(e))
         return false
       }
-    },
-    /** 自动拟合的结果转为自定义公式（系数固定），之后可在编辑页手工修改 */
-    async toCustomFormula(name) {
-      const m = this.current
-      const f = this.formulaOf(name)
-      try {
-        await this.$confirm(`把“${name}”的自动拟合结果转为自定义公式（系数固定）？之后可以在“编辑配置”中修改公式，需要重建模型后生效。`,
-          '转为自定义公式', { type: 'info' })
-      } catch (e) {
-        return
-      }
-      const cfg = JSON.parse(JSON.stringify(m.config))
-      const o = cfg.outputs.find(x => x.name === name)
-      o.method = 'formula'
-      o.formula = {
-        expression: f.expression,
-        coefficients: Object.fromEntries(Object.entries(f.coefficients).map(([k, v]) => [k, { value: v, fit: false }]))
-      }
-      if (await this.saveConfig(m, cfg, '已转为自定义公式，请重建模型')) this.openBuild(this.current)
     },
     async excludePicked() {
       const m = this.current
@@ -1173,38 +1168,64 @@ $off: #8a96a6;
   }
 }
 
-/* 公式 */
-.spec {
-  padding: 16px 0 14px;
+/* 精度 */
+.spec-table {
+  font-size: 13px;
+}
+.spec-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 2fr) 110px 130px 130px minmax(110px, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 10px 4px;
   border-bottom: 1px solid $rule;
-  &:first-of-type {
-    padding-top: 6px;
+  &.open {
+    border-bottom-color: transparent;
+  }
+  .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
   }
 }
-.spec-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 4px;
-}
-.spec-sub {
+.spec-header {
+  padding-top: 4px;
   font-size: 12px;
   color: $mist;
 }
-.spec-missing {
-  color: $ink;
-}
-.spec-metric {
+.spec-out {
   display: flex;
-  align-items: baseline;
+  flex-direction: column;
+  min-width: 0;
+  b {
+    color: $ink;
+    font-weight: 600;
+  }
+  small {
+    font-size: 12px;
+    color: $mist;
+  }
+}
+.spec-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   gap: 8px;
-  flex-shrink: 0;
+}
+.spec-missing {
+  grid-column: 2 / -1;
+  color: $mist;
   font-size: 12px;
 }
+.spec-detail {
+  padding: 4px 4px 14px;
+  border-bottom: 1px solid $rule;
+  background: linear-gradient(#f7f9fb, #fff 40px);
+}
 .method-tag {
+  display: inline-block;
   padding: 0 6px;
   line-height: 18px;
+  font-size: 12px;
   border-radius: 3px;
   border: 1px solid $rule;
   color: $mist;
@@ -1213,13 +1234,9 @@ $off: #8a96a6;
     color: $accent;
   }
 }
-.metric-label {
-  color: $mist;
-}
 .metric-value {
   font-size: 15px;
   font-weight: 600;
-  font-variant-numeric: tabular-nums;
   color: $steel;
   &.good {
     color: $ok;
@@ -1230,12 +1247,10 @@ $off: #8a96a6;
 }
 .flag {
   color: $caution;
+  font-size: 12px;
   i {
     margin-right: 2px;
   }
-}
-.spec-actions {
-  margin-top: 2px;
 }
 .excluded-line {
   font-size: 12px;
@@ -1381,6 +1396,16 @@ $off: #8a96a6;
   }
   .predict {
     grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 760px) {
+  .spec-row {
+    grid-template-columns: 1fr auto auto;
+  }
+  .spec-header,
+  .spec-row > :nth-child(2),
+  .spec-row > :nth-child(4) {
+    display: none;
   }
 }
 @media (max-width: 640px) {

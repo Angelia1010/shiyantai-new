@@ -2,7 +2,7 @@
 
 - config.py      模型配置（内置 config/simulation/*.json + 页面上新建/修改的）与校验
 - condition.py   从稳定段取变量（测点、中位数、由油温算密度/黏度、常数，再做单位换算）
-- builders/      数据代理模型的构建器注册表：autofit（按变量角色定结构）、formula（自定义公式），可扩展
+- builders/      数据代理模型的构建器注册表：autofit（按变量角色定结构）、formula（内置公式，仅后端配置），可扩展
 - surrogate.py   数据代理模型的通用流程：拟合 → 留一组交叉验证 → 误差、异常样本、建议 → 公式产物
 - formula.py     公式引擎：白名单解析、计算、系数拟合
 - models.py      网格类仿真引擎（AMESim），可注册新引擎

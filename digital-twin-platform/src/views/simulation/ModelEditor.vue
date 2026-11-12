@@ -16,10 +16,10 @@
           </el-form-item>
           <el-form-item label="模型方式" required>
             <el-radio-group v-model="form.engine">
-              <el-radio label="surrogate">数据代理模型</el-radio>
-              <el-radio label="amesim">AMESim 模型</el-radio>
+              <el-radio label="surrogate">数据拟合</el-radio>
+              <el-radio label="amesim">仿真（AMESim）</el-radio>
             </el-radio-group>
-            <el-tooltip placement="right" content="数据代理模型：用正常数据拟合，建基准表时只需选正常数据目录；AMESim 模型：在“AMESim”页填写模型文件、参数与变量路径，建基准表时由 AMESim 逐个工况仿真">
+            <el-tooltip placement="right" content="数据拟合：由正常数据拟合出各输出与变量的关系，建立模型时只需选正常数据目录；仿真：在“AMESim”页填写模型文件、参数与变量路径，建立模型时由 AMESim 逐个工况仿真">
               <i class="el-icon-question tip" />
             </el-tooltip>
           </el-form-item>
@@ -161,8 +161,8 @@
         <el-button size="mini" icon="el-icon-plus" class="add" @click="form.inputs.push(blankInput())">添加变量</el-button>
       </el-tab-pane>
 
-      <!-- 输出与公式 -->
-      <el-tab-pane label="输出与公式" name="outputs">
+      <!-- 输出 -->
+      <el-tab-pane label="输出" name="outputs">
         <div v-if="isSurrogate" class="preview-bar">
           <span class="muted">验证用的正常数据目录：</span>
           <el-autocomplete v-model="previewPath" :fetch-suggestions="suggestDirs" size="mini" placeholder="设备正常时采集的数据目录（完整路径）"
@@ -175,9 +175,15 @@
           <el-table-column v-if="isSurrogate" type="expand" width="30">
             <template slot-scope="{ row }">
               <div class="method-panel">
-                <formula-editor v-if="row.method === 'formula'" :formula="row.formula" :variables="variableList"
-                                :fitted="previews[row.name] && previews[row.name].coefficients" />
-                <el-form v-else-if="builderOf(row.method)" inline size="mini" class="options">
+                <div v-if="!builderOf(row.method)" class="builtin-note">
+                  <i class="el-icon-lock" /> 内置模型：该输出的计算由后端配置，可以验证精度
+                </div>
+                <el-form v-else inline size="mini" class="options">
+                  <el-form-item v-if="builders.length > 1" label="计算方式">
+                    <el-select v-model="row.method" style="width: 130px" @change="onMethod(row)">
+                      <el-option v-for="b in builders" :key="b.kind" :label="b.label" :value="b.kind" :disabled="!b.available" />
+                    </el-select>
+                  </el-form-item>
                   <el-form-item v-for="opt in builderOf(row.method).options" :key="opt.key" :label="opt.label">
                     <el-select v-if="opt.type === 'select'" v-model="row.options[row.method][opt.key]" style="width: 110px">
                       <el-option v-for="c in opt.choices" :key="String(c.value)" :label="c.label" :value="c.value" />
@@ -192,23 +198,15 @@
                 </el-form>
                 <div class="panel-actions">
                   <el-button size="mini" type="primary" :loading="previewing === row.name" :disabled="!previewPath || !row.name"
-                             @click="runPreview(row)">{{ row.method === 'formula' ? '验证公式' : '试拟合' }}</el-button>
+                             @click="runPreview(row)">{{ builderOf(row.method) ? '试拟合' : '验证精度' }}</el-button>
                   <span v-if="!previewPath" class="muted small">先在上方选择正常数据目录</span>
                 </div>
-                <fit-result v-if="previews[row.name]" :result="previews[row.name]" :adoptable="row.method === 'formula'"
-                            @adopt="adopt(row, $event)" />
+                <fit-result v-if="previews[row.name]" :result="previews[row.name]" />
               </div>
             </template>
           </el-table-column>
           <el-table-column label="名称" width="120">
             <template slot-scope="{ row }"><el-input v-model.trim="row.name" size="mini" /></template>
-          </el-table-column>
-          <el-table-column v-if="isSurrogate" label="计算方式" width="110">
-            <template slot-scope="{ row }">
-              <el-select v-model="row.method" size="mini" @change="onMethod(row)">
-                <el-option v-for="b in builders" :key="b.kind" :label="b.label" :value="b.kind" :disabled="!b.available" />
-              </el-select>
-            </template>
           </el-table-column>
           <el-table-column label="类型" width="76">
             <template slot-scope="{ row }">
@@ -427,7 +425,6 @@ import {
 } from '@/api/simulation'
 import { errorMessage } from '@/utils/request'
 import FitResult from './FitResult'
-import FormulaEditor from './FormulaEditor'
 
 // 后端未返回构建器列表时的默认（与 pump_test_bench/app/simulation/builders 一致）
 const DEFAULT_BUILDERS = [
@@ -439,7 +436,6 @@ const DEFAULT_BUILDERS = [
       { key: 'ridge', label: '正则强度', type: 'number', default: 0.0001, min: 0, max: 1 }
     ]
   },
-  { kind: 'formula', label: '自定义公式', available: true, options: [] }
 ]
 let keySeq = 0
 
@@ -461,26 +457,16 @@ function inputSource(i) {
   return i.columns && i.columns.length ? 'multi' : 'single'
 }
 
-/** 各构建器的选项（formula 单独处理）：已保存的值优先，其余用默认值 */
+/** 各构建器的选项：已保存的值优先，其余用默认值 */
 function builderOptions(o, builders) {
   const out = {}
   for (const b of builders) {
-    if (b.kind === 'formula') continue
     const saved = o[b.kind] || {}
     out[b.kind] = Object.fromEntries((b.options || []).map(opt => [opt.key, saved[opt.key] !== undefined ? saved[opt.key] : opt.default]))
   }
   return out
 }
 
-function formulaForm(o) {
-  const f = o.formula || {}
-  const coefs = {}
-  for (const [n, c] of Object.entries(f.coefficients || {})) {
-    const item = c && typeof c === 'object' ? c : { value: c }
-    coefs[n] = { value: item.value === undefined || item.value === null ? '' : String(item.value), fit: !!item.fit }
-  }
-  return { expression: f.expression || '', coefficients: coefs }
-}
 
 /** 模型配置 → 表单 */
 function toForm(cfg, builders = DEFAULT_BUILDERS) {
@@ -538,7 +524,6 @@ function toForm(cfg, builders = DEFAULT_BUILDERS) {
       flow_dependent: !!o.flow_dependent,
       component_by_column: o.component_by_column,
       method: o.method || 'autofit',
-      formula: formulaForm(o),
       options: builderOptions(o, builders),
       _key: `o${++keySeq}`
     })),
@@ -568,7 +553,7 @@ function toForm(cfg, builders = DEFAULT_BUILDERS) {
 
 export default {
   name: 'ModelEditor',
-  components: { FitResult, FormulaEditor },
+  components: { FitResult },
   props: {
     visible: { type: Boolean, default: false },
     // 编辑时为模型配置（status.models[i].config），新建时为 null
@@ -602,9 +587,6 @@ export default {
     },
     usesRoles() {
       return this.form.outputs.some(o => o.method === 'autofit')
-    },
-    variableList() {
-      return this.form.inputs.filter(i => i.name).map(i => ({ name: i.name, unit: i.unit }))
     },
     usedKinds() {
       return [...new Set(this.form.outputs.map(o => o.kind))]
@@ -643,7 +625,7 @@ export default {
     blankOutput() {
       return {
         name: '', kind: 'pressure', unit: 'MPa', columns: [], system: '', residual: 'relative', single: 'decisive', component: '',
-        flow_dependent: false, method: 'autofit', formula: { expression: '', coefficients: {} },
+        flow_dependent: false, method: 'autofit',
         options: builderOptions({}, this.builders), _key: `o${++keySeq}`
       }
     },
@@ -656,7 +638,7 @@ export default {
       return this.builders.find(b => b.kind === kind)
     },
     onMethod(row) {
-      if (!row.options[row.method] && row.method !== 'formula') {
+      if (!row.options[row.method] && this.builderOf(row.method)) {
         this.$set(row.options, row.method, builderOptions({}, [this.builderOf(row.method)])[row.method] || {})
       }
       this.$delete(this.previews, row.name)
@@ -690,16 +672,6 @@ export default {
       } finally {
         this.previewing = ''
       }
-    },
-    /** 采用拟合出的系数，改为固定 */
-    adopt(row, coefs) {
-      for (const [n, v] of Object.entries(coefs || {})) {
-        if (row.formula.coefficients[n]) {
-          row.formula.coefficients[n].value = String(Number(v.toPrecision(10)))
-          row.formula.coefficients[n].fit = false
-        }
-      }
-      this.$message.success('已采用拟合值并改为固定，保存后生效')
     },
     /** 表单 → 模型配置（保留表单不管的字段，如 media、order、ordiam 档位表） */
     toConfig() {
@@ -748,13 +720,8 @@ export default {
           if (o.flow_dependent && o.kind === 'pressure') out.flow_dependent = true
           if (o.component_by_column) out.component_by_column = o.component_by_column
           if (f.engine === 'surrogate') {
+            // 内置模型的输出（后端配置的计算方式）原样提交方式名，内容由后端按输出名称补回
             out.method = o.method
-            if (o.formula.expression || o.method === 'formula') {
-              out.formula = {
-                expression: o.formula.expression,
-                coefficients: Object.fromEntries(Object.entries(o.formula.coefficients).map(([n, c]) => [n, { value: c.value, fit: c.fit }]))
-              }
-            }
             for (const [kind, opts] of Object.entries(o.options || {})) out[kind] = { ...opts }
           }
           return out
@@ -830,6 +797,11 @@ export default {
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
+}
+.builtin-note {
+  font-size: 12px;
+  color: #6b7a90;
+  padding: 4px 0;
 }
 .method-panel {
   padding: 6px 12px 10px 24px;
