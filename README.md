@@ -104,7 +104,7 @@ python -m pump_test_bench.tools.replay_data pump_test_bench/samples/标准台样
 ```bash
 python -m pump_test_bench.tools.build_baseline 健康数据目录 --save      # 保存到 pump_test_bench/data/baseline.json
 python -m pump_test_bench.tools.validate_diagnosis 健康数据目录          # 故障注入验证：检出率、定位准确率、误报率
-python -m pump_test_bench.tools.generate_fault_data 健康数据目录 --out 故障数据  # 生成 15 类物理故障的异常数据文件（原格式）+ 故障清单.csv
+python -m pump_test_bench.tools.generate_fault_data 健康数据目录 --out 故障数据  # 生成 19 类物理故障的异常数据文件（原格式）+ 故障清单.csv
 ```
 
 ### 仿真模型（`pump_test_bench/app/simulation/`）

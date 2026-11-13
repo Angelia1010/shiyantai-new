@@ -54,7 +54,7 @@ def build_cases(args, work: Path) -> List[Dict]:
         codes = {c.strip().upper() for c in args.cases.split(",") if c.strip()}
         rows = [r for r in rows if r["故障编号"] in codes]
         if not rows:
-            raise SystemExit(f"没有这些故障编号：{args.cases}（可用 F01–F19，见 generate_fault_data.py）")
+            raise SystemExit(f"没有这些故障编号：{args.cases}（可用 F01–F23，见 generate_fault_data.py）")
     cases = []
     for key in ("B", "C"):  # 正常数据：不应报警
         folder, name, label = CONDITIONS[key]
