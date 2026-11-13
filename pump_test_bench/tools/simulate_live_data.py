@@ -32,6 +32,7 @@ RESULT_TEXT = {"normal": "正常", "warning": "预警", "abnormal": "异常", "i
 
 
 MANIFEST = "故障清单.csv"
+NOT_DATA = {MANIFEST, "故障注入清单.md"}
 
 
 def _manifest(source: Path):
@@ -48,7 +49,7 @@ def _manifest(source: Path):
 def source_cases(source: Path) -> List[Dict]:
     """回放已有的数据文件。子目录中的文件以“子目录_文件名”写入，避免不同故障的同名文件互相覆盖；
     是 generate_fault_data 生成的故障数据时，从 故障清单.csv 读出注入的故障与预期结论。"""
-    files = [f for f in _source_files(source) if f.name != MANIFEST and not f.name.endswith("_数据清单.csv")]
+    files = [f for f in _source_files(source) if f.name not in NOT_DATA and not f.name.endswith("_数据清单.csv")]
     if not files:
         raise SystemExit(f"没有找到数据文件：{source}")
     root, manifest = _manifest(source)
@@ -84,7 +85,7 @@ def build_cases(args, work: Path) -> List[Dict]:
         codes = {c.strip().upper() for c in args.cases.split(",") if c.strip()}
         rows = [r for r in rows if r["故障编号"] in codes]
         if not rows:
-            raise SystemExit(f"没有这些故障编号：{args.cases}（可用 F01–F23，见 generate_fault_data.py）")
+            raise SystemExit(f"没有这些故障编号：{args.cases}（可用 F01–F35，见 generate_fault_data.py）")
     cases = []
     for key in ("B", "C"):  # 正常数据：不应报警
         folder, name, label = CONDITIONS[key]
