@@ -1,2435 +1,1364 @@
 <template>
-  <div class="dashboard-container">
-    <div class="bg-grid"></div>
-    <div class="bg-glow"></div>
-    <div class="bg-particles">
-      <div v-for="i in 20" :key="i" class="particle" :style="getParticleStyle(i)"></div>
-    </div>
-    
-    <div class="dashboard-content">
-      <div class="header-section">
-        <div class="title-wrapper">
-          <div class="title-decoration left">
-            <div class="deco-line"></div>
-            <div class="deco-dot"></div>
-          </div>
-          <h1 class="main-title">
-            <span class="title-text">标准试验台数字化校验系统</span>
-            <span class="title-glow"></span>
-          </h1>
-          <div class="title-decoration right">
-            <div class="deco-dot"></div>
-            <div class="deco-line"></div>
-          </div>
+  <div ref="root" class="dashboard">
+    <!-- 状态栏 -->
+    <header class="topbar">
+      <span :class="['pill', live.state]"><i class="dot" />{{ liveStateText }}</span>
+      <span class="status-msg" :title="live.path || ''">{{ liveMessage }}</span>
+      <button class="link-btn" @click="openPathDialog">
+        <i class="el-icon-folder-opened" /> {{ live.path ? '数据目录' : '设置数据目录' }}
+      </button>
+      <div class="stats">
+        <div class="stat"><span>诊断记录</span><b>{{ records.length }}</b></div>
+        <div :class="['stat', { bad: abnormalCount }]"><span>异常</span><b>{{ abnormalCount }}</b></div>
+        <div :class="['stat', { bad: alarmComponents.length }]"><span>告警部件</span><b>{{ alarmComponents.length }}</b></div>
+      </div>
+      <span class="clock">{{ clock }}</span>
+      <button class="icon-btn" :title="isFullscreen ? '退出大屏' : '大屏显示'" @click="toggleFullscreen">
+        <i :class="isFullscreen ? 'el-icon-copy-document' : 'el-icon-full-screen'" />
+      </button>
+    </header>
+
+    <!-- 三维模型 -->
+    <section class="stage">
+      <test-bench-view
+        ref="bench"
+        :feature-map="featureMap"
+        :alarms="alarmComponents"
+        @loaded="parts = $event"
+        @select="selectedPart = $event"
+      />
+    </section>
+
+    <!-- 右侧：诊断 -->
+    <aside class="panel diagnosis">
+      <div class="panel-title">最新诊断</div>
+      <div v-if="diagnosisStatus" class="diag-status"><i v-if="diagnosisStatus.includes('正在')" class="el-icon-loading" />自动诊断：{{ diagnosisStatus }}</div>
+      <div v-if="latestResult" :class="['verdict', latestResult.result]">
+        <div class="verdict-head">
+          <span class="verdict-badge">{{ latestResult.statusText }}</span>
+          <span class="verdict-time">{{ latestResult.timestamp }}</span>
         </div>
-        <div class="status-bar">
-          <div class="status-item">
-            <span class="status-dot pulse"></span>
-            <span>系统运行中</span>
-          </div>
-          <div class="status-divider"></div>
-          <div class="status-item">
-            <span class="status-label">数据类型:</span>
-            <span class="status-value">{{ dataType === 'experiment' ? '实验数据' : '仿真数据' }}</span>
-          </div>
-          <template v-if="isRealtimeFromDiagnosis">
-            <div class="status-divider"></div>
-            <div class="status-item">
-              <span class="status-label">诊断模式:</span>
-              <span class="status-value highlight">实时监控</span>
-            </div>
-          </template>
+        <div class="verdict-file" :title="latestResult.fileName">{{ latestResult.fileName }}</div>
+        <div class="verdict-fault">{{ latestResult.summary || latestResult.diagnosis.fault_name || '—' }}</div>
+        <div v-if="latestResult.condition && latestResult.condition.label" class="verdict-cond">
+          {{ latestResult.condition.label }}
+        </div>
+        <div class="verdict-actions">
+          <button v-if="alarmComponents.length" class="text-btn danger" @click="locateAlarm">定位异常部件</button>
+          <button class="text-btn" @click="openDetail(latestResult)">查看详情</button>
         </div>
       </div>
-
-      <div class="alert-banner" v-if="isRealtimeFromDiagnosis && latestAbnormalResult">
-        <div class="alert-content">
-          <div class="alert-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-              <line x1="12" y1="9" x2="12" y2="13"/>
-              <line x1="12" y1="17" x2="12.01" y2="17"/>
-            </svg>
-          </div>
-          <div class="alert-text">
-            <span class="alert-title">检测到异常状态</span>
-            <span class="alert-info">文件: {{ latestAbnormalResult.filename }} | 时间: {{ latestAbnormalResult.timestamp }}</span>
-          </div>
-        </div>
-        <div class="alert-actions">
-          <button class="alert-btn view" @click="viewDiagnosisResult(latestAbnormalResult)">查看详情</button>
-          <button class="alert-btn close" @click="clearAbnormalWarning">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"/>
-              <line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-          </button>
-        </div>
+      <div v-else class="empty-card">
+        <i class="el-icon-data-analysis" />
+        <div>暂无诊断结果</div>
+        <small>运行自动诊断后在此显示结论</small>
       </div>
 
-      <div class="main-content" :class="{ 'with-sidebar': isRealtimeFromDiagnosis }">
-        <div class="content-main">
-          <div class="model-section">
-            <div class="section-header">
-              <div class="section-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-                </svg>
-              </div>
-              <span class="section-title">三维模型视图</span>
-              <div class="section-line"></div>
-            </div>
-            <div class="model-3d-container">
-              <div class="corner-decoration tl"></div>
-              <div class="corner-decoration tr"></div>
-              <div class="corner-decoration bl"></div>
-              <div class="corner-decoration br"></div>
-              <div class="model-inner">
-                <PumpModel ref="pumpModelRef" />
-              </div>
-              <div class="scan-line"></div>
-            </div>
+      <template v-if="meterDeviations.length">
+        <div class="panel-title sub">流量计偏差</div>
+        <div v-for="m in meterDeviations" :key="m.name" class="deviation">
+          <div class="deviation-top">
+            <span>{{ m.name }}</span>
+            <span :class="m.severity">{{ m.text }}</span>
           </div>
-
-          <div class="bottom-section">
-            <div class="control-panel">
-              <div class="panel-header">
-                <span class="panel-title">显示模式</span>
-              </div>
-              <div class="mode-buttons">
-                <button 
-                  :class="['mode-btn', mode === 'temperature' ? 'active' : '']" 
-                  @click="mode = 'temperature'"
-                >
-                  <span class="btn-icon">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/>
-                    </svg>
-                  </span>
-                  <span class="btn-text">温度</span>
-                </button>
-                <button 
-                  :class="['mode-btn', mode === 'pressure' ? 'active' : '']" 
-                  @click="mode = 'pressure'"
-                >
-                  <span class="btn-icon">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <circle cx="12" cy="12" r="10"/>
-                      <path d="M12 6v6l4 2"/>
-                    </svg>
-                  </span>
-                  <span class="btn-text">压力</span>
-                </button>
-              </div>
-            </div>
-
-            <div class="gradient-panel">
-              <div class="gradient-bar-container">
-                <div class="gradient-label top">
-                  <span class="label-value">{{ mode === "pressure" ? "35" : "90" }}</span>
-                  <span class="label-unit">{{ mode === "pressure" ? "MPa" : "°C" }}</span>
-                </div>
-                <div class="gradient-track">
-                  <div 
-                    class="gradient-fill" 
-                    :style="{ background: mode === 'pressure' ? pressureGradient : temperatureGradient }"
-                  ></div>
-                  <div class="gradient-markers">
-                    <div v-for="i in 5" :key="i" class="marker"></div>
-                  </div>
-                </div>
-                <div class="gradient-label bottom">
-                  <span class="label-value">{{ mode === "pressure" ? "2" : "20" }}</span>
-                  <span class="label-unit">{{ mode === "pressure" ? "MPa" : "°C" }}</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="pump2d-section">
-              <div class="pump2d-grid">
-                <div 
-                  v-for="port in ['供油1-1', '供油1-2', '回油1-1', '回油1-2']" 
-                  :key="port" 
-                  class="pump2d-card"
-                >
-                  <div class="card-header">
-                    <span class="card-title">{{ port }}</span>
-                    <span class="card-status online"></span>
-                  </div>
-                  <PumpModel2D 
-                    :portName="port" 
-                    :featureMap="featureMap" 
-                    :viewDirection="'z'" 
-                    :mode="mode" 
-                  />
-                </div>
-              </div>
-            </div>
+          <!-- 中间为 0，左右满格为异常阈值的 1.5 倍；两条竖线为异常阈值 -->
+          <div class="deviation-track">
+            <div class="deviation-zero" />
+            <div :class="['deviation-bar', m.severity]" :style="m.barStyle" />
+            <div class="deviation-limit" :style="{ left: m.limitLeft + '%' }" />
+            <div class="deviation-limit" :style="{ left: (100 - m.limitLeft) + '%' }" />
           </div>
         </div>
+      </template>
 
-        <div class="diagnosis-sidebar" v-if="isRealtimeFromDiagnosis">
-          <div class="sidebar-header">
-            <div class="sidebar-title">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
-                <path d="M9 14l2 2 4-4"/>
-              </svg>
-              <span>诊断记录</span>
-            </div>
-            <div class="sidebar-stats">
-              <span class="stat-item">
-                <span class="stat-label">总计</span>
-                <span class="stat-value">{{ diagnosisResults.length }}</span>
-              </span>
-              <span class="stat-item abnormal">
-                <span class="stat-label">异常</span>
-                <span class="stat-value">{{ diagnosisResults.filter(r => r.status === '异常').length }}</span>
-              </span>
-            </div>
+      <div class="panel-title sub">设备部件<span class="counter">{{ parts.length }} 个</span></div>
+      <div class="parts">
+        <button
+          v-for="p in parts"
+          :key="p.key"
+          :class="['part', { active: selectedPart === p.key, bad: alarmComponents.includes(p.key) }]"
+          @click="$refs.bench.focus(p.key)"
+        >
+          <i class="part-dot" />{{ p.label }}
+        </button>
+        <div v-if="!parts.length" class="empty small">模型加载中...</div>
+      </div>
+
+      <div class="panel-title sub">
+        诊断记录
+        <span class="counter">{{ records.length }} 条<template v-if="abnormalCount">，异常 {{ abnormalCount }}</template></span>
+      </div>
+      <div class="records">
+        <div
+          v-for="r in records"
+          :key="r.taskId"
+          :class="['record', r.result]"
+          @click="openDetail(r)"
+        >
+          <span class="record-dot" />
+          <div class="record-body">
+            <div class="record-file" :title="r.fileName">{{ r.fileName }}</div>
+            <div class="record-meta">{{ r.timestamp }} · {{ r.statusText }}</div>
           </div>
-          
-          <div class="diagnosis-list">
-            <div 
-              v-for="(result, index) in diagnosisResults" 
-              :key="result.taskId" 
-              class="diagnosis-item"
-              :class="{ abnormal: result.status === '异常' }"
+        </div>
+        <div v-if="!records.length" class="empty">暂无记录</div>
+      </div>
+    </aside>
+
+    <!-- 下左：关键测点 -->
+    <section class="panel metrics">
+      <div class="panel-title">
+        关键测点
+        <span class="group-legend">
+          <span v-for="group in metricGroups" :key="group.title" class="tag" :style="{ '--group-color': group.color }">{{ group.title }}</span>
+        </span>
+      </div>
+      <div class="metric-grid">
+        <template v-for="group in metricGroups">
+          <div
+            v-for="field in group.fields"
+            :key="field"
+            :class="['metric', { empty: !featureMap[field] }]"
+            :style="{ '--group-color': group.color }"
+            :title="field"
+          >
+            <svg class="spark" viewBox="0 0 100 24" preserveAspectRatio="none">
+              <polyline v-if="history[field].length > 1" :points="sparkline(field)" />
+            </svg>
+            <div class="metric-name">{{ field }}</div>
+            <div class="metric-value">{{ latest(field) }}<small>{{ unit(field) }}</small></div>
+          </div>
+        </template>
+      </div>
+    </section>
+
+    <!-- 下右：趋势 -->
+    <section class="panel trend">
+      <div class="trend-head">
+        <div class="panel-title">趋势</div>
+        <div class="tabs">
+          <button
+            v-for="(group, key) in trendGroups"
+            :key="key"
+            :class="['tab', { active: trendKey === key }]"
+            @click="trendKey = key"
+          >{{ group.label }}</button>
+        </div>
+      </div>
+      <div class="trend-body">
+        <trend-chart :series="trendSeries" :unit="trendGroups[trendKey].unit" />
+        <div v-if="!trendSeries.length" class="trend-empty">
+          <i class="el-icon-s-data" />暂无{{ trendGroups[trendKey].label }}数据
+        </div>
+      </div>
+    </section>
+
+    <!-- 诊断详情 -->
+    <transition name="fade">
+      <div v-if="detail" class="modal" @click.self="detail = null">
+        <div class="modal-card">
+          <div class="modal-head">
+            <span>诊断详情 · {{ detail.fileName }}</span>
+            <i class="el-icon-close" @click="detail = null" />
+          </div>
+          <div v-if="detail.loading" class="empty">加载中...</div>
+          <div v-else class="modal-body">
+            <div class="kv"><span>诊断结果</span><b :class="detail.result">{{ detail.statusText }}</b></div>
+            <div class="kv"><span>诊断时间</span><b>{{ detail.timestamp }}</b></div>
+            <div class="kv"><span>结论</span><b>{{ detail.summary || '—' }}</b></div>
+            <div v-if="detail.condition && detail.condition.label" class="kv">
+              <span>试验工况</span><b>{{ detail.condition.label }}</b>
+            </div>
+            <div class="section-title">原因分析</div>
+            <cause-list :causes="detail.causes || []" :history="detail.history" dark />
+            <template v-if="detailFindings.length">
+              <div class="section-title">检查项</div>
+              <div v-for="(f, i) in detailFindings" :key="i" :class="['finding', f.severity]">
+                <span class="finding-level">{{ SEVERITY_LABELS[f.severity] }}</span>
+                <b>{{ f.title }}</b> · {{ f.detail }}
+              </div>
+            </template>
+            <template v-if="detail.models && detail.models.length">
+              <div class="section-title">仿真模型对比</div>
+              <model-compare :models="detail.models" dark />
+            </template>
+            <div class="section-title">检测明细</div>
+            <table class="indicators">
+              <tr v-for="(item, i) in detail.indicators" :key="i" :class="{ bad: item.abnormal }">
+                <td>{{ item.name }}</td>
+                <td>{{ item.reference }}</td>
+                <td>{{ item.value }}</td>
+              </tr>
+            </table>
+            <div class="section-title">处理建议</div>
+            <pre class="advice">{{ detail.repairAdvice }}</pre>
+          </div>
+          <div class="modal-foot">
+            <button class="text-btn" @click="download(detail.taskId)">下载 Word 报告</button>
+          </div>
+        </div>
+      </div>
+    </transition>
+    <!-- 数据目录设置 -->
+    <transition name="fade">
+      <div v-if="pathDialog.visible" class="modal" @click.self="pathDialog.visible = false">
+        <div class="modal-card path-card">
+          <div class="modal-head">
+            <span>实时数据目录</span>
+            <i class="el-icon-close" @click="pathDialog.visible = false" />
+          </div>
+          <div class="modal-body">
+            <p class="path-hint">
+              填写试验台写入数据文件的目录（服务器上能访问到的完整路径，共享目录的映射盘符或网络路径均可），
+              其下各级子目录会一起监控。设置后会保存，服务重启后自动恢复。
+            </p>
+            <input
+              v-model.trim="pathDialog.value"
+              class="path-input"
+              placeholder="例如 Z:/试验数据 或 //192.168.1.20/data"
+              @keyup.enter="savePath"
             >
-              <div class="item-header">
-                <div class="item-status" :class="result.status === '正常' ? 'normal' : 'abnormal'">
-                  <span class="status-icon">
-                    <svg v-if="result.status === '正常'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                      <polyline points="22 4 12 14.01 9 11.01"/>
-                    </svg>
-                    <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <circle cx="12" cy="12" r="10"/>
-                      <line x1="12" y1="8" x2="12" y2="12"/>
-                      <line x1="12" y1="16" x2="12.01" y2="16"/>
-                    </svg>
-                  </span>
-                  <span class="status-text">{{ result.status }}</span>
-                </div>
-                <span class="item-time">{{ result.timestamp }}</span>
-              </div>
-              <div class="item-content">
-                <div class="item-filename">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-                    <polyline points="14 2 14 8 20 8"/>
-                  </svg>
-                  <span>{{ result.filename }}</span>
-                </div>
-                <div class="item-fault" v-if="result.status === '异常' && result.diagnosis && result.diagnosis.fault_name">
-                  <span class="fault-label">故障类型:</span>
-                  <span class="fault-value">{{ result.diagnosis.fault_name }}</span>
-                </div>
-              </div>
-              <div class="item-actions">
-                <button class="action-btn view" @click="viewDiagnosisResult(result)">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                    <circle cx="12" cy="12" r="3"/>
-                  </svg>
-                  <span>查看</span>
-                </button>
-                <button class="action-btn download" @click="downloadDiagnosisReport(result.taskId)">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                    <polyline points="7 10 12 15 17 10"/>
-                    <line x1="12" y1="15" x2="12" y2="3"/>
-                  </svg>
-                  <span>下载</span>
-                </button>
-              </div>
-            </div>
-            
-            <div class="empty-state" v-if="diagnosisResults.length === 0">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
-              </svg>
-              <span>暂无诊断记录</span>
-              <span class="empty-hint">等待新文件诊断...</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="diagnosis-detail-modal" v-if="showDiagnosisDetail && selectedDiagnosisResult">
-      <div class="modal-overlay" @click="showDiagnosisDetail = false"></div>
-      <div class="modal-content">
-        <div class="modal-header">
-          <span class="modal-title">诊断结果详情</span>
-          <button class="modal-close" @click="showDiagnosisDetail = false">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"/>
-              <line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-          </button>
-        </div>
-        <div class="modal-body">
-          <div class="detail-section">
-            <div class="detail-row">
-              <span class="detail-label">文件名称:</span>
-              <span class="detail-value">{{ selectedDiagnosisResult.filename }}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">诊断时间:</span>
-              <span class="detail-value">{{ selectedDiagnosisResult.timestamp }}</span>
-            </div>
-            <div class="detail-row">
-              <span class="detail-label">诊断结果:</span>
-              <span class="detail-value" :class="selectedDiagnosisResult.status === '正常' ? 'normal' : 'abnormal'">
-                {{ selectedDiagnosisResult.status }}
-              </span>
-            </div>
-            <div class="detail-row" v-if="selectedDiagnosisResult.diagnosis && selectedDiagnosisResult.diagnosis.fault_name">
-              <span class="detail-label">故障类型:</span>
-              <span class="detail-value abnormal">{{ selectedDiagnosisResult.diagnosis.fault_name }}</span>
-            </div>
-          </div>
-          
-          <div class="detail-section" v-if="selectedDiagnosisResult.indicators">
-            <div class="section-title">关键指标</div>
-            <div class="indicators-list">
-              <div 
-                class="indicator-card" 
-                v-for="(indicator, index) in formatIndicators(selectedDiagnosisResult.indicators)" 
-                :key="index"
-                :class="{ 'abnormal': indicator.isAbnormal }"
+            <p v-if="pathDialog.error" class="path-error">{{ pathDialog.error }}</p>
+            <label class="auto-toggle">
+              <input v-model="pathDialog.autoDiagnose" type="checkbox">
+              文件写完后自动诊断（在服务器上进行，不需要打开任何页面）
+            </label>
+            <div class="density-row">
+              <span>当前燃油密度（20 ℃）</span>
+              <input
+                v-model.trim="pathDialog.density"
+                class="density-input"
+                placeholder="留空：按健康基准的油品"
+                @keyup.enter="savePath"
               >
-                <div class="indicator-header">
-                  <div class="indicator-icon" :class="indicator.type">
-                    <svg v-if="indicator.type === 'flow'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/>
-                    </svg>
-                    <svg v-else-if="indicator.type === 'speed'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <circle cx="12" cy="12" r="10"/>
-                      <path d="M12 6v6l4 2"/>
-                    </svg>
-                    <svg v-else-if="indicator.type === 'pressure'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M12 2v20M2 12h20"/>
-                    </svg>
-                    <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <circle cx="12" cy="12" r="3"/>
-                      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-                    </svg>
-                  </div>
-                  <div class="indicator-status" v-if="indicator.isAbnormal">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <circle cx="12" cy="12" r="10"/>
-                      <line x1="12" y1="8" x2="12" y2="12"/>
-                      <line x1="12" y1="16" x2="12.01" y2="16"/>
-                    </svg>
-                  </div>
-                </div>
-                <div class="indicator-body">
-                  <div class="indicator-name">{{ indicator.name }}</div>
-                  <div class="indicator-value">{{ indicator.value }}</div>
-                </div>
-                <div class="indicator-footer">
-                  <span class="indicator-reference">{{ indicator.reference }}</span>
-                </div>
+              <span class="unit">kg/m³</span>
+            </div>
+            <p class="path-hint small">换油品或换批次后填写合格证上的 20 ℃ 密度，否则质量流量计校核可能误报。自动诊断与手动诊断共用此设置。</p>
+            <template v-if="pathDialog.dirs.length">
+              <div class="dir-title">已登记的数据目录（点击选用）</div>
+              <div v-for="dir in pathDialog.dirs" :key="dir.path" class="dir-item">
+                <span class="dir-path" :title="dir.path" @click="pathDialog.value = dir.path">
+                  <i class="el-icon-folder" />{{ dir.path }}
+                </span>
+                <span v-if="dir.preset" class="dir-tag">预置</span>
+                <i v-else class="el-icon-delete dir-remove" title="取消登记" @click="removeDir(dir.path)" />
               </div>
-            </div>
+            </template>
           </div>
-
-          <div class="detail-section" v-if="selectedDiagnosisResult.repairAdvice">
-            <div class="section-title">维修建议</div>
-            <div class="repair-advice">
-              {{ selectedDiagnosisResult.repairAdvice }}
-            </div>
+          <div class="modal-foot">
+            <button class="text-btn" @click="pathDialog.visible = false">取消</button>
+            <button class="primary-btn" :disabled="pathDialog.saving || !pathDialog.value" @click="savePath">
+              {{ pathDialog.saving ? '保存中...' : '开始监控' }}
+            </button>
           </div>
-        </div>
-        <div class="modal-footer">
-          <button class="footer-btn download" @click="downloadDiagnosisReport(selectedDiagnosisResult.taskId)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-              <polyline points="7 10 12 15 17 10"/>
-              <line x1="12" y1="15" x2="12" y2="3"/>
-            </svg>
-            <span>下载报告</span>
-          </button>
-          <button class="footer-btn close" @click="showDiagnosisDetail = false">关闭</button>
         </div>
       </div>
-    </div>
-
+    </transition>
   </div>
 </template>
 
 <script>
-import {
-  readExcelApi,
-  fileListAPI,
-  newFileListAPI,
-  getGoingJob,
-  getJobStatus,
-  diagnose,
-  storeReport,
-  createTask,
-} from "@/api/home";
-import { stopJob, downloadFile, fetchReportPreview } from "@/api/article";
-import { Message } from "element-ui";
-import PumpModel from "./PumpModel.vue";
-import PumpModel2D from "./PumpModel2D.vue";
-import {
-  getBroadcastChannel,
-  closeBroadcastChannel
-} from "@/utils/broadcastChannel";
+/**
+ * 工作台：实时监控。
+ *
+ * 实时数据：每秒向文件服务取最新的特征帧（/live/frames），由后端增量读取试验台正在写入的文件，
+ *   与“自动诊断”页面是否打开无关，任何电脑打开工作台都能看到。
+ * 诊断结果：“自动诊断”运行时通过 BroadcastChannel 推送；没有推送时显示最近的诊断任务。
+ */
+import screenfull from 'screenfull'
+import { getDataDirs, getLiveFrames, removeDataDir, setAutoDiagnose, setWatchPath } from '@/api/files'
+import { downloadReport, getDiagnosisSettings, getReport, listTasks, saveDiagnosisSettings } from '@/api/tasks'
+import CauseList from '@/components/CauseList'
+import ModelCompare from '@/components/ModelCompare'
+import { errorMessage } from '@/utils/request'
+import { MessageType, openChannel } from '@/utils/broadcastChannel'
+import { fieldUnit, formatValue, loadDerivedFields } from '@/utils/features'
+import { SEVERITY_LABELS, resultLabel, summarizeReport } from '@/utils/report'
+import TestBenchView from './TestBenchView.vue'
+import TrendChart from './TrendChart.vue'
+
+const POLL_INTERVAL_MS = 1000
+const HISTORY_LENGTH = 90 // 迷你曲线和趋势图保留的帧数（每帧 1 秒）
+const LIVE_STATE_TEXT = { off: '未配置', waiting: '等待数据', live: '采集中' }
+const MAX_RECORDS = 100
+const RECORDS_POLL_MS = 5000 // 诊断记录刷新间隔
+
+// 按标准台系统分组（与 pump_test_bench/config/signals.json 一致）
+const METRIC_GROUPS = [
+  { key: 'tank', color: '#94a3b8', title: '油箱系统', fields: ['P13燃油油箱压力', 'YW1燃油油箱液位'] },
+  { key: 'motor', color: '#34d399', title: '离心泵驱动电机', fields: ['燃油泵实际转速'] },
+  { key: 'supply', color: '#38bdf8', title: '供油系统', fields: ['供油压力1-1', '供油压力1-2', '供油流量1-1', '供油流量1-2'] },
+  { key: 'drive', color: '#f472b6', title: '传动系统', fields: ['电传实际转速'] },
+  { key: 'pump', color: '#a78bfa', title: '被试件（高压泵）', fields: ['P1进口压力', '齿轮流量计', 'P5低压压力'] },
+  { key: 'returnLarge', color: '#fbbf24', title: '回油 · 大流量管路', fields: ['回油压力1-1', '回油压力1-2', '回油流量1-1', '回油流量1-2', '回油质量流量2', '回油流量1-1转速', '回油流量1-2转速'] },
+  { key: 'returnSmall', color: '#fb923c', title: '回油 · 小流量管路', fields: ['回油压力2-1', '回油压力2-2', '回油流量2-1', '回油流量2-2', '回油质量流量1', '回油流量2-1转速', '回油流量2-2转速'] }
+]
+
+const TREND_GROUPS = {
+  pressure: { label: '压力', unit: 'MPa', fields: ['供油压力1-1', '供油压力1-2', 'P1进口压力', 'P5低压压力', '回油压力1-2'] },
+  temperature: { label: '温度', unit: '°C', fields: ['供油温度1-1', '供油温度1-2', '回油温度1-1', '回油温度1-2', 'T20加热出口温度'] },
+  flow: { label: '流量', unit: 'L/h', fields: ['供油流量1-1', '供油流量1-2', '回油流量1-1', '回油流量1-2', '齿轮流量计'] },
+  turbine: { label: '涡轮转速', unit: 'Hz', fields: ['回油流量1-1转速', '回油流量1-2转速', '回油流量2-1转速', '回油流量2-2转速'] },
+  speed: { label: '转速', unit: 'rpm', fields: ['燃油泵实际转速', '电传实际转速'] }
+}
+
+const TRACKED_FIELDS = [...new Set([
+  ...METRIC_GROUPS.flatMap(g => g.fields),
+  ...Object.values(TREND_GROUPS).flatMap(g => g.fields)
+])]
+
+function formatTime(ms) {
+  const d = new Date(ms)
+  const pad = n => String(n).padStart(2, '0')
+  return `${d.getMonth() + 1}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
 
 export default {
-  components: {
-    PumpModel,
-    PumpModel2D,
-  },
+  name: 'Dashboard',
+  components: { TestBenchView, TrendChart, CauseList, ModelCompare },
   data() {
     return {
-      form: {
-        name: "",
-        region: "",
-        date1: "",
-        date2: "",
-        delivery: false,
-        type: [],
-        resource: "",
-        desc: "",
-      },
-      isSidebarVisible: false,
-
-      showLoading: true,
-
-      page: 0,
-      pageSize: 500,
-      timerId: null,
-      fileNames: [],
-      fileNameIndex: 0,
-
-      isRunning: true,
-
       featureMap: {},
-      sidebarBottomFeatureMap: {},
-      queueThreshold: 60,
-      spectrumQueue: [],
-      featuresQueue: [],
-      featuresConsumerTimer: null,
-      spectrum: {},
-      groupSize: 50,
-      spectrumIndex: 0,
-
-      mode: "temperature",
-      pumpState: { swashAngle: 0, rotateSpeed: 0 },
-      dataType: "experiment",
-      isRealtimeFromDiagnosis: false,
-      diagnosisStatus: null,
-      broadcastChannel: null,
-      diagnosisResults: [],
-      latestAbnormalResult: null,
-      selectedDiagnosisResult: null,
-      showDiagnosisDetail: false,
-    };
+      history: Object.fromEntries(TRACKED_FIELDS.map(f => [f, []])),
+      live: { state: 'off', path: null, file: null, frameTime: '', autoDiagnose: true },
+      pathDialog: { visible: false, value: '', saving: false, error: '', dirs: [], autoDiagnose: true, density: '', densitySaved: '' },
+      diagnosisStatus: '',
+      records: [],
+      latestResult: null,
+      alarmComponents: [],
+      detail: null,
+      parts: [],
+      selectedPart: null,
+      trendKey: 'pressure',
+      clock: '',
+      isFullscreen: false,
+      metricGroups: METRIC_GROUPS,
+      trendGroups: TREND_GROUPS,
+      SEVERITY_LABELS
+    }
   },
   computed: {
-    temperatureGradient() {
-      return "linear-gradient(to bottom, #ff0055 0%, #ff6b00 20%, #ffd000 40%, #00ff88 60%, #00d4ff 80%, #0066ff 100%)";
+    liveStateText() {
+      return LIVE_STATE_TEXT[this.live.state] || '未配置'
     },
-    pressureGradient() {
-      return "linear-gradient(to bottom, #ff0055 0%, #ff6b00 20%, #ffd000 40%, #00ff88 60%, #00d4ff 80%, #0066ff 100%)";
+    liveMessage() {
+      const { state, path, file, frameTime } = this.live
+      if (state === 'off') return '尚未配置实时数据目录，点击右侧按钮设置试验台写入数据的目录'
+      if (state === 'live') return `正在读取 ${file}（数据时间 ${frameTime}）`
+      const last = file ? `，最近文件 ${file}` : ''
+      return `监控 ${path}，等待试验台写入数据${last}`
     },
+    hasData() {
+      return Object.keys(this.featureMap).length > 0
+    },
+    abnormalCount() {
+      return this.records.filter(r => r.result === 'abnormal').length
+    },
+    trendSeries() {
+      return TREND_GROUPS[this.trendKey].fields
+        .filter(f => this.history[f].length)
+        .map(f => ({ name: f, data: this.history[f] }))
+    },
+    // 最新报告中主油路各流量计相对实际流量的偏差（已扣除固有偏差）
+    meterDeviations() {
+      const loop = this.latestResult && this.latestResult.loops.find(l => l.active)
+      if (!loop) return []
+      return loop.meters.filter(m => typeof m.corrected === 'number').map(m => {
+        const pct = m.corrected * 100
+        const scale = m.alarm * 100 * 1.5 // 半边满格对应的百分比
+        const half = Math.min(50, (Math.abs(pct) / scale) * 50)
+        return {
+          name: m.label,
+          text: `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`,
+          severity: m.severity,
+          limitLeft: 50 - (m.alarm * 100 / scale) * 50,
+          barStyle: pct >= 0 ? { left: '50%', width: `${half}%` } : { left: `${50 - half}%`, width: `${half}%` }
+        }
+      })
+    },
+    detailFindings() {
+      return ((this.detail && this.detail.findings) || []).filter(f => f.severity !== 'info')
+    }
   },
   created() {
-    window.addEventListener("message", this.iframeEventListener);
-    window.hideLoading = () => {
-      this.showLoading = false;
-    };
-
-    const hash = window.location.hash.substring(1);
-    const urlParams = new URLSearchParams(hash.split("?")[1]);
-    this.type = urlParams.get("type") || null;
-    this.path = urlParams.get("path") || null;
-    this.fault = urlParams.get("fault") || null;
-    this.selectedItems = urlParams.get("selectedItems")
-      ? urlParams.get("selectedItems").split(",")
-      : [];
-
-    const mode = urlParams.get("mode");
-    const source = urlParams.get("source");
-    if (mode === "realtime" && source === "autoDiagnosis") {
-      this.isRealtimeFromDiagnosis = true;
-      this.initBroadcastChannelListener();
-    }
-
-    console.log("urlParams:", urlParams);
-    console.log("type:", this.type);
-    console.log("path:", this.path);
-    console.log("fault:", this.fault);
-    console.log("selectedItems:", this.selectedItems);
-    console.log("isRealtimeFromDiagnosis:", this.isRealtimeFromDiagnosis);
+    loadDerivedFields()
+    this.lastSeq = 0
+    this.currentFile = null
+    this.channel = openChannel(this.handleMessage)
+    this.pollLive()
+    this.tick()
+    this.clockTimer = setInterval(this.tick, 1000)
+    if (screenfull.enabled) screenfull.on('change', this.onFullscreenChange)
+    this.pollRecords()
   },
-  mounted() {
-    if (!this.isRealtimeFromDiagnosis) {
-      this.run();
-    }
-    this.featuresConsumerTimer = setInterval(() => {
-      if (this.featuresQueue && this.featuresQueue.length > 0) {
-        const feature = this.featuresQueue.shift();
-        this.featureMap = feature || {};
-        console.log("Dashboard-featureMap:", this.featureMap)
-        this.sidebarBottomFeatureMap = feature || {};
-      }
-    }, 1000);
-  },
-  destroyed() {
-    console.log("destroyed");
-    this.isRunning = false;
-    window.removeEventListener("message", this.iframeEventListener);
-    if (this.featuresConsumerTimer) {
-      clearInterval(this.featuresConsumerTimer);
-      this.featuresConsumerTimer = null;
-    }
-    if (this.broadcastChannel) {
-      this.broadcastChannel.close();
-      this.broadcastChannel = null;
-    }
+  beforeDestroy() {
+    this.destroyed = true
+    clearTimeout(this.pollTimer)
+    clearTimeout(this.recordsTimer)
+    clearInterval(this.clockTimer)
+    this.channel.close()
+    if (screenfull.enabled) screenfull.off('change', this.onFullscreenChange)
   },
   methods: {
-    initBroadcastChannelListener() {
-      this.broadcastChannel = getBroadcastChannel();
-      this.broadcastChannel.onmessage = (event) => {
-        const { type, payload } = event.data;
-        console.log("Dashboard received broadcast message:", type, payload);
-
-        switch (type) {
-          case "FEATURE_MAP":
-            this.featuresQueue.push(payload);
-            console.log("Dashboard received featureMap:", payload);
-            break;
-          case "DIAGNOSIS_STATUS":
-            this.diagnosisStatus = payload;
-            console.log("Dashboard received status:", payload);
-            break;
-          case "DIAGNOSIS_RESULT":
-            this.addDiagnosisResult(payload);
-            console.log("Dashboard received diagnosis result:", payload);
-            break;
-          case "DIAGNOSIS_DATA":
-            console.log("Dashboard received diagnosis data:", payload);
-            break;
-          default:
-            console.log("Unknown message type:", type);
-        }
-      };
-      console.log("Dashboard BroadcastChannel listener initialized");
-    },
-
-    addDiagnosisResult(result) {
-      this.diagnosisResults.unshift(result);
-      if (result.status === '异常') {
-        this.latestAbnormalResult = result;
+    // ------------------------------------------------------------ 数据接收
+    handleMessage({ type, payload }) {
+      if (type === MessageType.DIAGNOSIS_STATUS) {
+        this.diagnosisStatus = payload.message
+      } else if (type === MessageType.DIAGNOSIS_RESULT) {
+        this.addResult(payload)
       }
     },
 
-    viewDiagnosisResult(result) {
-      this.selectedDiagnosisResult = result;
-      this.showDiagnosisDetail = true;
-    },
-
-    downloadDiagnosisReport(taskId) {
-      if (taskId) {
-        downloadFile(taskId);
-        Message.success('报告下载已开始');
-      }
-    },
-
-    formatTimestamp(timestamp) {
-      if (!timestamp) return '-';
-      return timestamp;
-    },
-
-    clearAbnormalWarning() {
-      this.latestAbnormalResult = null;
-    },
-
-    formatIndicators(indicators) {
-      if (!indicators || !Array.isArray(indicators)) {
-        return [];
-      }
-      return indicators.map(item => {
-        const name = item.name || '';
-        const value = item.value || '';
-        const reference = item.reference || '';
-        
-        let type = 'default';
-        if (name.includes('流量')) {
-          type = 'flow';
-        } else if (name.includes('转速')) {
-          type = 'speed';
-        } else if (name.includes('压力')) {
-          type = 'pressure';
-        }
-        
-        const isAbnormal = value.includes('⚠️') || value.includes('超限') || value.includes('异常');
-        
-        const cleanValue = value.replace(' ⚠️超限', '').replace(' ✓正常', '').replace(' ⚠️异常', '');
-        
-        return {
-          name,
-          value: cleanValue,
-          reference,
-          type,
-          isAbnormal
-        };
-      });
-    },
-
-    getParticleStyle(index) {
-      const size = Math.random() * 4 + 2;
-      return {
-        width: `${size}px`,
-        height: `${size}px`,
-        left: `${Math.random() * 100}%`,
-        top: `${Math.random() * 100}%`,
-        animationDelay: `${Math.random() * 20}s`,
-        animationDuration: `${15 + Math.random() * 20}s`,
-      };
-    },
-
-    async sleep(ms) {
-      return new Promise((resolve) => setTimeout(resolve, ms));
-    },
-
-    async run() {
-      console.log("开始获取任务");
-      if (!this.type || !this.path || !this.selectedItems) {
-        console.log("参数不完整，停止任务");
-        return;
-      }
-      console.log("type:", this.type);
-      console.log("path:", this.path);
-      console.log("selectedItems:", this.selectedItems);
-
-      if (this.type === "0") {
-        console.log("进入默认任务");
-        while (this.isRunning) {
-          try {
-            console.log("开始获取新文件列表");
-            const response = await newFileListAPI(this.path);
-            this.fileNames = [...(response.new_files || []), ...(response.modified_files || [])];
-            console.log("新文件列表:", this.fileNames);
-            if (this.fileNames.length) {
-              for (const filename of this.fileNames) {
-                if (this.fault === "1") {
-                  const now = Date.now();
-                  const rand = Math.floor(Math.random() * 100000)
-                    .toString()
-                    .padStart(5, "0");
-                  const task_id = `${now}${rand}`;
-                  const data = {
-                    task_id,
-                    file_name: filename,
-                    path: this.path,
-                    type: this.type,
-                    fault: "1",
-                  };
-                  try {
-                    await createTask(data);
-                    await storeReport(data);
-                  } catch (e) {
-                    console.log("createTask error:", e);
-                    this.$message.error("诊断任务创建失败！");
-                  }
-                }
-
-                await this.updateData(filename, this.path);
-              }
-            }
-            await this.sleep(5000);
-          } catch (e) {
-            console.log("error:", e);
-            break;
-          }
-        }
-      } else {
-        console.log("进入自定义任务");
-        while (this.isRunning) {
-          for (const fileName of this.selectedItems) {
-            console.log("开始处理文件：", fileName);
-            await this.updateData(fileName, this.path);
-          }
-        }
-      }
-      console.log("run loop stopped.");
-    },
-
-    async updateData(filename, path) {
-      console.log("开始处理任务filename：", filename);
-
-      this.page = 0;
-      while (this.isRunning) {
-        console.log("队列长度：", this.featuresQueue.length);
-        if (
-          this.featuresQueue &&
-          this.featuresQueue.length >= this.queueThreshold
-        ) {
-          console.log(
-            `featuresQueue 已有 ${this.featuresQueue.length} 条，跳过本次请求`
-          );
-          await this.sleep(1000);
-          continue;
-        }
-
-        const data = {
-          page: this.page,
-          page_size: this.pageSize,
-          file_names: [filename],
-          sheet_names: ["1"],
-          path: path,
-        };
-        const hasNextData = await this.loadDataNew(data);
-
-        if (hasNextData) {
-          this.page++;
-        } else {
-          console.log("完成处理文件：", filename);
-          break;
-        }
-      }
-      console.log("结束处理任务");
-    },
-    async loadDataNew(requestReq) {
-      const useMockData = false;
-
-      if (useMockData) {
-        await this.sleep(200);
-
-        const totalPages = 5;
-        if (requestReq.page >= totalPages) {
-          return false;
-        }
-
-        console.log(`[Mock] 返回第 ${requestReq.page} 页模拟数据`);
-
-        const mockResponse = this.generateMockData(requestReq);
-
-        const firstKey = Object.keys(mockResponse)[0];
-        const res = mockResponse[firstKey];
-        const dataRoot =
-          this.dataType === "experiment" ? res["1"] : res["13-1"];
-
-        if (!dataRoot) return false;
-
-        const fields = [
-          "燃油泵实际转速",
-          "电传实际转速",
-          "电传扭矩",
-          "P1进口压力",
-          "P17滑油压力",
-          "P18回油工况模拟供油压力",
-          "P2低压出口压力",
-          "P3高压出口压力",
-          "供油压力1-1",
-          "供油压力1-2",
-          "回油压力1-2",
-          "回油压力1-1",
-          "回油压力2-2",
-          "回油压力2-1",
-          "回油流量1-2",
-          "回油流量2-2",
-          "回油流量2-1",
-          "回油流量1-1",
-          "供油流量1-1",
-          "供油流量1-2",
-          "T20加热出口温度",
-          "T3进口温度",
-          "T4高压出口温度",
-          "T5出口温度",
-          "供油温度1-1",
-          "供油温度1-2",
-          "回油温度2-2",
-          "回油温度2-1",
-          "回油温度1-2",
-          "回油温度1-1",
-          "振动传感器1-1",
-          "振动传感器2-1",
-          "振动传感器3-1",
-        ];
-
-        const allFieldData = {};
-        for (const field of fields) {
-          const arr = dataRoot[field];
-          if (arr && Array.isArray(arr)) {
-            allFieldData[field] = arr;
-          }
-        }
-
-        const maxLen = Math.max(
-          ...Object.values(allFieldData).map((arr) => arr.length || 0),
-          0
-        );
-
-        for (let i = 0; i < maxLen; i += this.groupSize) {
-          const featureMap = {};
-          for (const field of fields) {
-            const arr = allFieldData[field] || [];
-            const group = arr
-              .slice(i, i + this.groupSize)
-              .map((v) =>
-                v === "nan" || v === null || v === undefined ? NaN : Number(v)
-              )
-              .filter((v) => typeof v === "number" && !isNaN(v));
-            if (group.length > 0) {
-              const max = Math.max(...group);
-              const min = Math.min(...group);
-              const avg = group.reduce((a, b) => a + b, 0) / group.length;
-              featureMap[field] = { max, min, avg };
-            }
-          }
-          if (Object.keys(featureMap).length > 0) {
-            this.featuresQueue.push(featureMap);
-          }
-        }
-        return true;
-      }
-
+    /** 每秒取一次新帧；首次（或服务重启后）取最近 HISTORY_LENGTH 帧填满曲线。 */
+    async pollLive() {
       try {
-        console.log("数据请求体：", requestReq);
-        const response = await readExcelApi(requestReq);
-        const firstKey = Object.keys(response)[0];
-        const res = response[firstKey];
-        console.log("res:", res);
-        const dataRoot =
-          this.dataType === "experiment" ? res["data"]["1"] : res["data"]["13-1"];
-
-        if (!dataRoot) return false;
-
-        const fields = [
-          "燃油泵实际转速",
-          "电传实际转速",
-          "电传扭矩",
-          "P1进口压力",
-          "P17滑油压力",
-          "P18回油工况模拟供油压力",
-          "P2低压出口压力",
-          "P3高压出口压力",
-          "供油压力1-1",
-          "供油压力1-2",
-          "回油压力1-2",
-          "回油压力1-1",
-          "回油压力2-2",
-          "回油压力2-1",
-          "回油流量1-2",
-          "回油流量2-2",
-          "回油流量2-1",
-          "回油流量1-1",
-          "供油流量1-1",
-          "供油流量1-2",
-          "T20加热出口温度",
-          "T3进口温度",
-          "T4高压出口温度",
-          "T5出口温度",
-          "供油温度1-1",
-          "供油温度1-2",
-          "回油温度2-2",
-          "回油温度2-1",
-          "回油温度1-2",
-          "回油温度1-1",
-          "振动传感器1-1",
-          "振动传感器2-1",
-          "振动传感器3-1",
-        ];
-
-        const allFieldData = {};
-        for (const field of fields) {
-          const arr = dataRoot[field];
-          if (arr && Array.isArray(arr)) {
-            allFieldData[field] = arr;
-          }
+        const first = this.lastSeq === 0
+        const data = await getLiveFrames(this.lastSeq, first ? HISTORY_LENGTH : 300)
+        if (data.latest_seq < this.lastSeq) {
+          // 文件服务重启过，序号从头开始：下一轮重新拉取
+          this.lastSeq = 0
+          this.resetHistory()
+        } else {
+          data.frames.forEach(this.applyFrame)
+          this.lastSeq = data.latest_seq
         }
-        const maxLen = Math.max(
-          ...Object.values(allFieldData).map((arr) => arr.length || 0),
-          0
-        );
-        for (let i = 0; i < maxLen; i += this.groupSize) {
-          const featureMap = {};
-          for (const field of fields) {
-            const arr = allFieldData[field] || [];
-            const group = arr
-              .slice(i, i + this.groupSize)
-              .map((v) =>
-                v === "nan" || v === null || v === undefined ? NaN : Number(v)
-              )
-              .filter((v) => typeof v === "number" && !isNaN(v));
-            if (group.length > 0) {
-              const max = Math.max(...group);
-              const min = Math.min(...group);
-              const avg = group.reduce((a, b) => a + b, 0) / group.length;
-              featureMap[field] = { max, min, avg };
-            }
-          }
-          if (Object.keys(featureMap).length > 0) {
-            this.featuresQueue.push(featureMap);
-          } else {
-            return false;
-          }
+        this.live = { ...this.live, state: data.state, file: data.file, path: data.path, autoDiagnose: data.auto_diagnose }
+      } catch (e) {
+        this.live = { ...this.live, state: 'off' }
+      } finally {
+        if (!this.destroyed) this.pollTimer = setTimeout(this.pollLive, POLL_INTERVAL_MS)
+      }
+    },
+    applyFrame(frame) {
+      if (frame.file !== this.currentFile) {
+        // 换了一个数据文件（新的试验工况），曲线重新开始
+        this.currentFile = frame.file
+        this.resetHistory()
+      }
+      this.featureMap = frame.stats
+      this.live.frameTime = frame.time
+      for (const field of TRACKED_FIELDS) {
+        const stat = frame.stats[field]
+        if (!stat) continue
+        const series = this.history[field]
+        series.push(stat.avg)
+        if (series.length > HISTORY_LENGTH) series.shift()
+      }
+    },
+    resetHistory() {
+      for (const field of TRACKED_FIELDS) this.history[field] = []
+    },
+    openPathDialog() {
+      this.pathDialog = {
+        visible: true, value: this.live.path || '', saving: false, error: '', dirs: [], autoDiagnose: this.live.autoDiagnose,
+        density: '', densitySaved: ''
+      }
+      this.loadDirs()
+      getDiagnosisSettings().then(st => {
+        const v = st.fuel_density_20 == null ? '' : String(st.fuel_density_20)
+        this.pathDialog.density = v
+        this.pathDialog.densitySaved = v
+      }).catch(() => {})
+    },
+    async loadDirs() {
+      try {
+        const { preset, registered } = await getDataDirs()
+        this.pathDialog.dirs = [
+          ...registered.map(path => ({ path, preset: false })),
+          ...preset.map(path => ({ path, preset: true }))
+        ]
+      } catch (e) {
+        this.pathDialog.dirs = []
+      }
+    },
+    async removeDir(path) {
+      try {
+        await this.$confirm(`取消登记后将不能再访问该目录：${path}`, '取消登记', { type: 'warning' })
+      } catch (e) {
+        return // 用户取消
+      }
+      await removeDataDir(path)
+      this.loadDirs()
+    },
+    async savePath() {
+      if (!this.pathDialog.value || this.pathDialog.saving) return
+      this.pathDialog.saving = true
+      this.pathDialog.error = ''
+      try {
+        if (this.pathDialog.density !== this.pathDialog.densitySaved) {
+          await saveDiagnosisSettings({ fuel_density_20: this.pathDialog.density === '' ? null : Number(this.pathDialog.density) })
+          this.pathDialog.densitySaved = this.pathDialog.density
         }
-        return true;
-      } catch (error) {
-        console.error("接口调用失败，使用模拟数据:", error);
-        return this.loadDataNew({ ...requestReq, useMockData: true });
+        const status = this.pathDialog.value === this.live.path
+          ? await setAutoDiagnose(this.pathDialog.autoDiagnose) // 目录没变：只改自动诊断开关，不重置监控
+          : await setWatchPath(this.pathDialog.value, true, this.pathDialog.autoDiagnose)
+        this.live = { ...this.live, state: status.state, path: status.path, file: status.file,
+          autoDiagnose: status.auto_diagnose }
+        this.pathDialog.visible = false
+        this.$message.success(`开始监控：${status.path}`)
+      } catch (e) {
+        this.pathDialog.error = errorMessage(e)
+      } finally {
+        this.pathDialog.saving = false
+      }
+    },
+    addResult(summary) {
+      const record = { taskId: summary.taskId, fileName: summary.fileName, result: summary.result,
+        statusText: summary.statusText, timestamp: summary.timestamp }
+      this.records = [record, ...this.records.filter(r => r.taskId !== summary.taskId)].slice(0, MAX_RECORDS)
+      this.latestResult = summary
+      this.alarmComponents = summary.alarmComponents || []
+    },
+
+    /** 定时从后端取诊断记录（包括后端自动诊断的结果），有新的完成记录时加载其报告。 */
+    async pollRecords() {
+      try {
+        const { items } = await listTasks({ page: 1, page_size: MAX_RECORDS, status: 'Completed' })
+        this.records = items.map(t => ({
+          taskId: t.task_id,
+          fileName: t.file_name,
+          result: t.result,
+          statusText: resultLabel(t.result),
+          timestamp: formatTime(t.updated_at || t.created_at)
+        }))
+        const newest = items[0]
+        if (newest && (!this.latestResult || this.latestResult.taskId !== newest.task_id)) {
+          const report = await getReport(newest.task_id)
+          this.addResult(summarizeReport(newest.task_id, newest.file_name, report))
+        }
+      } catch (e) {
+        // 网络错误等：下一轮再试
+      } finally {
+        if (!this.destroyed) this.recordsTimer = setTimeout(this.pollRecords, RECORDS_POLL_MS)
       }
     },
 
-    switchDataType(type) {
-      this.dataType = type;
-      this.featuresQueue = [];
-      this.featureMap = {};
-      this.sidebarBottomFeatureMap = {};
-      this.page = 0;
-      this.run();
+    // ------------------------------------------------------------ 展示
+    latest(field) {
+      const stat = this.featureMap[field]
+      return stat ? formatValue(stat.avg) : '--'
     },
-
-    generateMockData(requestReq) {
-      const filename = requestReq.file_name[0] || "mock_file.xlsx";
-      const page = requestReq.page || 0;
-      const dataSize = requestReq.page_size || 500;
-
-      const generateFieldData = (baseValue, variance = 0.1, trend = 0) => {
-        const data = [];
-        for (let i = 0; i < dataSize; i++) {
-          const randomFactor = 1 + (Math.random() - 0.5) * variance;
-          const trendFactor = 1 + (trend * i) / dataSize;
-          const value = baseValue * randomFactor * trendFactor;
-          data.push(Number(value.toFixed(3)));
-        }
-        return data;
-      };
-
-      const timeOffset = page * dataSize;
-
-      const mockData = {
-        [filename]: {
-          1: {
-            燃油泵实际转速: generateFieldData(
-              1500 + Math.sin(timeOffset / 100) * 200,
-              0.05
-            ),
-            电传实际转速: generateFieldData(
-              1480 + Math.sin(timeOffset / 100) * 180,
-              0.04
-            ),
-            电传扭矩: generateFieldData(
-              120 + Math.cos(timeOffset / 150) * 30,
-              0.08
-            ),
-            P1进口压力: generateFieldData(
-              2.5 + Math.sin(timeOffset / 200) * 0.5,
-              0.06
-            ),
-            P17滑油压力: generateFieldData(
-              1.8 + Math.cos(timeOffset / 180) * 0.3,
-              0.05
-            ),
-            P18回油工况模拟供油压力: generateFieldData(
-              3.2 + Math.sin(timeOffset / 160) * 0.6,
-              0.07
-            ),
-            P2低压出口压力: generateFieldData(
-              1.2 + Math.cos(timeOffset / 220) * 0.2,
-              0.04
-            ),
-            P3高压出口压力: generateFieldData(
-              25.5 + Math.sin(timeOffset / 140) * 5,
-              0.1
-            ),
-            "供油压力1-1": generateFieldData(
-              28.0 + Math.sin(timeOffset / 130) * 4,
-              0.08
-            ),
-            "供油压力1-2": generateFieldData(
-              27.8 + Math.cos(timeOffset / 135) * 4.2,
-              0.08
-            ),
-            "回油压力1-1": generateFieldData(
-              0.8 + Math.sin(timeOffset / 250) * 0.1,
-              0.05
-            ),
-            "回油压力1-2": generateFieldData(
-              0.9 + Math.cos(timeOffset / 240) * 0.12,
-              0.05
-            ),
-            "回油压力2-1": generateFieldData(
-              0.85 + Math.sin(timeOffset / 260) * 0.11,
-              0.05
-            ),
-            "回油压力2-2": generateFieldData(
-              0.88 + Math.cos(timeOffset / 255) * 0.1,
-              0.05
-            ),
-            "回油流量1-1": generateFieldData(
-              150 + Math.sin(timeOffset / 120) * 20,
-              0.12
-            ),
-            "回油流量1-2": generateFieldData(
-              148 + Math.cos(timeOffset / 125) * 22,
-              0.12
-            ),
-            "回油流量2-1": generateFieldData(
-              152 + Math.sin(timeOffset / 115) * 18,
-              0.11
-            ),
-            "回油流量2-2": generateFieldData(
-              149 + Math.cos(timeOffset / 118) * 21,
-              0.12
-            ),
-            "供油流量1-1": generateFieldData(
-              300 + Math.sin(timeOffset / 110) * 40,
-              0.15
-            ),
-            "供油流量1-2": generateFieldData(
-              298 + Math.cos(timeOffset / 112) * 42,
-              0.15
-            ),
-            T20加热出口温度: generateFieldData(
-              65 + Math.sin(timeOffset / 300) * 5,
-              0.03
-            ),
-            T3进口温度: generateFieldData(
-              45 + Math.sin(timeOffset / 280) * 3,
-              0.04
-            ),
-            T4高压出口温度: generateFieldData(
-              55 + Math.cos(timeOffset / 290) * 4,
-              0.03
-            ),
-            T5出口温度: generateFieldData(
-              50 + Math.sin(timeOffset / 270) * 3.5,
-              0.04
-            ),
-            "供油温度1-1": generateFieldData(
-              48 + Math.sin(timeOffset / 285) * 3.2,
-              0.04
-            ),
-            "供油温度1-2": generateFieldData(
-              47.5 + Math.cos(timeOffset / 275) * 3.3,
-              0.04
-            ),
-            "回油温度1-1": generateFieldData(
-              52 + Math.sin(timeOffset / 265) * 2.8,
-              0.03
-            ),
-            "回油温度1-2": generateFieldData(
-              51.8 + Math.cos(timeOffset / 268) * 2.9,
-              0.03
-            ),
-            "回油温度2-1": generateFieldData(
-              51.5 + Math.sin(timeOffset / 272) * 2.7,
-              0.03
-            ),
-            "回油温度2-2": generateFieldData(
-              52.2 + Math.cos(timeOffset / 278) * 2.8,
-              0.03
-            ),
-            "振动传感器1-1": generateFieldData(
-              0.5 + Math.sin(timeOffset / 50) * 0.3,
-              0.25
-            ),
-            "振动传感器2-1": generateFieldData(
-              0.6 + Math.cos(timeOffset / 55) * 0.35,
-              0.25
-            ),
-            "振动传感器3-1": generateFieldData(
-              0.55 + Math.sin(timeOffset / 52) * 0.32,
-              0.25
-            ),
-          },
-          "13-1": {
-            燃油泵实际转速: generateFieldData(
-              1520 + Math.sin(timeOffset / 105) * 190,
-              0.04
-            ),
-            电传实际转速: generateFieldData(
-              1500 + Math.sin(timeOffset / 105) * 170,
-              0.035
-            ),
-            电传扭矩: generateFieldData(
-              115 + Math.cos(timeOffset / 155) * 28,
-              0.07
-            ),
-            P1进口压力: generateFieldData(
-              2.6 + Math.sin(timeOffset / 205) * 0.45,
-              0.055
-            ),
-            P17滑油压力: generateFieldData(
-              1.85 + Math.cos(timeOffset / 185) * 0.28,
-              0.045
-            ),
-            P18回油工况模拟供油压力: generateFieldData(
-              3.3 + Math.sin(timeOffset / 165) * 0.55,
-              0.065
-            ),
-            P2低压出口压力: generateFieldData(
-              1.25 + Math.cos(timeOffset / 225) * 0.18,
-              0.035
-            ),
-            P3高压出口压力: generateFieldData(
-              26.0 + Math.sin(timeOffset / 145) * 4.8,
-              0.09
-            ),
-            "供油压力1-1": generateFieldData(
-              28.5 + Math.sin(timeOffset / 135) * 3.8,
-              0.075
-            ),
-            "供油压力1-2": generateFieldData(
-              28.3 + Math.cos(timeOffset / 140) * 4.0,
-              0.075
-            ),
-            "回油压力1-1": generateFieldData(
-              0.82 + Math.sin(timeOffset / 255) * 0.09,
-              0.045
-            ),
-            "回油压力1-2": generateFieldData(
-              0.92 + Math.cos(timeOffset / 245) * 0.11,
-              0.045
-            ),
-            "回油压力2-1": generateFieldData(
-              0.87 + Math.sin(timeOffset / 265) * 0.105,
-              0.045
-            ),
-            "回油压力2-2": generateFieldData(
-              0.9 + Math.cos(timeOffset / 260) * 0.095,
-              0.045
-            ),
-            "回油流量1-1": generateFieldData(
-              155 + Math.sin(timeOffset / 125) * 18,
-              0.11
-            ),
-            "回油流量1-2": generateFieldData(
-              153 + Math.cos(timeOffset / 130) * 20,
-              0.11
-            ),
-            "回油流量2-1": generateFieldData(
-              157 + Math.sin(timeOffset / 120) * 16,
-              0.1
-            ),
-            "回油流量2-2": generateFieldData(
-              154 + Math.cos(timeOffset / 123) * 19,
-              0.11
-            ),
-            "供油流量1-1": generateFieldData(
-              305 + Math.sin(timeOffset / 115) * 38,
-              0.14
-            ),
-            "供油流量1-2": generateFieldData(
-              303 + Math.cos(timeOffset / 117) * 40,
-              0.14
-            ),
-            T20加热出口温度: generateFieldData(
-              67 + Math.sin(timeOffset / 305) * 4.8,
-              0.025
-            ),
-            T3进口温度: generateFieldData(
-              47 + Math.sin(timeOffset / 285) * 2.8,
-              0.035
-            ),
-            T4高压出口温度: generateFieldData(
-              57 + Math.cos(timeOffset / 295) * 3.8,
-              0.025
-            ),
-            T5出口温度: generateFieldData(
-              52 + Math.sin(timeOffset / 275) * 3.3,
-              0.035
-            ),
-            "供油温度1-1": generateFieldData(
-              50 + Math.sin(timeOffset / 290) * 3.0,
-              0.035
-            ),
-            "供油温度1-2": generateFieldData(
-              49.5 + Math.cos(timeOffset / 280) * 3.1,
-              0.035
-            ),
-            "回油温度1-1": generateFieldData(
-              54 + Math.sin(timeOffset / 270) * 2.6,
-              0.025
-            ),
-            "回油温度1-2": generateFieldData(
-              53.8 + Math.cos(timeOffset / 273) * 2.7,
-              0.025
-            ),
-            "回油温度2-1": generateFieldData(
-              53.5 + Math.sin(timeOffset / 277) * 2.5,
-              0.025
-            ),
-            "回油温度2-2": generateFieldData(
-              54.2 + Math.cos(timeOffset / 283) * 2.6,
-              0.025
-            ),
-            "振动传感器1-1": generateFieldData(
-              0.45 + Math.sin(timeOffset / 52) * 0.28,
-              0.22
-            ),
-            "振动传感器2-1": generateFieldData(
-              0.55 + Math.cos(timeOffset / 57) * 0.32,
-              0.22
-            ),
-            "振动传感器3-1": generateFieldData(
-              0.5 + Math.sin(timeOffset / 54) * 0.3,
-              0.22
-            ),
-          },
-        },
-      };
-
-      console.log(`[Mock] 生成第 ${page} 页数据，包含 ${dataSize} 条记录`);
-      return mockData;
+    unit: fieldUnit,
+    sparkline(field) {
+      const data = this.history[field]
+      if (data.length < 2) return ''
+      let min = Infinity
+      let max = -Infinity
+      for (const v of data) {
+        if (v < min) min = v
+        if (v > max) max = v
+      }
+      const span = max - min || 1
+      const step = 100 / (HISTORY_LENGTH - 1)
+      const offset = HISTORY_LENGTH - data.length
+      return data.map((v, i) => `${((offset + i) * step).toFixed(1)},${(22 - ((v - min) / span) * 20).toFixed(1)}`).join(' ')
     },
-  },
-};
+    tick() {
+      const d = new Date()
+      const pad = n => String(n).padStart(2, '0')
+      this.clock = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+    },
+    toggleFullscreen() {
+      if (screenfull.enabled) screenfull.toggle(this.$refs.root)
+    },
+    onFullscreenChange() {
+      this.isFullscreen = screenfull.isFullscreen
+    },
+    locateAlarm() {
+      if (this.alarmComponents.length) this.$refs.bench.focus(this.alarmComponents[0])
+    },
+    async openDetail(record) {
+      if (this.latestResult && record.taskId === this.latestResult.taskId) {
+        this.detail = this.latestResult
+        return
+      }
+      this.detail = { ...record, loading: true }
+      try {
+        const report = await getReport(record.taskId)
+        this.detail = { ...summarizeReport(record.taskId, record.fileName, report), timestamp: record.timestamp }
+      } catch (e) {
+        this.detail = null
+      }
+    },
+    download(taskId) {
+      if (taskId) downloadReport(taskId).catch(() => {})
+    }
+  }
+}
 </script>
 
-<style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&display=swap');
+<style lang="scss" scoped>
+$bg: #070e1a;
+$panel: rgba(12, 24, 42, 0.86);
+$border: rgba(56, 189, 248, 0.16);
+$text: #c7d2e0;
+$muted: #7891ad;
+$bright: #eef6ff;
+$accent: #38bdf8;
+$blue: #2f6bff;
+$ok: #22c55e;
+$bad: #ef4444;
+$warn: #f59e0b;
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-.dashboard-container {
-  width: 100%;
+.dashboard {
   height: 100%;
-  background: linear-gradient(135deg, #0a0e17 0%, #1a1f2e 50%, #0d1321 100%);
-  position: relative;
-  overflow: hidden;
-  font-family: 'Orbitron', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-}
-
-.bg-grid {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-image: 
-    linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
-  background-size: 50px 50px;
-  pointer-events: none;
-}
-
-.bg-glow {
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: radial-gradient(circle at 30% 30%, rgba(0, 150, 255, 0.08) 0%, transparent 50%),
-              radial-gradient(circle at 70% 70%, rgba(0, 255, 200, 0.05) 0%, transparent 50%);
-  pointer-events: none;
-  animation: glowPulse 15s ease-in-out infinite;
-}
-
-@keyframes glowPulse {
-  0%, 100% { opacity: 0.5; transform: scale(1); }
-  50% { opacity: 0.8; transform: scale(1.1); }
-}
-
-.bg-particles {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  pointer-events: none;
-}
-
-.particle {
-  position: absolute;
-  background: rgba(0, 212, 255, 0.6);
-  border-radius: 50%;
-  animation: particleFloat 20s linear infinite;
-  box-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
-}
-
-@keyframes particleFloat {
-  0% { transform: translateY(100vh) rotate(0deg); opacity: 0; }
-  10% { opacity: 1; }
-  90% { opacity: 1; }
-  100% { transform: translateY(-100vh) rotate(720deg); opacity: 0; }
-}
-
-.dashboard-content {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  padding: 20px 30px;
-}
-
-.header-section {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-bottom: 20px;
-}
-
-.title-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  margin-bottom: 15px;
-}
-
-.title-decoration {
-  display: flex;
-  align-items: center;
+  min-height: 600px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) 320px;
+  grid-template-rows: 46px minmax(0, 1fr) 236px;
+  grid-template-areas:
+    'top top top'
+    'stage stage diagnosis'
+    'metrics trend diagnosis';
   gap: 10px;
-}
-
-.title-decoration.left .deco-line {
-  width: 80px;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, #00d4ff);
-}
-
-.title-decoration.right .deco-line {
-  width: 80px;
-  height: 2px;
-  background: linear-gradient(90deg, #00d4ff, transparent);
-}
-
-.deco-dot {
-  width: 8px;
-  height: 8px;
-  background: #00d4ff;
-  border-radius: 50%;
-  box-shadow: 0 0 10px #00d4ff, 0 0 20px #00d4ff;
-  animation: dotPulse 2s ease-in-out infinite;
-}
-
-@keyframes dotPulse {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.3); opacity: 0.7; }
-}
-
-.main-title {
-  position: relative;
-  font-size: 32px;
-  font-weight: 700;
-  letter-spacing: 4px;
-  color: #fff;
-  text-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
-}
-
-.title-text {
-  background: linear-gradient(90deg, #00d4ff, #00ff88, #00d4ff);
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  animation: titleShine 3s linear infinite;
-}
-
-@keyframes titleShine {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-
-.title-glow {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 100%;
-  height: 100%;
-  background: radial-gradient(ellipse, rgba(0, 212, 255, 0.2) 0%, transparent 70%);
-  filter: blur(20px);
-  pointer-events: none;
-}
-
-.status-bar {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  padding: 8px 25px;
-  background: rgba(0, 212, 255, 0.05);
-  border: 1px solid rgba(0, 212, 255, 0.2);
-  border-radius: 20px;
-  backdrop-filter: blur(10px);
-}
-
-.status-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  padding: 10px;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(37, 99, 235, 0.12), transparent 60%),
+    $bg;
+  color: $text;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.status-dot {
-  width: 8px;
-  height: 8px;
-  background: #00ff88;
-  border-radius: 50%;
-  box-shadow: 0 0 10px #00ff88;
-}
-
-.status-dot.pulse {
-  animation: statusPulse 1.5s ease-in-out infinite;
-}
-
-@keyframes statusPulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(1.2); }
-}
-
-.status-divider {
-  width: 1px;
-  height: 15px;
-  background: rgba(0, 212, 255, 0.3);
-}
-
-.status-label {
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.status-value {
-  color: #00d4ff;
-  font-weight: 500;
-}
-
-.main-content {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  min-height: 0;
-}
-
-.model-section {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.section-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 15px;
-}
-
-.section-icon {
-  width: 28px;
-  height: 28px;
-  color: #00d4ff;
-}
-
-.section-icon svg {
-  width: 100%;
-  height: 100%;
-}
-
-.section-title {
-  font-size: 16px;
-  font-weight: 500;
-  color: #fff;
-  letter-spacing: 2px;
-}
-
-.section-line {
-  flex: 1;
-  height: 1px;
-  background: linear-gradient(90deg, rgba(0, 212, 255, 0.5), transparent);
-}
-
-.model-3d-container {
-  flex: 1;
-  position: relative;
-  background: linear-gradient(135deg, rgba(0, 30, 60, 0.6) 0%, rgba(0, 20, 40, 0.8) 100%);
-  border: 1px solid rgba(0, 212, 255, 0.3);
-  border-radius: 12px;
   overflow: hidden;
-  min-height: 300px;
 }
 
-.corner-decoration {
-  position: absolute;
-  width: 30px;
-  height: 30px;
-  pointer-events: none;
-}
-
-.corner-decoration.tl {
-  top: 0;
-  left: 0;
-  border-top: 2px solid #00d4ff;
-  border-left: 2px solid #00d4ff;
-  border-top-left-radius: 12px;
-}
-
-.corner-decoration.tr {
-  top: 0;
-  right: 0;
-  border-top: 2px solid #00d4ff;
-  border-right: 2px solid #00d4ff;
-  border-top-right-radius: 12px;
-}
-
-.corner-decoration.bl {
-  bottom: 0;
-  left: 0;
-  border-bottom: 2px solid #00d4ff;
-  border-left: 2px solid #00d4ff;
-  border-bottom-left-radius: 12px;
-}
-
-.corner-decoration.br {
-  bottom: 0;
-  right: 0;
-  border-bottom: 2px solid #00d4ff;
-  border-right: 2px solid #00d4ff;
-  border-bottom-right-radius: 12px;
-}
-
-.model-inner {
-  width: 100%;
-  height: 100%;
+/* ---------- 状态栏 ---------- */
+.topbar {
+  grid-area: top;
   display: flex;
   align-items: center;
-  justify-content: center;
-}
-
-.scan-line {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.8), transparent);
-  animation: scanLine 4s linear infinite;
-  pointer-events: none;
-}
-
-@keyframes scanLine {
-  0% { top: 0; opacity: 0; }
-  10% { opacity: 1; }
-  90% { opacity: 1; }
-  100% { top: 100%; opacity: 0; }
-}
-
-.bottom-section {
-  display: flex;
-  gap: 20px;
-  align-items: stretch;
-}
-
-.control-panel {
-  background: rgba(0, 30, 60, 0.5);
-  border: 1px solid rgba(0, 212, 255, 0.2);
-  border-radius: 12px;
-  padding: 15px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-width: 160px;
-}
-
-.panel-header {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.6);
-  letter-spacing: 1px;
-  text-transform: uppercase;
-}
-
-.mode-buttons {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.mode-btn {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 15px;
-  background: rgba(0, 212, 255, 0.05);
-  border: 1px solid rgba(0, 212, 255, 0.2);
+  gap: 14px;
+  padding: 0 12px;
+  background: $panel;
+  border: 1px solid $border;
   border-radius: 8px;
-  color: rgba(255, 255, 255, 0.7);
+}
+.status-msg {
+  min-width: 0;
+  color: $muted;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.link-btn {
+  flex-shrink: 0;
+  background: transparent;
   cursor: pointer;
-  transition: all 0.3s ease;
-  font-family: inherit;
-  font-size: 13px;
+  color: $accent;
+  font-size: 12px;
+  padding: 3px 10px;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  border-radius: 4px;
+  &:hover { background: rgba(56, 189, 248, 0.12); }
 }
-
-.mode-btn:hover {
-  background: rgba(0, 212, 255, 0.1);
-  border-color: rgba(0, 212, 255, 0.4);
-  color: #fff;
-}
-
-.mode-btn.active {
-  background: linear-gradient(135deg, rgba(0, 212, 255, 0.2), rgba(0, 255, 136, 0.1));
-  border-color: #00d4ff;
-  color: #00d4ff;
-  box-shadow: 0 0 15px rgba(0, 212, 255, 0.3), inset 0 0 15px rgba(0, 212, 255, 0.1);
-}
-
-.btn-icon {
-  width: 18px;
-  height: 18px;
+.stats {
+  margin-left: auto;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  gap: 18px;
+  flex-shrink: 0;
 }
-
-.btn-icon svg {
-  width: 100%;
-  height: 100%;
-}
-
-.gradient-panel {
-  background: rgba(0, 30, 60, 0.5);
-  border: 1px solid rgba(0, 212, 255, 0.2);
-  border-radius: 12px;
-  padding: 15px 20px;
-  display: flex;
-  align-items: center;
-}
-
-.gradient-bar-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-}
-
-.gradient-label {
+.stat {
   display: flex;
   align-items: baseline;
-  gap: 4px;
+  gap: 6px;
+  span { color: $muted; font-size: 12px; }
+  b {
+    color: $bright;
+    font-size: 16px;
+    font-variant-numeric: tabular-nums;
+  }
+  &.bad b { color: $bad; }
 }
-
-.label-value {
-  font-size: 16px;
-  font-weight: 700;
-  color: #fff;
-}
-
-.label-unit {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.gradient-track {
-  position: relative;
-  width: 16px;
-  height: 120px;
-  background: rgba(0, 0, 0, 0.3);
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid rgba(0, 212, 255, 0.2);
-}
-
-.gradient-fill {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  border-radius: 7px;
-}
-
-.gradient-markers {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  padding: 5px 0;
-  pointer-events: none;
-}
-
-.marker {
-  width: 100%;
-  height: 1px;
-  background: rgba(255, 255, 255, 0.3);
-}
-
-.pump2d-section {
-  flex: 1;
-  background: rgba(0, 30, 60, 0.5);
-  border: 1px solid rgba(0, 212, 255, 0.2);
-  border-radius: 12px;
-  padding: 15px;
-}
-
-.pump2d-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 15px;
-  height: 100%;
-}
-
-.pump2d-card {
-  background: rgba(0, 20, 40, 0.6);
-  border: 1px solid rgba(0, 212, 255, 0.15);
-  border-radius: 8px;
-  padding: 10px;
-  display: flex;
-  flex-direction: column;
-  transition: all 0.3s ease;
-}
-
-.pump2d-card:hover {
-  border-color: rgba(0, 212, 255, 0.4);
-  box-shadow: 0 0 20px rgba(0, 212, 255, 0.1);
-}
-
-.card-header {
-  display: flex;
+.pill {
+  flex-shrink: 0;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid rgba(0, 212, 255, 0.1);
-}
-
-.card-title {
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: 10px;
   font-size: 12px;
-  color: #00d4ff;
-  font-weight: 500;
-  letter-spacing: 1px;
+  color: $muted;
+  border: 1px solid rgba(120, 150, 190, 0.25);
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: $muted;
+  }
+  &.live {
+    color: $ok;
+    border-color: rgba(34, 197, 94, 0.35);
+    .dot {
+      background: $ok;
+      box-shadow: 0 0 6px $ok;
+      animation: blink 1.6s ease-in-out infinite;
+    }
+  }
+  &.waiting {
+    color: #7dd3fc;
+    border-color: rgba(56, 189, 248, 0.35);
+    .dot { background: #38bdf8; }
+  }
+}
+@keyframes blink {
+  50% { opacity: 0.3; }
+}
+.clock {
+  flex-shrink: 0;
+  padding-left: 14px;
+  border-left: 1px solid $border;
+  color: $text;
+  font-variant-numeric: tabular-nums;
+}
+.icon-btn {
+  flex-shrink: 0;
+  border: 1px solid $border;
+  background: transparent;
+  color: $text;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  &:hover { color: $bright; border-color: $accent; }
 }
 
-.card-status {
+/* ---------- 面板 ---------- */
+.panel {
+  position: relative;
+  background: $panel;
+  border: 1px solid $border;
+  border-radius: 8px;
+  padding: 12px 14px;
+  min-height: 0;
+  // 顶部高光线
+  &::before {
+    content: '';
+    position: absolute;
+    top: -1px;
+    left: 14px;
+    width: 64px;
+    height: 2px;
+    background: linear-gradient(90deg, $accent, transparent);
+  }
+}
+.panel-title {
+  position: relative;
+  font-size: 14px;
+  font-weight: 600;
+  color: $bright;
+  margin-bottom: 10px;
+  padding-left: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  letter-spacing: 0.5px;
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    width: 3px;
+    height: 12px;
+    margin-top: -6px;
+    border-radius: 2px;
+    background: $accent;
+    box-shadow: 0 0 6px $accent;
+  }
+  &.sub { margin-top: 18px; }
+}
+.counter {
+  font-weight: normal;
+  color: $muted;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+.empty {
+  color: $muted;
+  text-align: center;
+  padding: 16px 0;
+  &.small { padding: 8px 0; font-size: 12px; }
+}
+.empty-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 18px 0;
+  border: 1px dashed $border;
+  border-radius: 8px;
+  color: $text;
+  i { font-size: 26px; color: rgba(56, 189, 248, 0.5); margin-bottom: 4px; }
+  small { color: $muted; font-size: 12px; }
+}
+
+/* ---------- 关键测点 ---------- */
+.metrics {
+  grid-area: metrics;
+  display: flex;
+  flex-direction: column;
+}
+.group-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-weight: normal;
+  letter-spacing: 0;
+}
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: $muted;
+  &::before {
+    content: '';
+    width: 8px;
+    height: 3px;
+    border-radius: 2px;
+  }
+  &::before { background: var(--group-color); }
+}
+.metric-grid {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
+  grid-auto-rows: 50px;
+  gap: 6px;
+  margin-right: -8px;
+  padding-right: 8px;
+}
+.metric {
+  position: relative;
+  overflow: hidden;
+  padding: 6px 9px;
+  border-radius: 6px;
+  background: rgba(56, 189, 248, 0.04);
+  border: 1px solid rgba(56, 189, 248, 0.1);
+  border-top: 2px solid var(--group-color);
+  transition: border-color 0.15s, background 0.15s;
+  &:hover { background: rgba(56, 189, 248, 0.08); }
+  &.empty .metric-value { color: #4d6380; }
+}
+.metric-name {
+  position: relative;
+  color: $muted;
+  font-size: 12px;
+  line-height: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.metric-value {
+  position: relative;
+  color: $bright;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  small {
+    margin-left: 3px;
+    font-size: 11px;
+    font-weight: normal;
+    color: $muted;
+  }
+}
+// 迷你曲线作为卡片背景
+.spark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 60%;
+  opacity: 0.55;
+  polyline {
+    fill: none;
+    stroke: var(--group-color);
+    stroke-width: 1.2;
+    vector-effect: non-scaling-stroke;
+  }
+}
+
+/* ---------- 三维模型 ---------- */
+.stage {
+  grid-area: stage;
+  position: relative;
+  min-height: 0;
+  border: 1px solid $border;
+  border-radius: 8px;
+  box-shadow: inset 0 0 40px rgba(56, 189, 248, 0.06);
+}
+
+/* ---------- 设备部件 ---------- */
+.parts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.part {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 9px;
+  border-radius: 4px;
+  border: 1px solid rgba(56, 189, 248, 0.15);
+  background: rgba(56, 189, 248, 0.04);
+  color: $text;
+  font-size: 12px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  &:hover { border-color: rgba(56, 189, 248, 0.45); color: $bright; }
+  &.active {
+    border-color: $accent;
+    color: $bright;
+    background: rgba(56, 189, 248, 0.16);
+  }
+  &.bad {
+    border-color: rgba(239, 68, 68, 0.6);
+    color: #ffb4b4;
+    .part-dot { background: $bad; box-shadow: 0 0 6px $bad; }
+  }
+}
+.part-dot {
+  flex-shrink: 0;
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #00ff88;
-  box-shadow: 0 0 8px #00ff88;
-  animation: statusPulse 2s ease-in-out infinite;
+  background: rgba(56, 189, 248, 0.6);
 }
 
-.status-value.highlight {
-  color: #00ff88;
-  text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
-}
-
-.alert-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 20px;
-  background: linear-gradient(90deg, rgba(255, 0, 85, 0.15), rgba(255, 107, 0, 0.1));
-  border: 1px solid rgba(255, 0, 85, 0.4);
-  border-radius: 10px;
-  margin-bottom: 15px;
-  animation: alertPulse 2s ease-in-out infinite;
-}
-
-@keyframes alertPulse {
-  0%, 100% { box-shadow: 0 0 10px rgba(255, 0, 85, 0.2); }
-  50% { box-shadow: 0 0 20px rgba(255, 0, 85, 0.4); }
-}
-
-.alert-content {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-}
-
-.alert-icon {
-  width: 24px;
-  height: 24px;
-  color: #ff0055;
-  animation: alertIconPulse 1s ease-in-out infinite;
-}
-
-@keyframes alertIconPulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.1); }
-}
-
-.alert-icon svg {
-  width: 100%;
-  height: 100%;
-}
-
-.alert-text {
+/* ---------- 右：诊断 ---------- */
+.diagnosis {
+  grid-area: diagnosis;
   display: flex;
   flex-direction: column;
-  gap: 4px;
 }
-
-.alert-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #ff0055;
-  letter-spacing: 1px;
+.verdict {
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid $border;
+  background: rgba(255, 255, 255, 0.025);
+  &.normal { border-left: 3px solid $ok; background: rgba(34, 197, 94, 0.05); }
+  &.warning { border-left: 3px solid $warn; background: rgba(245, 158, 11, 0.07); }
+  &.abnormal { border-left: 3px solid $bad; background: rgba(239, 68, 68, 0.08); }
+  &.inconclusive { border-left: 3px solid $muted; }
 }
-
-.alert-info {
+.verdict-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.verdict-badge {
+  font-size: 18px;
+  font-weight: 700;
+  color: $bright;
+  .normal & { color: $ok; }
+  .warning & { color: $warn; }
+  .abnormal & { color: $bad; }
+  .inconclusive & { color: $muted; }
+}
+.verdict-time,
+.verdict-file {
+  color: $muted;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.7);
 }
-
-.alert-actions {
+.verdict-file {
+  margin-top: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.verdict-fault {
+  margin-top: 4px;
+  color: $bright;
+  line-height: 1.5;
+}
+.verdict-cond {
+  margin-top: 2px;
+  color: $muted;
+  font-size: 12px;
+}
+.verdict-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 12px;
+}
+.text-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  color: $accent;
+  cursor: pointer;
+  font-size: 12px;
+  &.danger { color: #ff7a7a; }
+  &:hover { text-decoration: underline; }
+}
+.deviation {
+  margin-bottom: 10px;
+}
+.deviation-top {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  margin-bottom: 4px;
+  font-variant-numeric: tabular-nums;
+  .warning { color: $warn; }
+  .abnormal { color: $bad; }
+}
+.deviation-track {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(120, 150, 190, 0.15);
+}
+.deviation-zero {
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  width: 1px;
+  height: 10px;
+  background: rgba(199, 210, 224, 0.5);
+}
+.deviation-bar {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: 3px;
+  background: $ok;
+  &.warning { background: $warn; }
+  &.abnormal { background: $bad; }
+}
+.deviation-limit {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  margin-left: -1px;
+  height: 12px;
+  background: rgba(239, 68, 68, 0.7);
+}
+.records {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.record {
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.alert-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 15px;
-  border-radius: 6px;
-  font-size: 12px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  font-family: inherit;
-}
-
-.alert-btn.view {
-  background: rgba(255, 0, 85, 0.2);
-  border: 1px solid rgba(255, 0, 85, 0.5);
-  color: #ff0055;
-}
-
-.alert-btn.view:hover {
-  background: rgba(255, 0, 85, 0.3);
-  border-color: #ff0055;
-}
-
-.alert-btn.close {
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.6);
   padding: 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  &:hover { background: rgba(56, 189, 248, 0.06); }
 }
-
-.alert-btn.close:hover {
-  border-color: rgba(255, 255, 255, 0.4);
-  color: #fff;
+.record-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: $muted;
+  .normal & { background: $ok; }
+  .warning & { background: $warn; }
+  .abnormal & { background: $bad; }
+  .inconclusive & { background: $muted; }
 }
-
-.alert-btn svg {
-  width: 16px;
-  height: 16px;
-}
-
-.main-content.with-sidebar {
-  flex-direction: row;
-  gap: 20px;
-}
-
-.content-main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
+.record-body {
   min-width: 0;
 }
-
-.diagnosis-sidebar {
-  width: 320px;
-  background: linear-gradient(180deg, rgba(0, 30, 60, 0.6) 0%, rgba(0, 20, 40, 0.8) 100%);
-  border: 1px solid rgba(0, 212, 255, 0.2);
-  border-radius: 12px;
-  display: flex;
-  flex-direction: column;
+.record-file {
+  color: $bright;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-
-.sidebar-header {
-  padding: 15px 20px;
-  border-bottom: 1px solid rgba(0, 212, 255, 0.15);
-  background: rgba(0, 212, 255, 0.05);
-}
-
-.sidebar-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 14px;
-  font-weight: 600;
-  color: #00d4ff;
-  letter-spacing: 1px;
-  margin-bottom: 12px;
-}
-
-.sidebar-title svg {
-  width: 20px;
-  height: 20px;
-}
-
-.sidebar-stats {
-  display: flex;
-  gap: 20px;
-}
-
-.stat-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.stat-label {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.stat-value {
-  font-size: 16px;
-  font-weight: 700;
-  color: #00d4ff;
-}
-
-.stat-item.abnormal .stat-value {
-  color: #ff0055;
-}
-
-.diagnosis-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 10px;
-}
-
-.diagnosis-list::-webkit-scrollbar {
-  width: 4px;
-}
-
-.diagnosis-list::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 2px;
-}
-
-.diagnosis-list::-webkit-scrollbar-thumb {
-  background: rgba(0, 212, 255, 0.3);
-  border-radius: 2px;
-}
-
-.diagnosis-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 212, 255, 0.5);
-}
-
-.diagnosis-item {
-  background: rgba(0, 20, 40, 0.6);
-  border: 1px solid rgba(0, 212, 255, 0.15);
-  border-radius: 8px;
-  padding: 12px;
-  margin-bottom: 10px;
-  transition: all 0.3s ease;
-}
-
-.diagnosis-item:hover {
-  border-color: rgba(0, 212, 255, 0.3);
-  background: rgba(0, 30, 60, 0.6);
-}
-
-.diagnosis-item.abnormal {
-  border-color: rgba(255, 0, 85, 0.3);
-  background: rgba(255, 0, 85, 0.05);
-}
-
-.diagnosis-item.abnormal:hover {
-  border-color: rgba(255, 0, 85, 0.5);
-  background: rgba(255, 0, 85, 0.1);
-}
-
-.item-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-
-.item-status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.item-status.normal {
-  background: rgba(0, 255, 136, 0.1);
-  color: #00ff88;
-}
-
-.item-status.abnormal {
-  background: rgba(255, 0, 85, 0.15);
-  color: #ff0055;
-}
-
-.status-icon {
-  width: 14px;
-  height: 14px;
-}
-
-.status-icon svg {
-  width: 100%;
-  height: 100%;
-}
-
-.item-time {
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.4);
-}
-
-.item-content {
-  margin-bottom: 10px;
-}
-
-.item-filename {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.record-meta {
+  color: $muted;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.8);
-  margin-bottom: 6px;
 }
 
-.item-filename svg {
-  width: 14px;
-  height: 14px;
-  color: #00d4ff;
-}
-
-.item-fault {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.fault-label {
-  color: rgba(255, 255, 255, 0.4);
-}
-
-.fault-value {
-  color: #ff0055;
-  margin-left: 4px;
-}
-
-.item-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.action-btn {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 11px;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  font-family: inherit;
-}
-
-.action-btn svg {
-  width: 14px;
-  height: 14px;
-}
-
-.action-btn.view {
-  background: rgba(0, 212, 255, 0.1);
-  border: 1px solid rgba(0, 212, 255, 0.3);
-  color: #00d4ff;
-}
-
-.action-btn.view:hover {
-  background: rgba(0, 212, 255, 0.2);
-  border-color: #00d4ff;
-}
-
-.action-btn.download {
-  background: rgba(0, 255, 136, 0.1);
-  border: 1px solid rgba(0, 255, 136, 0.3);
-  color: #00ff88;
-}
-
-.action-btn.download:hover {
-  background: rgba(0, 255, 136, 0.2);
-  border-color: #00ff88;
-}
-
-.empty-state {
+/* ---------- 下：趋势 ---------- */
+.trend {
+  grid-area: trend;
   display: flex;
   flex-direction: column;
+}
+.trend-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  .panel-title { margin-bottom: 0; }
+}
+.tabs {
+  display: inline-flex;
+  gap: 2px;
+  background: rgba(56, 189, 248, 0.05);
+  border: 1px solid $border;
+  border-radius: 6px;
+  padding: 2px;
+}
+.tab {
+  border: none;
+  background: transparent;
+  color: $muted;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  &.active {
+    color: $bright;
+    background: rgba(56, 189, 248, 0.22);
+    box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.55);
+  }
+}
+.trend-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.trend-empty {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
   align-items: center;
   justify-content: center;
-  padding: 40px 20px;
-  color: rgba(255, 255, 255, 0.3);
+  gap: 8px;
+  color: $muted;
+  pointer-events: none;
+  i { font-size: 20px; color: rgba(56, 189, 248, 0.45); }
 }
 
-.empty-state svg {
-  width: 48px;
-  height: 48px;
-  margin-bottom: 15px;
-  opacity: 0.5;
-}
-
-.empty-state span {
-  font-size: 13px;
-}
-
-.empty-hint {
-  font-size: 11px !important;
-  color: rgba(255, 255, 255, 0.2);
-  margin-top: 5px;
-}
-
-.diagnosis-detail-modal {
+/* ---------- 详情弹窗 ---------- */
+.modal {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 1000;
+  z-index: 2000;
   display: flex;
   align-items: center;
   justify-content: center;
+  background: rgba(0, 0, 0, 0.55);
 }
-
-.modal-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(5px);
-}
-
-.modal-content {
-  position: relative;
-  width: 90%;
-  max-width: 600px;
-  max-height: 80vh;
-  background: linear-gradient(135deg, rgba(10, 20, 40, 0.98) 0%, rgba(5, 15, 30, 0.98) 100%);
-  border: 1px solid rgba(0, 212, 255, 0.3);
-  border-radius: 16px;
-  overflow: hidden;
+.modal-card {
+  width: min(720px, 92vw);
+  max-height: 86vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 0 50px rgba(0, 212, 255, 0.2);
-}
-
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 20px 25px;
-  border-bottom: 1px solid rgba(0, 212, 255, 0.15);
-  background: rgba(0, 212, 255, 0.05);
-}
-
-.modal-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: #00d4ff;
-  letter-spacing: 2px;
-}
-
-.modal-close {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  color: rgba(255, 255, 255, 0.6);
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.modal-close:hover {
-  background: rgba(255, 0, 85, 0.1);
-  border-color: rgba(255, 0, 85, 0.3);
-  color: #ff0055;
-}
-
-.modal-close svg {
-  width: 18px;
-  height: 18px;
-}
-
-.modal-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 25px;
-}
-
-.detail-section {
-  margin-bottom: 25px;
-}
-
-.detail-section:last-child {
-  margin-bottom: 0;
-}
-
-.detail-section .section-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #00d4ff;
-  letter-spacing: 1px;
-  margin-bottom: 15px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid rgba(0, 212, 255, 0.15);
-}
-
-.detail-row {
-  display: flex;
-  align-items: center;
-  padding: 10px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.detail-row:last-child {
-  border-bottom: none;
-}
-
-.detail-label {
-  width: 100px;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.detail-value {
-  flex: 1;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.detail-value.normal {
-  color: #00ff88;
-}
-
-.detail-value.abnormal {
-  color: #ff0055;
-}
-
-.indicators-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.indicator-card {
-  background: linear-gradient(135deg, rgba(0, 30, 60, 0.6) 0%, rgba(0, 20, 40, 0.8) 100%);
-  border: 1px solid rgba(0, 212, 255, 0.2);
-  border-radius: 12px;
-  padding: 16px;
-  transition: all 0.3s ease;
-  position: relative;
-  overflow: hidden;
-}
-
-.indicator-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 4px;
-  height: 100%;
-  background: linear-gradient(to bottom, #00d4ff, #00ff88);
-  opacity: 0.6;
-}
-
-.indicator-card:hover {
-  border-color: rgba(0, 212, 255, 0.4);
-  transform: translateX(4px);
-  box-shadow: 0 4px 20px rgba(0, 212, 255, 0.1);
-}
-
-.indicator-card.abnormal {
-  border-color: rgba(255, 0, 85, 0.4);
-  background: linear-gradient(135deg, rgba(255, 0, 85, 0.1) 0%, rgba(0, 20, 40, 0.8) 100%);
-}
-
-.indicator-card.abnormal::before {
-  background: linear-gradient(to bottom, #ff0055, #ff6b00);
-}
-
-.indicator-card.abnormal:hover {
-  border-color: rgba(255, 0, 85, 0.6);
-  box-shadow: 0 4px 20px rgba(255, 0, 85, 0.15);
-}
-
-.indicator-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.indicator-icon {
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: #0c1828;
+  border: 1px solid $border;
   border-radius: 10px;
-  background: rgba(0, 212, 255, 0.1);
-  border: 1px solid rgba(0, 212, 255, 0.3);
-  color: #00d4ff;
+  color: $text;
 }
-
-.indicator-icon.flow {
-  background: rgba(0, 212, 255, 0.1);
-  border-color: rgba(0, 212, 255, 0.3);
-  color: #00d4ff;
-}
-
-.indicator-icon.speed {
-  background: rgba(0, 255, 136, 0.1);
-  border-color: rgba(0, 255, 136, 0.3);
-  color: #00ff88;
-}
-
-.indicator-icon.pressure {
-  background: rgba(255, 107, 0, 0.1);
-  border-color: rgba(255, 107, 0, 0.3);
-  color: #ff6b00;
-}
-
-.indicator-icon svg {
-  width: 18px;
-  height: 18px;
-}
-
-.indicator-status {
-  width: 24px;
-  height: 24px;
+.modal-head {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  justify-content: center;
-  color: #ff0055;
-  animation: pulseWarning 1.5s ease-in-out infinite;
+  padding: 14px 18px;
+  border-bottom: 1px solid $border;
+  color: $bright;
+  font-weight: 600;
+  i { cursor: pointer; color: $muted; }
 }
-
-.indicator-status svg {
-  width: 20px;
-  height: 20px;
+.modal-body {
+  padding: 14px 18px;
+  overflow-y: auto;
 }
-
-@keyframes pulseWarning {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.7; transform: scale(1.1); }
+.path-card {
+  width: min(560px, 92vw);
 }
-
-.indicator-body {
-  margin-bottom: 10px;
+.path-hint {
+  margin: 0 0 12px;
+  color: $muted;
+  font-size: 12px;
+  line-height: 1.7;
 }
-
-.indicator-name {
+.path-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid $border;
+  background: rgba(56, 189, 248, 0.05);
+  color: $bright;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.6);
-  margin-bottom: 6px;
-  line-height: 1.4;
+  outline: none;
+  &:focus { border-color: $accent; }
 }
-
-.indicator-value {
-  font-size: 16px;
-  font-weight: 700;
-  color: #fff;
-  letter-spacing: 0.5px;
+.dir-title {
+  margin: 16px 0 6px;
+  color: $muted;
+  font-size: 12px;
 }
-
-.indicator-card.abnormal .indicator-value {
-  color: #ff6b00;
-}
-
-.indicator-footer {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.indicator-reference {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.4);
-  padding: 4px 10px;
-  background: rgba(0, 0, 0, 0.3);
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.repair-advice {
-  background: rgba(0, 20, 40, 0.5);
-  border: 1px solid rgba(0, 212, 255, 0.1);
-  border-radius: 8px;
-  padding: 15px;
-  font-size: 13px;
-  line-height: 1.6;
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.modal-footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  padding: 20px 25px;
-  border-top: 1px solid rgba(0, 212, 255, 0.15);
-  background: rgba(0, 0, 0, 0.2);
-}
-
-.footer-btn {
+.dir-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 20px;
-  border-radius: 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  &:hover { background: rgba(56, 189, 248, 0.06); }
+}
+.dir-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: $text;
+  cursor: pointer;
+  i { margin-right: 6px; color: $accent; }
+  &:hover { color: $bright; }
+}
+.dir-tag {
+  font-size: 11px;
+  color: $muted;
+  border: 1px solid $border;
+  border-radius: 3px;
+  padding: 0 5px;
+}
+.dir-remove {
+  color: $muted;
+  cursor: pointer;
+  &:hover { color: $bad; }
+}
+.density-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: $text;
+  font-size: 13px;
+  .density-input {
+    width: 170px;
+    padding: 6px 10px;
+    background: rgba(56, 189, 248, 0.05);
+    border: 1px solid $border;
+    border-radius: 6px;
+    color: $bright;
+    outline: none;
+    &:focus { border-color: $accent; }
+  }
+  .unit {
+    color: $muted;
+  }
+}
+.path-hint.small {
+  font-size: 12px;
+  margin-top: 6px;
+}
+.auto-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: $text;
   font-size: 13px;
   cursor: pointer;
-  transition: all 0.3s ease;
-  font-family: inherit;
 }
-
-.footer-btn svg {
-  width: 16px;
-  height: 16px;
+.finding {
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  background: rgba(255, 255, 255, 0.03);
+  border-left: 3px solid $muted;
+  &.warning { border-left-color: $warn; }
+  &.abnormal { border-left-color: $bad; }
+  b { color: $bright; font-weight: 600; }
 }
-
-.footer-btn.download {
-  background: linear-gradient(135deg, rgba(0, 212, 255, 0.2), rgba(0, 255, 136, 0.1));
-  border: 1px solid #00d4ff;
-  color: #00d4ff;
+.finding-level {
+  margin-right: 6px;
+  color: $muted;
 }
-
-.footer-btn.download:hover {
-  background: linear-gradient(135deg, rgba(0, 212, 255, 0.3), rgba(0, 255, 136, 0.2));
-  box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+.path-error {
+  margin: 8px 0 0;
+  color: $bad;
+  font-size: 12px;
 }
-
-.footer-btn.close {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.footer-btn.close:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.3);
+.primary-btn {
+  margin-left: 16px;
+  padding: 6px 16px;
+  border: none;
+  border-radius: 4px;
+  background: $blue;
   color: #fff;
+  cursor: pointer;
+  &:disabled { opacity: 0.5; cursor: not-allowed; }
+}
+.diag-status {
+  margin: -4px 0 10px;
+  color: $muted;
+  font-size: 12px;
+  i { margin-right: 4px; }
+}
+.modal-foot {
+  padding: 12px 18px;
+  border-top: 1px solid $border;
+  text-align: right;
+}
+.kv {
+  display: flex;
+  gap: 16px;
+  padding: 4px 0;
+  span { width: 72px; color: $muted; }
+  b { font-weight: 500; color: $bright; }
+  b.normal { color: $ok; }
+  b.warning { color: $warn; }
+  b.abnormal { color: $bad; }
+  b.inconclusive { color: $muted; }
+}
+.section-title {
+  margin: 14px 0 8px;
+  color: $bright;
+  font-weight: 600;
+}
+.indicators {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  td {
+    padding: 6px 8px;
+    border-bottom: 1px solid $border;
+  }
+  td:last-child {
+    text-align: right;
+    color: $bright;
+    font-variant-numeric: tabular-nums;
+  }
+  tr.bad td:last-child { color: $bad; }
+}
+.advice {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.7;
+  color: $text;
+}
+.fade-enter-active,
+.fade-leave-active { transition: opacity 0.2s; }
+.fade-enter,
+.fade-leave-to { opacity: 0; }
+
+/* 窄屏：改为上下排列 */
+@media (max-width: 1280px) {
+  .dashboard {
+    grid-template-columns: minmax(0, 1fr) 280px;
+    grid-template-rows: 46px minmax(440px, 1fr) 236px 236px;
+    grid-template-areas:
+      'top top'
+      'stage diagnosis'
+      'metrics diagnosis'
+      'trend trend';
+    overflow-y: auto;
+  }
+  .stats { display: none; }
 }
 </style>

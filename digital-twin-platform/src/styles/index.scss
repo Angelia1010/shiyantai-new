@@ -65,16 +65,45 @@ div:focus {
   padding: 20px;
 }
 
-// /* ===== 新增：深色主题覆盖 ===== */
-// @import './dark-theme.scss';
+// 管理页面统一的页头：标题 + 右侧操作
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
 
-// /* 修复按钮悬停时的文字颜色 */
-// .el-button:not([disabled]):hover,
-// .el-button:not([disabled]):focus {
-//   color: var(--dark-text) !important;
-// }
+.page-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #1f2937;
+  padding-left: 10px;
+  border-left: 4px solid #2f6bff;
+  line-height: 1.2;
+}
 
-// /* 保持原始按钮颜色样式 */
-// .el-button--primary.is-plain:not([disabled]):hover {
-//   color: #fff !important;
-// }
+.el-card {
+  border-radius: 8px;
+}
+
+/* 深色大屏中的细滚动条 */
+.dashboard {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(56, 189, 248, 0.25) transparent;
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(56, 189, 248, 0.22);
+    border-radius: 3px;
+    &:hover {
+      background: rgba(56, 189, 248, 0.4);
+    }
+  }
+}

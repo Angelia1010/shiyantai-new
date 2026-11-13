@@ -1,0 +1,6 @@
+{
+  "_说明": "诊断插件：modules 列出要加载的 Python 模块（模块导入时调用 register_analyzer / register_reasoner 注册自己）；disabled 列出暂时停用的插件名；options 为各插件的选项（如大模型服务地址、超时 timeout_s）。也可用环境变量 DIAGNOSIS_PLUGINS 指定模块。详见 docs/扩展指南.md。",
+  "modules": [],
+  "disabled": [],
+  "options": {}
+}

@@ -1,34 +1,13 @@
 import Vue from 'vue'
 import Router from 'vue-router'
+import Layout from '@/layout'
 
 Vue.use(Router)
 
-/* Layout */
-import Layout from '@/layout'
-
 /**
- * Note: sub-menu only appear when route children.length >= 1
- * Detail see: https://panjiachen.github.io/vue-element-admin-site/guide/essentials/router-and-nav.html
- *
- * hidden: true                   if set true, item will not show in the sidebar(default is false)
- * alwaysShow: true               if set true, will always show the root menu
- *                                if not set alwaysShow, when item has more than one children route,
- *                                it will becomes nested mode, otherwise not show the root menu
- * redirect: noRedirect           if set noRedirect will no redirect in the breadcrumb
- * name:'router-name'             the name is used by <keep-alive> (must set!!!)
- * meta : {
-    roles: ['admin','editor']    control the page roles (you can set multiple roles)
-    title: 'title'               the name show in sidebar and breadcrumb (recommend set)
-    icon: 'svg-name'/'el-icon-x' the icon show in the sidebar
-    breadcrumb: false            if set false, the item will hidden in breadcrumb(default is true)
-    activeMenu: '/example/list'  if set path, the sidebar will highlight the path you set
-  }
- */
-
-/**
- * constantRoutes
- * a base page that does not have permission requirements
- * all roles can be accessed
+ * 路由配置。
+ * hidden: true      不在侧边栏显示
+ * meta.title/icon   侧边栏与面包屑中显示的名称和图标
  */
 export const constantRoutes = [
   {
@@ -36,71 +15,62 @@ export const constantRoutes = [
     component: () => import('@/views/login/index'),
     hidden: true
   },
-
   {
     path: '/404',
     component: () => import('@/views/404'),
     hidden: true
   },
-
-  {
-    path: '/workbench',
-    component: () => import('@/views/workbench'),
-    hidden: true
-  },
-
   {
     path: '/',
     component: Layout,
-    redirect: '/dashboard',
-    meta: { title: '首页', icon: 'dashboard' },
     children: [{
-      path: '/',
-      name: 'Home',
+      path: '',
+      name: 'Dashboard',
       component: () => import('@/views/dashboard/index'),
       meta: { title: '工作台', icon: 'dashboard' }
-    },
-      // {
-      //   path: 'model',
-      //   name: 'Model',
-      //   component: () => import('@/views/dashboard/model'),
-      //   meta: { title: '泵模型', icon: 'nested' }
-      // }
-    ]
+    }]
   },
-
   {
-    path: '/example',
+    path: '/tasks',
     component: Layout,
-    redirect: '/example/table',
-    name: 'Example',
-    meta: { title: '任务管理', icon: 'el-icon-s-help' },
-    children: [
-      {
-        path: 'table',
-        name: 'Table',
-        component: () => import('@/views/table/index'),
-        meta: { title: '任务列表', icon: 'table' }
-      }
-    ]
+    children: [{
+      path: '',
+      name: 'Tasks',
+      component: () => import('@/views/tasks/index'),
+      meta: { title: '任务列表', icon: 'table' }
+    }]
   },
   {
     path: '/autoDiagnosis',
     component: Layout,
-    redirect: '/autoDiagnosis/index',
-    name: 'AutoDiagnosis',
-    meta: { title: '自动诊断', icon: 'el-icon-s-promotion' },
-    children: [
-      {
-        path: 'index',
-        name: 'AutoDiagnosisIndex',
-        component: () => import('@/views/autoDiagnosis/index'),
-        meta: { title: '自动诊断流程', icon: 'el-icon-s-promotion' }
-      }
-    ]
+    children: [{
+      path: '',
+      name: 'AutoDiagnosis',
+      component: () => import('@/views/autoDiagnosis/index'),
+      meta: { title: '自动诊断', icon: 'el-icon-s-promotion' }
+    }]
   },
-
-  // 404 page must be placed at the end !!!
+  {
+    path: '/simulation',
+    component: Layout,
+    children: [{
+      path: '',
+      name: 'Simulation',
+      component: () => import('@/views/simulation/index'),
+      meta: { title: '仿真模型', icon: 'el-icon-cpu' }
+    }]
+  },
+  {
+    path: '/assistant',
+    component: Layout,
+    children: [{
+      path: '',
+      name: 'Assistant',
+      component: () => import('@/views/assistant/index'),
+      meta: { title: '智能助手', icon: 'el-icon-chat-dot-round' }
+    }]
+  },
+  // 404 必须放在最后
   { path: '*', redirect: '/404', hidden: true }
 ]
 
@@ -111,10 +81,9 @@ const createRouter = () => new Router({
 
 const router = createRouter()
 
-// Detail see: https://github.com/vuejs/vue-router/issues/1234#issuecomment-357941465
+// 退出登录时重置路由，参见 https://github.com/vuejs/vue-router/issues/1234#issuecomment-357941465
 export function resetRouter() {
-  const newRouter = createRouter()
-  router.matcher = newRouter.matcher // reset router
+  router.matcher = createRouter().matcher
 }
 
 export default router

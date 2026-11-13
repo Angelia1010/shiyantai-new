@@ -7,13 +7,15 @@ const localVue = createLocalVue()
 localVue.use(VueRouter)
 localVue.use(ElementUI)
 
+// 面包屑只显示带 meta.title 的路由层级（与 src/router 中的写法一致，不额外插入“首页”）
 const routes = [
   {
     path: '/',
     name: 'home',
     children: [{
       path: 'dashboard',
-      name: 'dashboard'
+      name: 'dashboard',
+      meta: { title: '工作台' }
     }]
   },
   {
@@ -31,7 +33,7 @@ const routes = [
       {
         path: 'menu1-2',
         name: 'menu1-2',
-        redirect: 'noredirect',
+        redirect: 'noRedirect',
         meta: { title: 'menu1-2' },
         children: [{
           path: 'menu1-2-1',
@@ -55,44 +57,35 @@ describe('Breadcrumb.vue', () => {
     localVue,
     router
   })
-  it('dashboard', () => {
+  const items = () => wrapper.findAll('.el-breadcrumb__inner')
+
+  it('single level route', () => {
     router.push('/dashboard')
-    const len = wrapper.findAll('.el-breadcrumb__inner').length
-    expect(len).toBe(1)
+    expect(items().length).toBe(1)
+    expect(items().at(0).text()).toBe('工作台')
   })
   it('normal route', () => {
     router.push('/menu/menu1')
-    const len = wrapper.findAll('.el-breadcrumb__inner').length
-    expect(len).toBe(2)
+    expect(items().length).toBe(1)
   })
   it('nested route', () => {
     router.push('/menu/menu1/menu1-2/menu1-2-1')
-    const len = wrapper.findAll('.el-breadcrumb__inner').length
-    expect(len).toBe(4)
+    expect(items().length).toBe(3)
   })
-  it('no meta.title', () => {
+  it('levels without meta.title are hidden', () => {
     router.push('/menu/menu1/menu1-2/menu1-2-2')
-    const len = wrapper.findAll('.el-breadcrumb__inner').length
-    expect(len).toBe(3)
+    expect(items().length).toBe(2)
   })
-  // it('click link', () => {
-  //   router.push('/menu/menu1/menu1-2/menu1-2-2')
-  //   const breadcrumbArray = wrapper.findAll('.el-breadcrumb__inner')
-  //   const second = breadcrumbArray.at(1)
-  //   console.log(breadcrumbArray)
-  //   const href = second.find('a').attributes().href
-  //   expect(href).toBe('#/menu/menu1')
-  // })
-  // it('noRedirect', () => {
-  //   router.push('/menu/menu1/menu1-2/menu1-2-1')
-  //   const breadcrumbArray = wrapper.findAll('.el-breadcrumb__inner')
-  //   const redirectBreadcrumb = breadcrumbArray.at(2)
-  //   expect(redirectBreadcrumb.contains('a')).toBe(false)
-  // })
-  it('last breadcrumb', () => {
+  it('parent levels are links', () => {
     router.push('/menu/menu1/menu1-2/menu1-2-1')
-    const breadcrumbArray = wrapper.findAll('.el-breadcrumb__inner')
-    const redirectBreadcrumb = breadcrumbArray.at(3)
-    expect(redirectBreadcrumb.contains('a')).toBe(false)
+    expect(items().at(0).contains('a')).toBe(true)
+  })
+  it('noRedirect level is not a link', () => {
+    router.push('/menu/menu1/menu1-2/menu1-2-1')
+    expect(items().at(1).contains('a')).toBe(false)
+  })
+  it('last breadcrumb is not a link', () => {
+    router.push('/menu/menu1/menu1-2/menu1-2-1')
+    expect(items().at(2).contains('a')).toBe(false)
   })
 })

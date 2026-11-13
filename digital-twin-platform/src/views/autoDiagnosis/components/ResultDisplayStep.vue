@@ -31,8 +31,8 @@
           <div v-if="diagnosisResult" class="result-content">
             <el-descriptions :column="1" border size="small">
               <el-descriptions-item label="诊断状态">
-                <el-tag :type="getStatusType(diagnosisResult.status)" size="small">
-                  {{ diagnosisResult.status }}
+                <el-tag :type="statusTagType" size="small">
+                  {{ diagnosisResult.statusText }}
                 </el-tag>
               </el-descriptions-item>
               <el-descriptions-item label="诊断时间">
@@ -41,25 +41,34 @@
               <el-descriptions-item label="任务ID">
                 {{ diagnosisResult.taskId }}
               </el-descriptions-item>
+              <el-descriptions-item v-if="diagnosisResult.condition && diagnosisResult.condition.label" label="试验工况">
+                {{ diagnosisResult.condition.label }}
+              </el-descriptions-item>
+              <el-descriptions-item v-if="diagnosisResult.summary" label="结论">
+                {{ diagnosisResult.summary }}
+              </el-descriptions-item>
             </el-descriptions>
 
-            <div v-if="diagnosisResult.diagnosis" class="diagnosis-section">
-              <h4>诊断结论</h4>
-              <el-descriptions :column="1" border size="small">
-                <el-descriptions-item label="故障类型">
-                  {{ diagnosisResult.diagnosis.fault_name || '无' }}
-                </el-descriptions-item>
-                <el-descriptions-item label="故障位置">
-                  {{ diagnosisResult.diagnosis.location || '无' }}
-                </el-descriptions-item>
-                <el-descriptions-item label="分析说明">
-                  {{ diagnosisResult.diagnosis.analysis || '无' }}
-                </el-descriptions-item>
-              </el-descriptions>
+            <div class="diagnosis-section">
+              <h4>原因分析</h4>
+              <cause-list :causes="diagnosisResult.causes || []" :history="diagnosisResult.history" />
+            </div>
+            <review-list :reviews="diagnosisResult.reviews" />
+
+            <div v-if="shownFindings.length" class="diagnosis-section">
+              <el-collapse>
+                <el-collapse-item :title="`检查项明细（${shownFindings.length}）`">
+                  <div v-for="(f, i) in shownFindings" :key="i" :class="['finding', f.severity]">
+                    <el-tag :type="SEVERITY_TAG[f.severity]" size="mini">{{ SEVERITY_LABELS[f.severity] }}</el-tag>
+                    <span class="finding-title">{{ f.title }}</span>
+                    <div class="finding-detail">{{ f.detail }}</div>
+                  </div>
+                </el-collapse-item>
+              </el-collapse>
             </div>
 
             <div v-if="diagnosisResult.repairAdvice" class="repair-section">
-              <h4>维修建议</h4>
+              <h4>处理建议</h4>
               <el-card shadow="never" class="advice-card">
                 {{ diagnosisResult.repairAdvice }}
               </el-card>
@@ -73,7 +82,7 @@
       <el-col :span="16">
         <el-card shadow="never" class="chart-card">
           <div slot="header">
-            <span>数据对比图表</span>
+            <span>实测曲线与模型预期</span>
             <div class="chart-controls">
               <el-select 
                 v-model="selectedField" 
@@ -81,51 +90,31 @@
                 placeholder="选择数据字段"
                 @change="updateChart"
               >
-                <el-option 
-                  v-for="col in dataFeatures.columns" 
-                  :key="col.name" 
-                  :label="col.name" 
-                  :value="col.name"
+                <el-option
+                  v-for="field in fields"
+                  :key="field"
+                  :label="field"
+                  :value="field"
                 />
               </el-select>
-              <el-button-group style="margin-left: 10px;">
-                <el-button 
-                  size="small" 
-                  :type="chartMode === 'experiment' ? 'primary' : ''"
-                  @click="chartMode = 'experiment'; updateChart()"
-                >
-                  试验数据
-                </el-button>
-                <el-button 
-                  size="small" 
-                  :type="chartMode === 'simulation' ? 'primary' : ''"
-                  @click="chartMode = 'simulation'; updateChart()"
-                  :disabled="!config.enableSimulation || Object.keys(simulationData).length === 0"
-                >
-                  仿真数据
-                </el-button>
-                <el-button 
-                  size="small" 
-                  :type="chartMode === 'compare' ? 'primary' : ''"
-                  @click="chartMode = 'compare'; updateChart()"
-                  :disabled="!config.enableSimulation || Object.keys(simulationData).length === 0"
-                >
-                  对比
-                </el-button>
-              </el-button-group>
             </div>
           </div>
           <div ref="chartContainer" class="chart-container"></div>
         </el-card>
 
-        <el-card shadow="never" class="indicators-card" v-if="diagnosisResult && diagnosisResult.indicators">
-          <div slot="header">诊断指标</div>
+        <el-card shadow="never" class="indicators-card" v-if="diagnosisResult && diagnosisResult.models">
+          <div slot="header">仿真模型对比</div>
+          <model-compare :models="diagnosisResult.models" />
+        </el-card>
+
+        <el-card shadow="never" class="indicators-card" v-if="diagnosisResult && diagnosisResult.indicators.length">
+          <div slot="header">检测明细</div>
           <el-table :data="diagnosisResult.indicators" border size="small" max-height="200">
-            <el-table-column prop="name" label="指标名称" min-width="150" />
-            <el-table-column prop="reference" label="类型" width="120" />
-            <el-table-column prop="value" label="指标值" width="120">
+            <el-table-column prop="name" label="项目" min-width="150" />
+            <el-table-column prop="reference" label="判定标准 / 来源" width="150" />
+            <el-table-column prop="value" label="结果" min-width="140">
               <template slot-scope="scope">
-                <span :class="{'abnormal-value': isAbnormal(scope.row)}">
+                <span :class="{'abnormal-value': scope.row.abnormal}">
                   {{ scope.row.value }}
                 </span>
               </template>
@@ -146,235 +135,137 @@
 
 <script>
 import * as echarts from 'echarts'
+import { RESULT_TAG, SEVERITY_LABELS } from '@/utils/report'
+import CauseList from '@/components/CauseList'
+import ModelCompare from '@/components/ModelCompare'
+import ReviewList from '@/components/ReviewList'
+
+const SEVERITY_TAG = { info: 'info', notice: 'info', warning: 'warning', abnormal: 'danger' }
 
 export default {
   name: 'ResultDisplayStep',
+  components: { CauseList, ModelCompare, ReviewList },
   props: {
-    diagnosisResult: {
-      type: Object,
-      default: null
-    },
-    experimentData: {
-      type: Array,
-      default: () => []
-    },
-    simulationData: {
-      type: Object,
-      default: () => ({})
-    },
-    simulationVariables: {
-      type: Array,
-      default: () => []
-    },
-    dataFeatures: {
-      type: Object,
-      default: () => ({ rowCount: 0, columnCount: 0, columns: [] })
-    },
-    config: {
-      type: Object,
-      required: true
-    }
+    // utils/report.js summarizeReport() 的结果
+    diagnosisResult: { type: Object, default: null },
+    // { 变量: [每组均值] }
+    experimentSeries: { type: Object, default: () => ({}) }
   },
   data() {
     return {
-      chart: null,
       selectedField: '',
-      chartMode: 'experiment'
+      SEVERITY_TAG,
+      SEVERITY_LABELS
+    }
+  },
+  computed: {
+    fields() {
+      return Object.keys(this.experimentSeries)
+    },
+    /** 当前字段的模型预期（各模型 rows 中同名测点，取第一个有它的模型） */
+    modelRow() {
+      const models = (this.diagnosisResult && this.diagnosisResult.models) || []
+      for (const m of models) {
+        const row = (m.rows || []).find(r => r.column === this.selectedField)
+        if (row) return { ...row, modelName: m.name }
+      }
+      return null
+    },
+    /** 需要展示的发现（不含“提示”级别） */
+    shownFindings() {
+      return ((this.diagnosisResult && this.diagnosisResult.findings) || []).filter(f => f.severity !== 'info')
+    },
+    statusTagType() {
+      return (this.diagnosisResult && RESULT_TAG[this.diagnosisResult.result]) || 'info'
+    }
+  },
+  watch: {
+    diagnosisResult() {
+      this.$nextTick(this.updateChart)
+    },
+    fields: {
+      handler(fields) {
+        if (!fields.includes(this.selectedField)) {
+          this.selectedField = fields[0] || ''
+          this.$nextTick(this.updateChart)
+        }
+      },
+      immediate: true
     }
   },
   mounted() {
-    this.$nextTick(() => {
-      this.initChart()
-      if (this.dataFeatures.columns.length > 0) {
-        this.selectedField = this.dataFeatures.columns[0].name
-        this.updateChart()
-      }
-    })
+    this.chart = echarts.init(this.$refs.chartContainer)
+    this.updateChart()
     window.addEventListener('resize', this.handleResize)
   },
   beforeDestroy() {
+    window.removeEventListener('resize', this.handleResize)
     if (this.chart) {
       this.chart.dispose()
       this.chart = null
     }
-    window.removeEventListener('resize', this.handleResize)
-  },
-  watch: {
-    dataFeatures: {
-      handler(val) {
-        if (val.columns.length > 0 && !this.selectedField) {
-          this.selectedField = val.columns[0].name
-          this.updateChart()
-        }
-      },
-      deep: true
-    }
   },
   methods: {
-    initChart() {
-      if (!this.$refs.chartContainer) return
-      if (this.chart) {
-        this.chart.dispose()
-      }
-      this.chart = echarts.init(this.$refs.chartContainer)
-    },
     handleResize() {
-      if (this.chart) {
-        this.chart.resize()
-      }
+      if (this.chart) this.chart.resize()
     },
     updateChart() {
-      console.log('updateChart called - selectedField:', this.selectedField)
-      console.log('updateChart - experimentData length:', this.experimentData.length)
-      console.log('updateChart - simulationData length:', this.simulationData.length)
-      console.log('updateChart - chartMode:', this.chartMode)
-      
-      if (!this.selectedField) return
-      
-      // 如果图表未初始化，先初始化
-      if (!this.chart) {
-        this.initChart()
+      if (!this.chart || !this.selectedField) return
+      const values = this.experimentSeries[this.selectedField] || []
+      const row = this.modelRow
+      const line = {
+        name: '实测',
+        type: 'line',
+        data: values,
+        smooth: true,
+        showSymbol: false,
+        lineStyle: { width: 2 },
+        itemStyle: { color: '#409eff' }
       }
-      
-      if (!this.chart) {
-        console.error('Chart initialization failed')
-        return
+      if (row) {
+        const abs = row.mode === 'absolute'
+        const lo = abs ? row.expected - row.warn : row.expected * (1 - row.warn)
+        const hi = abs ? row.expected + row.warn : row.expected * (1 + row.warn)
+        line.markLine = {
+          silent: true,
+          symbol: 'none',
+          lineStyle: { color: '#909399', type: 'dashed' },
+          label: { formatter: `${row.modelName}预期 ${row.expected.toFixed(row.unit === 'MPa' ? 3 : 1)} ${row.unit}`, color: '#606266' },
+          data: [{ yAxis: row.expected }]
+        }
+        line.markArea = {
+          silent: true,
+          itemStyle: { color: 'rgba(144, 147, 153, 0.12)' },
+          label: {
+            show: true,
+            position: 'insideTopLeft',
+            color: '#909399',
+            formatter: `预警范围 ±${abs ? `${row.warn.toFixed(1)} ${row.unit}` : `${(row.warn * 100).toFixed(1)}%`}`
+          },
+          data: [[{ yAxis: lo }, { yAxis: hi }]]
+        }
       }
-
-      const option = {
+      const span = row ? (row.mode === 'absolute' ? row.alarm : row.expected * row.alarm) : 0
+      const all = values.concat(row ? [row.expected - span, row.expected + span] : [])
+      const finite = all.filter(v => Number.isFinite(v))
+      this.chart.setOption({
         title: {
-          text: `${this.selectedField} 数据曲线`,
+          text: row ? `${this.selectedField} · 实测与模型预期` : `${this.selectedField}（该测点不在仿真模型输出中）`,
           left: 'center',
           textStyle: { fontSize: 14 }
         },
-        tooltip: {
-          trigger: 'axis',
-          axisPointer: { type: 'cross' }
-        },
-        legend: {
-          data: [],
-          top: 30
-        },
-        grid: {
-          left: '3%',
-          right: '4%',
-          bottom: '3%',
-          top: 80,
-          containLabel: true
-        },
-        xAxis: {
-          type: 'category',
-          data: []
-        },
+        tooltip: { trigger: 'axis' },
+        grid: { left: '3%', right: '4%', bottom: '3%', top: 50, containLabel: true },
+        xAxis: { type: 'category', data: values.map((_, i) => i), name: '特征组' },
         yAxis: {
           type: 'value',
-          name: this.selectedField
+          name: row ? `${this.selectedField}（${row.unit}）` : this.selectedField,
+          min: finite.length ? Math.min(...finite) : null,
+          max: finite.length ? Math.max(...finite) : null,
+          axisLabel: { formatter: v => Number(v.toPrecision(4)) }
         },
-        series: []
-      }
-
-      if (this.chartMode === 'experiment' || this.chartMode === 'compare') {
-        const expData = this.extractFieldData(this.experimentData, this.selectedField)
-        console.log('updateChart - expData length:', expData.length)
-        if (expData.length > 0) {
-          option.xAxis.data = expData.map((_, i) => i)
-          option.series.push({
-            name: '试验数据',
-            type: 'line',
-            data: expData,
-            smooth: true,
-            lineStyle: { width: 2 },
-            itemStyle: { color: '#409eff' },
-            symbol: 'circle',
-            symbolSize: 6
-          })
-          option.legend.data.push('试验数据')
-        }
-      }
-
-      if ((this.chartMode === 'simulation' || this.chartMode === 'compare') && Object.keys(this.simulationData).length > 0) {
-        const simData = this.extractSimulationData(this.simulationData, this.selectedField)
-        console.log('updateChart - simData length:', simData.length)
-        if (simData.length > 0) {
-          if (option.xAxis.data.length === 0) {
-            option.xAxis.data = simData.map((_, i) => i)
-          }
-          option.series.push({
-            name: '仿真数据',
-            type: 'line',
-            data: simData,
-            smooth: true,
-            lineStyle: { width: 2, type: 'dashed' },
-            itemStyle: { color: '#67c23a' },
-            symbol: 'circle',
-            symbolSize: 6
-          })
-          option.legend.data.push('仿真数据')
-        }
-      }
-
-      console.log('updateChart - final option:', JSON.stringify({
-        xAxisDataLength: option.xAxis.data.length,
-        seriesLength: option.series.length,
-        legendData: option.legend.data
-      }))
-
-      this.chart.setOption(option, true)
-    },
-    extractFieldData(data, field) {
-      console.log('extractFieldData - field:', field)
-      console.log('extractFieldData - data sample:', data.slice(0, 2))
-      
-      const result = data.map((item, index) => {
-        if (item[field]) {
-          const avg = item[field].avg
-          // 处理可能是字符串的数字
-          const numValue = typeof avg === 'number' ? avg : parseFloat(avg)
-          if (!isNaN(numValue)) {
-            return numValue
-          }
-        }
-        return null
-      }).filter(v => v !== null)
-      
-      console.log('extractFieldData - result length:', result.length)
-      console.log('extractFieldData - result sample:', result.slice(0, 5))
-      return result
-    },
-    extractSimulationData(simulationDataObj, field) {
-      console.log('extractSimulationData - field:', field)
-      console.log('extractSimulationData - available variables:', Object.keys(simulationDataObj))
-      
-      if (!simulationDataObj[field]) {
-        console.log('extractSimulationData - field not found in simulation data')
-        return []
-      }
-      
-      const data = simulationDataObj[field]
-      console.log('extractSimulationData - data length:', data.length)
-      console.log('extractSimulationData - data sample:', data.slice(0, 5))
-      
-      return data.map(value => {
-        if (typeof value === 'number') return value
-        const numValue = parseFloat(value)
-        return isNaN(numValue) ? null : numValue
-      }).filter(v => v !== null)
-    },
-    getStatusType(status) {
-      const map = {
-        '正常': 'success',
-        '异常': 'danger',
-        '警告': 'warning'
-      }
-      return map[status] || 'info'
-    },
-    isAbnormal(row) {
-      if (!row.reference || !row.value) return false
-      const ref = parseFloat(row.reference)
-      const val = parseFloat(row.value)
-      if (isNaN(ref) || isNaN(val)) return false
-      const tolerance = ref * 0.1
-      return Math.abs(val - ref) > tolerance
+        series: [line]
+      }, true)
     }
   }
 }
@@ -399,8 +290,21 @@ export default {
   gap: 10px;
 }
 
-.result-info-card,
-.chart-card,
+.finding {
+  padding: 6px 0;
+  border-bottom: 1px dashed #ebeef5;
+  font-size: 13px;
+}
+.finding-title {
+  margin-left: 6px;
+  font-weight: 600;
+}
+.finding-detail {
+  margin-top: 2px;
+  color: #606266;
+  font-size: 12px;
+  line-height: 1.6;
+}
 .indicators-card {
   margin-bottom: 15px;
 }

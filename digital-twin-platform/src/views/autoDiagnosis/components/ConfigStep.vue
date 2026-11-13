@@ -10,15 +10,17 @@
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="试验数据路径" required>
-              <el-input 
-                v-model="localConfig.dataPath" 
-                placeholder="请输入试验数据文件夹路径"
+              <el-autocomplete
+                v-model="localConfig.dataPath"
+                :fetch-suggestions="suggestDirs"
+                placeholder="完整路径，如 D:/试验数据 或 //主机名/共享名（首次使用会自动登记）"
                 clearable
+                style="width: 100%"
               >
                 <template #prepend>
                   <i class="el-icon-folder"></i>
                 </template>
-              </el-input>
+              </el-autocomplete>
             </el-form-item>
           </el-col>
           <el-col :span="6">
@@ -38,10 +40,10 @@
         </el-row>
         <el-row :gutter="20">
           <el-col :span="8">
-            <el-form-item label="介质密度">
+            <el-form-item label="燃油密度(20℃)">
               <el-input 
                 v-model.number="localConfig.mediumDensity" 
-                placeholder="如: 820"
+                placeholder="留空：按健康基准的油品"
                 type="number"
                 clearable
               >
@@ -86,98 +88,41 @@
 
     <el-card shadow="never" class="sub-card">
       <div slot="header">
-        <span>AMESim仿真配置</span>
-        <el-switch 
-          v-model="localConfig.enableSimulation" 
-          style="float: right;"
-          active-text="启用"
-          inactive-text="禁用"
-        />
+        <span>仿真模型</span>
+        <el-button type="text" style="float: right; padding: 0" @click="$router.push('/simulation')">管理仿真模型</el-button>
       </div>
-      
-      <el-form label-width="120px" :disabled="!localConfig.enableSimulation">
-        <el-row :gutter="20">
-          <el-col :span="12">
-            <el-form-item label="模型文件路径">
-              <el-input 
-                v-model="localConfig.ameModel" 
-                placeholder="如: pump_model.ame"
-                clearable
+      <div v-if="!simStatus" class="sim-info">正在读取仿真模型...</div>
+      <template v-else>
+        <div class="sim-info">
+          诊断时按实测工况查各模型的仿真基准表，与模型预期值比较。下面的设置只对本次{{ localConfig.diagnosisMode === 'realtime' ? '（实时模式由后端自动诊断，使用“仿真模型”页保存的诊断方案）' : '诊断生效' }}；
+          默认方案在“仿真模型”页设置。
+        </div>
+        <el-table :data="simStatus.models" size="mini" border class="sim-table">
+          <el-table-column label="模型" min-width="150">
+            <template slot-scope="{ row }">
+              <b>{{ row.name }}</b>
+              <div class="sim-desc">{{ row.description }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="基准表" min-width="140">
+            <template slot-scope="{ row }">
+              <span v-if="row.table">{{ row.table.model.label }}<br><span class="sim-desc">{{ row.table.created }}</span></span>
+              <span v-else class="warn">还没有基准表</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="本次诊断" width="130">
+            <template slot-scope="{ row }">
+              <el-select
+                v-model="localConfig.models[row.id]"
+                size="mini"
+                :disabled="!row.table || localConfig.diagnosisMode === 'realtime'"
               >
-                <template #prepend>
-                  <i class="el-icon-document"></i>
-                </template>
-              </el-input>
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="电传转速">
-              <el-select 
-                v-model="localConfig.electricalSpeed" 
-                placeholder="请选择电传转速"
-                style="width: 100%;"
-              >
-                <el-option 
-                  v-for="item in electricalSpeedOptions" 
-                  :key="item.value" 
-                  :label="item.label" 
-                  :value="item.value"
-                />
+                <el-option v-for="(label, value) in MODE_LABELS" :key="value" :label="label" :value="value" />
               </el-select>
-            </el-form-item>
-          </el-col>
-        </el-row>
-        <div class="form-tip">
-          <i class="el-icon-info"></i> 选择电传转速后，将自动配置对应的三个流量控制参数
-        </div>
-
-        <el-divider content-position="left">
-          <i class="el-icon-setting"></i> 仿真结果文件配置
-        </el-divider>
-        
-        <div class="variable-grid" v-if="variableConfigs.length > 0">
-          <div 
-            v-for="(item, index) in variableConfigs" 
-            :key="index"
-            class="variable-item"
-          >
-            <div class="variable-header">
-              <span class="variable-index">
-                <i class="el-icon-coin"></i> 变量 {{ index + 1 }}
-              </span>
-              <el-button 
-                type="text" 
-                icon="el-icon-delete"
-                :disabled="variableConfigs.length <= 1"
-                @click="$emit('remove-variable', index)"
-                class="delete-btn"
-              />
-            </div>
-            <el-input 
-              v-model="item.name" 
-              placeholder="变量名称"
-              size="small"
-              class="variable-input"
-            />
-            <el-input 
-              v-model="item.fileName" 
-              placeholder="数据文件名（如 xxx.data）"
-              size="small"
-              class="variable-input"
-            />
-          </div>
-        </div>
-        
-        <el-button 
-          type="primary" 
-          size="small" 
-          icon="el-icon-plus"
-          @click="$emit('add-variable')"
-          class="add-variable-btn"
-        >
-          添加变量
-        </el-button>
-      </el-form>
+            </template>
+          </el-table-column>
+        </el-table>
+      </template>
     </el-card>
 
     <div class="action-bar">
@@ -190,28 +135,30 @@
 </template>
 
 <script>
+import { getDataDirs } from '@/api/files'
+import { MODE_LABELS, getSimulationStatus } from '@/api/simulation'
+
 export default {
   name: 'ConfigStep',
   props: {
     config: {
       type: Object,
       required: true
-    },
-    variableConfigs: {
-      type: Array,
-      required: true
     }
   },
   data() {
     return {
-      electricalSpeedOptions: [
-        { value: 1295, label: '1295 rpm' },
-        { value: 2999, label: '2999 rpm' },
-        { value: 4975, label: '4975 rpm' },
-        { value: 7958, label: '7958 rpm' },
-        { value: 9990, label: '9990 rpm' }
-      ]
+      simStatus: null,
+      MODE_LABELS
     }
+  },
+  created() {
+    getSimulationStatus().then(st => {
+      this.simStatus = st
+      for (const m of st.models) {
+        if (!(m.id in this.localConfig.models)) this.$set(this.localConfig.models, m.id, m.setting.mode || 'decisive')
+      }
+    }).catch(() => { this.simStatus = { models: [] } })
   },
   computed: {
     localConfig: {
@@ -224,6 +171,18 @@ export default {
     }
   },
   methods: {
+    /** 输入框下拉：已登记 / 预置的数据目录 */
+    async suggestDirs(query, callback) {
+      try {
+        const { preset, registered } = await getDataDirs()
+        const keyword = (query || '').toLowerCase()
+        callback([...registered, ...preset]
+          .filter(dir => !keyword || dir.toLowerCase().includes(keyword))
+          .map(value => ({ value })))
+      } catch (e) {
+        callback([])
+      }
+    },
     handleNext() {
       this.$emit('next')
     }
@@ -232,6 +191,22 @@ export default {
 </script>
 
 <style scoped>
+.sim-info {
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.8;
+}
+.sim-info.warn,
+.warn {
+  color: #e6a23c;
+}
+.sim-table {
+  margin-top: 8px;
+}
+.sim-desc {
+  color: #909399;
+  font-size: 12px;
+}
 .config-step-card {
   max-height: calc(100vh - 280px);
   overflow-y: auto;
@@ -275,46 +250,11 @@ export default {
   color: #606266;
 }
 
-.variable-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
-  margin-bottom: 16px;
-}
 
-.variable-item {
-  border: 1px solid #dcdfe6;
-  border-radius: 6px;
-  padding: 14px;
-  background-color: #fafafa;
-  transition: all 0.3s ease;
-}
 
-.variable-item:hover {
-  border-color: #409eff;
-  box-shadow: 0 2px 12px rgba(64, 158, 255, 0.15);
-  background-color: #fff;
-}
 
-.variable-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px dashed #e4e7ed;
-}
 
-.variable-index {
-  font-size: 13px;
-  font-weight: 600;
-  color: #303133;
-}
 
-.variable-index i {
-  margin-right: 4px;
-  color: #409eff;
-}
 
 .delete-btn {
   padding: 0;
@@ -330,17 +270,8 @@ export default {
   color: #c0c4cc;
 }
 
-.variable-input {
-  margin-bottom: 8px;
-}
 
-.variable-input:last-child {
-  margin-bottom: 0;
-}
 
-.add-variable-btn {
-  margin-top: 8px;
-}
 
 .action-bar {
   margin-top: 20px;

@@ -36,29 +36,13 @@ module.exports = {
       warnings: false,
       errors: true
     },
+    // 与 deploy/nginx.conf 保持一致：/api/<服务> → 对应的后端服务
     proxy: {
-      '/db': {
-        target: 'http://127.0.0.1:5001',
-        changeOrigin: true,
-        pathRewrite: { '^/db': '' }
-      },
-      '/file': {
-        target: 'http://127.0.0.1:5002',
-        changeOrigin: true,
-        pathRewrite: { '^/file': '' }
-      },
-      '/ai': {
-        target: 'http://127.0.0.1:8999',
-        changeOrigin: true,
-        pathRewrite: { '^/ai': '' }
-      },
-      '/amesim': {
-        target: 'http://127.0.0.1:5003',
-        changeOrigin: true,
-        pathRewrite: { '^/amesim': '' }
-      }
-    },
-    before: require('./mock/mock-server.js')
+      '/api/task': { target: 'http://127.0.0.1:5001', pathRewrite: { '^/api/task': '' } },
+      '/api/file': { target: 'http://127.0.0.1:5002', pathRewrite: { '^/api/file': '' } },
+      '/api/ai': { target: 'http://127.0.0.1:8999', pathRewrite: { '^/api/ai': '' } },
+      '/api/amesim': { target: 'http://127.0.0.1:5003', pathRewrite: { '^/api/amesim': '/api' } }
+    }
   },
   configureWebpack: {
     // provide the app's title in webpack's name field, so that

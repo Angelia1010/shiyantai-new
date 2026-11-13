@@ -1,0 +1,98 @@
+{
+  "_说明": "试验台诊断配置。管路与测点的对应关系是根据 2026-11 实测数据推断的，请对照管路图核对后修改。修改后无需重启，下一次诊断即生效。",
+
+  "loops": [
+    {
+      "name": "主油路",
+      "description": "按标准台原理图：供油系统 → 被试件（高压泵）→ 回油系统大流量管路，同一路油上串联多个流量计，可互相校核。测点与物理量的对应见 config/signals.json",
+      "meters": [
+        {"column": "回油流量1-1", "label": "回油流量1-1（大流量管路）", "group": "回油", "component": "回油流量计1"},
+        {"column": "回油流量1-2", "label": "回油流量1-2（大流量管路）", "group": "回油", "component": "回油流量计1"},
+        {"column": "供油流量1-1", "label": "供油流量1-1", "group": "供油", "component": "供油管路"},
+        {"column": "供油流量1-2", "label": "供油流量1-2", "group": "供油", "component": "供油管路"},
+        {"column": "齿轮流量计", "label": "总流量计", "group": "供油", "component": "被试件1高低压双联泵"}
+      ],
+      "mass_meter": {"column": "回油质量流量2", "label": "回油质量流量1（大流量管路）", "group": "回油",
+                     "_说明": "原理图中大流量管路的是回油质量流量1，数据中对应“回油质量流量2”列（见 signals.json）"},
+      "temperature_column": "供油温度1-1",
+      "_说明_温度": "质量流量计可单独指定 temperature_column（其所在位置的油温）。2026-11 数据比较过：用回油温度1-1 修正密度时质量-体积残差 0.27%，用供油温度1-1 为 0.24%，故沿用供油温度"
+    },
+    {
+      "name": "小流量管路",
+      "description": "回油系统小流量管路（2026-11 数据中没有流量）",
+      "meters": [
+        {"column": "回油流量2-1", "label": "回油流量2-1（小流量管路）", "group": "回油", "component": "回油流量计2"},
+        {"column": "回油流量2-2", "label": "回油流量2-2（小流量管路）", "group": "回油", "component": "回油流量计2"}
+      ],
+      "mass_meter": {"column": "回油质量流量1", "label": "回油质量流量2（小流量管路）"},
+      "temperature_column": "回油温度2-1"
+    }
+  ],
+
+  "fuel": {
+    "_说明": "没有健康基准时用的密度模型 ρ = rho15 + slope·(T − 15)，系数由 2026-11 数据拟合（残差约 2 kg/m³）。换了油品时在前端填写当前燃油的 20 ℃ 密度即可，不用改这里",
+    "rho15": 792.5,
+    "slope": -0.54
+  },
+
+  "condition": {
+    "speed_columns": {"电传": "电传实际转速", "燃油泵": "燃油泵实际转速"},
+    "speed_step": {"电传": 500, "燃油泵": 50}
+  },
+
+  "steady": {
+    "_说明": "稳定段：每 window_s 秒取均值，连续若干窗口的流量相对变化不超过 max_level_change、窗口内波动不超过 max_cv",
+    "window_s": 1.0,
+    "max_cv": 0.02,
+    "max_level_change": 0.02,
+    "min_duration_s": 5
+  },
+
+  "thresholds": {
+    "loop_active_flow": 10.0,
+    "redundancy": {
+      "_说明": "单个流量计相对协调后实际流量的偏差。有健康基准时扣除该表的固有偏差，阈值取 max(下限, 倍数×基准标准差)。预警下限 1.3%：健康数据（60 个文件）中最大偏差 1.17%（36℃ S1295-P0.10，小流量时回油流量1-2 缓慢游走），其余均不超过 0.73%",
+      "warn": 0.02, "alarm": 0.04,
+      "baseline_warn_floor": 0.013, "baseline_alarm_floor": 0.025,
+      "baseline_warn_sigma": 4, "baseline_alarm_sigma": 8
+    },
+    "balance": {"_说明": "供油与回油之差（泄漏、夹气、一侧整体偏移）。有逐表固有偏差时已逐表修正，60 个健康文件中最大 0.56%（标准差 0.2%）", "warn": 0.012, "alarm": 0.03},
+    "mass_volume": {"_说明": "质量流量÷密度 与 体积流量的偏差；有健康基准时取 max(下限, 4/8×基准标准差)", "warn": 0.015, "alarm": 0.03},
+    "zero": {"_说明": "无流量的管路上，流量计读数的允许零点", "volume": 2.0, "mass": 15.0},
+    "noise": {"_说明": "流量计波动（变异系数）超过基准的倍数", "ratio": 5.0, "floor": 0.02},
+    "spike": {"_说明": "鲁棒 z 分数超过 z 的点占比超过 ratio 视为毛刺", "z": 8.0, "ratio": 0.005},
+    "frozen": {"_说明": "读数连续不变超过 max(min_s, min_ratio×稳定段时长) 视为冻结；健康数据最长约 0.2 秒", "min_s": 2.0, "min_ratio": 0.2},
+    "dropout_ratio": 0.1
+  },
+
+  "isolation": {
+    "_说明": "故障隔离（diagnosis/isolation.py）：在单表偏离、两表偏离、泄漏、夹气、一侧整体偏、体积表共模偏、实际流量变化等假设中取 χ²+代价 最小的解释。cause_cost：每个原因的先验代价（越大越不容易认定有故障）；group_cost：多只表同时偏（共因）额外的代价；max_causes：最多同时解释几个原因；alternative_probability：其他解释的概率达到多少时在报告中列出；anchor_sigma_floor：仿真模型的预期流量作为真实流量参照时的最小离散",
+    "cause_cost": 9.0, "group_cost": 3.0, "max_causes": 2, "alternative_probability": 0.05, "anchor_sigma_floor": 0.006
+  },
+  "changepoint": {
+    "_说明": "变点检测（diagnosis/changepoint.py）：稳定段内各表相对读数突变或渐变时，只用变化之后（渐变取末段 tail）的数据判断当前状态。min_shift：变化量至少为预警阈值的倍数；z：显著性；effect：变化量至少为拟合残差标准差的倍数（排除健康数据的缓慢游走）；min_windows：变化前后各至少多少个时间窗",
+    "min_windows": 5, "min_shift": 0.5, "z": 6.0, "effect": 3.0, "tail": 0.2, "margin": 1
+  },
+  "temperature_pairs": [
+    {"_说明": "同位置两只温度传感器互校，健康数据中相差不超过约 1.5 ℃", "columns": ["供油温度1-1", "供油温度1-2"], "warn": 3.0, "alarm": 6.0},
+    {"columns": ["回油温度1-1", "回油温度1-2"], "warn": 3.0, "alarm": 6.0}
+  ],
+
+  "ignored_sensors": [
+    {"column": "T6循环管路温度", "reason": "2026-11 起读数固定 157.6 ℃，疑似热电阻断路"},
+    {"column": "T7出口流量计前温度", "reason": "2026-11 起读数固定 157.6 ℃，疑似热电阻断路"}
+  ],
+
+  "sensor_ranges": [
+    {"match": "温度", "min": -40, "max": 120},
+    {"match": "压力", "min": -0.5, "max": 40},
+    {"match": "质量流量", "min": -50, "max": 20000},
+    {"match": "流量", "min": -5, "max": 20000},
+    {"match": "转速", "min": -10, "max": 30000}
+  ],
+
+  "legacy_model": {
+    "_说明": "原经验公式（质量流量→涡轮转速→频率→理论流量），只作参考，不参与判定",
+    "enabled": true
+  }
+}
