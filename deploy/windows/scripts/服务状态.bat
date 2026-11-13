@@ -1,6 +1,7 @@
 @echo off
+REM Show whether the services are running. Runs as administrator.
+REM This file is ASCII only on purpose: cmd.exe misreads batch files containing Chinese text on some PCs.
 chcp 65001 >nul
-REM 查看服务是否在运行
 net session >nul 2>&1
 if errorlevel 1 (
     powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
