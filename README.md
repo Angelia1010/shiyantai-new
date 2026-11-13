@@ -188,6 +188,8 @@ python -m pump_test_bench.tools.build_simulation_table 健康数据目录 --defa
 
 ## 快速开始（Windows，开发）
 
+> 新电脑第一次从源码部署、在系统页面上测试诊断的完整步骤见 [docs/本地部署测试.md](docs/本地部署测试.md)。
+
 1. **配置**：复制 `.env.example` 为 `.env`，至少填写 `SECRET_KEY`、`ADMIN_PASSWORD`。数据目录在前端填写，不需要改 `.env`。
 2. **后端**：
    ```powershell
