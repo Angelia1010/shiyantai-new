@@ -55,7 +55,7 @@
       </div>
 
       <template v-if="meterDeviations.length">
-        <div class="panel-title sub">流量计互校偏差<span class="counter">相对其余表中位数</span></div>
+        <div class="panel-title sub">流量计偏差</div>
         <div v-for="m in meterDeviations" :key="m.name" class="deviation">
           <div class="deviation-top">
             <span>{{ m.name }}</span>
@@ -359,7 +359,7 @@ export default {
         .filter(f => this.history[f].length)
         .map(f => ({ name: f, data: this.history[f] }))
     },
-    // 最新报告中主油路各流量计的互校偏差（已扣除固有偏差）
+    // 最新报告中主油路各流量计相对实际流量的偏差（已扣除固有偏差）
     meterDeviations() {
       const loop = this.latestResult && this.latestResult.loops.find(l => l.active)
       if (!loop) return []

@@ -254,7 +254,7 @@ def _indicators(analysis: Dict) -> List[Dict]:
         if not loop["active"]:
             continue
         if loop.get("consensus"):
-            rows.append({"name": f"{loop['name']} 流量共识值", "reference": "各流量计中位数",
+            rows.append({"name": f"{loop['name']} 流量共识值", "reference": "正常流量计的读数",
                          "value": f"{loop['consensus']:.1f} L/h"})
         for m in loop["meters"]:
             if "corrected" in m:

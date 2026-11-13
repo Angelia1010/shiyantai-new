@@ -121,10 +121,6 @@
                     <span :class="['num', 'metric-value', cvTone(formulaOf(o.name).assessment)]">{{ cvText(formulaOf(o.name).assessment) }}</span>
                     <span class="num muted">{{ constText(formulaOf(o.name).assessment) }}</span>
                     <span class="spec-tools">
-                      <span v-if="!formulaOf(o.name).assessment.constant && (formulaOf(o.name).assessment.suggestions || []).length" class="flag"
-                            title="有改进建议，见详情">
-                        <i class="el-icon-warning-outline" />{{ formulaOf(o.name).assessment.suggestions.length }}
-                      </span>
                       <el-button type="text" size="mini" :icon="openOutputs[o.name] ? 'el-icon-arrow-up' : 'el-icon-arrow-down'"
                                  @click="toggleOutput(o.name)">{{ openOutputs[o.name] ? '收起' : '详情' }}</el-button>
                     </span>
@@ -134,13 +130,9 @@
                   </span>
                 </div>
                 <div v-if="openOutputs[o.name] && formulaOf(o.name)" :key="`${o.name}-detail`" class="spec-detail">
-                  <fit-result :result="formulaOf(o.name)" selectable @pick="onPick(o.name, $event)" />
+                  <fit-result :result="formulaOf(o.name)" />
                 </div>
               </template>
-            </div>
-            <div v-if="pickedCount" class="exclude-bar">
-              已选 {{ pickedCount }} 个可疑样本
-              <el-button size="mini" type="warning" @click="excludePicked">排除这些样本并重建</el-button>
             </div>
           </el-tab-pane>
 
@@ -245,7 +237,7 @@
                     固有偏差
                     <el-tooltip content="正常时该测点比模型预期高/低多少（随工况变化，此处为平均值），诊断时先扣除" placement="top"><i class="el-icon-question" /></el-tooltip>
                   </template>
-                  <template slot-scope="{ row }"><span :class="{ warn: row.warning }">{{ val(row.bias, row, true) }}</span></template>
+                  <template slot-scope="{ row }">{{ val(row.bias, row, true) }}</template>
                 </el-table-column>
                 <el-table-column width="100" align="right">
                   <template slot="header">
@@ -256,9 +248,6 @@
                 </el-table-column>
                 <el-table-column label="预警 / 异常" width="170" align="right">
                   <template slot-scope="{ row }">±{{ val(row.warn, row) }} / ±{{ val(row.alarm, row) }}</template>
-                </el-table-column>
-                <el-table-column label="提示" min-width="200">
-                  <template slot-scope="{ row }"><span v-if="row.warning" class="warn small">{{ row.warning }}</span></template>
                 </el-table-column>
               </el-table>
             </template>
@@ -357,7 +346,6 @@ export default {
       models: [],
       builders: [],
       curveVar: '',
-      picks: {},
       job: { state: 'idle' },
       profile: {},
       profileDirty: false,
@@ -391,9 +379,6 @@ export default {
     },
     excludedFiles() {
       return (this.current && this.current.config.exclude_files) || []
-    },
-    pickedCount() {
-      return new Set(Object.values(this.picks).flat()).size
     },
     notReady() {
       return this.build.model ? this.build.model.engines.filter(e => !e.ready) : []
@@ -453,7 +438,6 @@ export default {
       this.disposeChart()
       this.selectedId = row.id
       this.tab = row.table && row.table.kind === 'formula' ? 'formulas' : 'io'
-      this.picks = {}
       this.openOutputs = {}
       this.curveVar = ''
     },
@@ -492,10 +476,6 @@ export default {
       const hi = Math.max(...errs)
       return lo === hi || errs.length === 1 ? `${lo.toFixed(2)}%` : `${lo.toFixed(2)}–${hi.toFixed(2)}%`
     },
-    warningsOf(m) {
-      const f = (m.table && m.table.formulas) || {}
-      return Object.values(f).reduce((n, x) => n + ((x.assessment && x.assessment.suggestions) || []).length, 0)
-    },
     cvText(a) {
       if (!a || a.cv_error === null || a.cv_error === undefined) return '—'
       if (a.constant) return '恒定值'
@@ -524,9 +504,6 @@ export default {
       const t = this.current && this.current.table
       return t && t.formulas ? t.formulas[name] : null
     },
-    onPick(output, keys) {
-      this.$set(this.picks, output, keys)
-    },
     async saveConfig(m, cfg, message) {
       try {
         await updateModel(m.id, cfg)
@@ -536,16 +513,6 @@ export default {
       } catch (e) {
         this.$message.error(errorMessage(e))
         return false
-      }
-    },
-    async excludePicked() {
-      const m = this.current
-      const keys = [...new Set(Object.values(this.picks).flat())]
-      const cfg = JSON.parse(JSON.stringify(m.config))
-      cfg.exclude_files = [...new Set([...(cfg.exclude_files || []), ...keys])]
-      if (await this.saveConfig(m, cfg, `已排除 ${keys.length} 个文件，请重建模型`)) {
-        this.picks = {}
-        this.openBuild(this.current)
       }
     },
     async includeFile(file) {
@@ -1150,13 +1117,6 @@ $off: #8a96a6;
     color: $caution;
   }
 }
-.flag {
-  color: $caution;
-  font-size: 12px;
-  i {
-    margin-right: 2px;
-  }
-}
 .excluded-line {
   font-size: 12px;
   color: $mist;
@@ -1164,16 +1124,6 @@ $off: #8a96a6;
 }
 .excluded {
   margin: 0 4px 4px 0;
-}
-.exclude-bar {
-  position: sticky;
-  bottom: 0;
-  margin-top: 12px;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 13px;
 }
 
 /* 变量与输出 */

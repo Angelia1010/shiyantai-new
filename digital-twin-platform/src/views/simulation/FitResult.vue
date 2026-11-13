@@ -26,21 +26,6 @@
         变量角色：<span v-for="(r, n) in result.info.roles" :key="n" class="role">{{ n }}·{{ ROLE_LABELS[r] || r }}</span>
       </div>
       <div v-if="result.info && result.info.note" class="muted small">{{ result.info.note }}</div>
-      <el-alert v-for="(s, k) in a.suggestions" :key="k" class="note" type="warning" :closable="false" :title="s" show-icon />
-      <div v-if="a.outliers && a.outliers.length" class="outliers">
-        <div class="muted small">
-          可疑样本（偏离其他样本较多，可能是工况不稳或数据有问题）：
-          <el-tooltip content="勾选后可排除，排除的文件不参与建模与标定；是否排除由你判断" placement="top"><i class="el-icon-question" /></el-tooltip>
-        </div>
-        <el-checkbox-group v-if="selectable" v-model="picked" @change="$emit('pick', picked)">
-          <el-checkbox v-for="o in a.outliers" :key="o.key" :label="o.key">
-            {{ o.key }}（偏差 {{ err(o.residual, true) }}）
-          </el-checkbox>
-        </el-checkbox-group>
-        <ul v-else class="small">
-          <li v-for="o in a.outliers" :key="o.key">{{ o.key }}（偏差 {{ err(o.residual, true) }}）</li>
-        </ul>
-      </div>
       <el-row v-if="a.points && a.points.length" :gutter="12" class="charts">
         <el-col :span="12"><div ref="scatter" class="chart" /></el-col>
         <el-col :span="12">
@@ -67,11 +52,10 @@ const PALETTE = ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed', '#0891b2
 export default {
   name: 'FitResult',
   props: {
-    result: { type: Object, required: true },
-    selectable: { type: Boolean, default: false }
+    result: { type: Object, required: true }
   },
   data() {
-    return { ROLE_LABELS, xVar: '', picked: [] }
+    return { ROLE_LABELS, xVar: '' }
   },
   computed: {
     a() {
@@ -190,12 +174,6 @@ export default {
 }
 .role {
   margin-right: 8px;
-}
-.note {
-  margin-top: 6px;
-}
-.outliers {
-  margin-top: 6px;
 }
 .charts {
   margin-top: 8px;

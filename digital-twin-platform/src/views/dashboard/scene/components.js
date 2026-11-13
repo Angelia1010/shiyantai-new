@@ -81,7 +81,7 @@ export const COMPONENTS = {
     fields: ['T20加热出口温度'],
     colorBy: { temperature: ['T20加热出口温度'] }
   },
-  温控系统_板式换热器: { label: '温控系统 · 板式换热器', material: 'equipment', fields: [] },
+  温控系统_板式换热器: { label: '温控系统', material: 'equipment', fields: [] },
   // 离心泵驱动电机
   离心泵_油路块: {
     label: '离心泵驱动电机',
