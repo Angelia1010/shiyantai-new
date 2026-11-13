@@ -23,24 +23,12 @@ import numpy as np
 from pump_test_bench.app.core.data_reader import TABLE_SUFFIXES, read_table
 from pump_test_bench.app.diagnosis.config import load_config
 from pump_test_bench.app.diagnosis.engine import analyze
+from pump_test_bench.app.diagnosis.tolerances import features
 
 logger = logging.getLogger(__name__)
 DEFAULT_BASELINE = Path(__file__).resolve().parents[2] / "config" / "baseline_default.json"
 MIN_FILES = 5
 MIN_FILES_FOR_MODEL = 12  # 拟合流量-温度模型至少需要的文件数
-
-
-def features(flow: float, temperature: float, ranges: Dict) -> List[float]:
-    """偏差模型的输入；超出建基准时的范围就截断，避免外推。"""
-    q = min(max(flow, ranges["flow"][0]), ranges["flow"][1]) / 100
-    t = min(max(temperature, ranges["temperature"][0]), ranges["temperature"][1]) / 10
-    return [1.0, q, t, q * t]
-
-
-def predict_bias(meter: Dict, flow: Optional[float], temperature: Optional[float], ranges: Optional[Dict]) -> float:
-    if meter.get("coef") and ranges and flow is not None and temperature is not None:
-        return float(np.dot(meter["coef"], features(flow, temperature, ranges)))
-    return float(meter.get("bias", 0.0))
 
 
 def baseline_path() -> Path:

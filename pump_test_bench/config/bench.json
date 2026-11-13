@@ -51,13 +51,13 @@
   "thresholds": {
     "loop_active_flow": 10.0,
     "redundancy": {
-      "_说明": "单个流量计相对其余流量计中位数的偏差。有健康基准时扣除该表的固有偏差，阈值取 max(下限, 倍数×基准标准差)",
+      "_说明": "单个流量计相对协调后实际流量的偏差。有健康基准时扣除该表的固有偏差，阈值取 max(下限, 倍数×基准标准差)。预警下限 1.3%：健康数据（60 个文件）中最大偏差 1.17%（36℃ S1295-P0.10，小流量时回油流量1-2 缓慢游走），其余均不超过 0.73%",
       "warn": 0.02, "alarm": 0.04,
-      "baseline_warn_floor": 0.015, "baseline_alarm_floor": 0.025,
+      "baseline_warn_floor": 0.013, "baseline_alarm_floor": 0.025,
       "baseline_warn_sigma": 4, "baseline_alarm_sigma": 8
     },
-    "balance": {"_说明": "供油组与回油组中位数之差（泄漏或分流）", "warn": 0.015, "alarm": 0.03},
-    "mass_volume": {"_说明": "质量流量÷密度 与 体积流量共识值的偏差", "warn": 0.015, "alarm": 0.03},
+    "balance": {"_说明": "供油与回油之差（泄漏、夹气、一侧整体偏移）。有逐表固有偏差时已逐表修正，60 个健康文件中最大 0.56%（标准差 0.2%）", "warn": 0.012, "alarm": 0.03},
+    "mass_volume": {"_说明": "质量流量÷密度 与 体积流量的偏差；有健康基准时取 max(下限, 4/8×基准标准差)", "warn": 0.015, "alarm": 0.03},
     "zero": {"_说明": "无流量的管路上，流量计读数的允许零点", "volume": 2.0, "mass": 15.0},
     "noise": {"_说明": "流量计波动（变异系数）超过基准的倍数", "ratio": 5.0, "floor": 0.02},
     "spike": {"_说明": "鲁棒 z 分数超过 z 的点占比超过 ratio 视为毛刺", "z": 8.0, "ratio": 0.005},
@@ -65,6 +65,14 @@
     "dropout_ratio": 0.1
   },
 
+  "isolation": {
+    "_说明": "故障隔离（diagnosis/isolation.py）：在单表偏离、两表偏离、泄漏、夹气、一侧整体偏、体积表共模偏、实际流量变化等假设中取 χ²+代价 最小的解释。cause_cost：每个原因的先验代价（越大越不容易认定有故障）；group_cost：多只表同时偏（共因）额外的代价；max_causes：最多同时解释几个原因；alternative_probability：其他解释的概率达到多少时在报告中列出；anchor_sigma_floor：仿真模型的预期流量作为真实流量参照时的最小离散",
+    "cause_cost": 9.0, "group_cost": 3.0, "max_causes": 2, "alternative_probability": 0.05, "anchor_sigma_floor": 0.006
+  },
+  "changepoint": {
+    "_说明": "变点检测（diagnosis/changepoint.py）：稳定段内各表相对读数突变或渐变时，只用变化之后（渐变取末段 tail）的数据判断当前状态。min_shift：变化量至少为预警阈值的倍数；z：显著性；effect：变化量至少为拟合残差标准差的倍数（排除健康数据的缓慢游走）；min_windows：变化前后各至少多少个时间窗",
+    "min_windows": 5, "min_shift": 0.5, "z": 6.0, "effect": 3.0, "tail": 0.2, "margin": 1
+  },
   "temperature_pairs": [
     {"_说明": "同位置两只温度传感器互校，健康数据中相差不超过约 1.5 ℃", "columns": ["供油温度1-1", "供油温度1-2"], "warn": 3.0, "alarm": 6.0},
     {"columns": ["回油温度1-1", "回油温度1-2"], "warn": 3.0, "alarm": 6.0}

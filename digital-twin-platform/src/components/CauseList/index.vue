@@ -7,6 +7,9 @@
           {{ SEVERITY_LABELS[c.severity] }}
         </el-tag>
         <span class="cause-name">{{ c.name }}</span>
+        <span v-if="c.confidence != null" class="cause-confidence" title="在各种可能的解释中，这一解释与数据相符的相对可能性">
+          可能性约 {{ Math.round(c.confidence * 100) }}%
+        </span>
       </div>
       <div class="cause-text">{{ c.explanation }}</div>
       <div v-if="c.alternatives && c.alternatives.length" class="cause-alt">
@@ -24,7 +27,7 @@
     </div>
 
     <div v-if="historyNotes.length" class="history">
-      <div class="history-title"><i class="el-icon-data-line"></i> 历史趋势（基于最近 {{ history.tests }} 次诊断，不影响本次结论）</div>
+      <div class="history-title"><i class="el-icon-data-line"></i> 历史趋势（基于最近 {{ history.tests }} 次诊断）</div>
       <div v-for="(t, i) in historyNotes" :key="i" class="history-item">{{ t }}</div>
     </div>
   </div>
@@ -113,6 +116,12 @@ export default {
   font-size: 13px;
   padding: 4px 0;
 }
+.cause-confidence {
+  margin-left: 8px;
+  font-size: 12px;
+  color: #909399;
+}
+
 .history {
   margin-top: 6px;
   padding: 8px 10px;

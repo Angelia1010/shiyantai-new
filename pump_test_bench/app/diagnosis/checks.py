@@ -66,15 +66,6 @@ def window_means(frame: pd.DataFrame, t: np.ndarray, window: float = 1.0) -> pd.
     return frame.apply(pd.to_numeric, errors="coerce").groupby(ids).mean()
 
 
-def end_change(values: pd.Series, part: float = 0.25) -> Optional[float]:
-    """后 part 段中位数减前 part 段中位数，表示测试过程中的持续变化（渐变故障）。"""
-    v = values.dropna().to_numpy(dtype=float)
-    k = int(len(v) * part)
-    if k < 3:
-        return None
-    return float(np.median(v[-k:]) - np.median(v[:k]))
-
-
 def window_cv(series: pd.Series, t: np.ndarray, window: float = 1.0) -> Optional[float]:
     """各时间窗内变异系数的中位数，表示读数的短时波动（噪声）水平。"""
     values = pd.to_numeric(series, errors="coerce").to_numpy(dtype=float)

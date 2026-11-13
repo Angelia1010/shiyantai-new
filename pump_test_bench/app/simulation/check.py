@@ -56,6 +56,31 @@ def fmt_limit(v: float, mode: str, unit: str = "") -> str:
     return f"±{v:.1f} {unit}".rstrip() if mode == "absolute" else f"±{v * 100:.1f}%"
 
 
+def expected_flows(seg: pd.DataFrame, mcfg: Dict, table: Dict, density_fn: Optional[DensityFn] = None) -> Dict:
+    """模型按当前工况给出的各流量测点预期读数（已含该测点的固有偏差）：
+    {"expected": {列: 预期值}, "std": {列: 标定离散}}。模型不适用、缺少工况输入或工况超出基准表范围时返回空字典
+    （外推的预期值不够可靠，不用作诊断的参照）。"""
+    ok, _ = applicable(seg, mcfg)
+    cond, _ = condition_of(seg, mcfg, density_fn)
+    if not ok or len(cond) < len(table["inputs"]):
+        return {}
+    pred, outside = predict(table, cond)
+    if outside:
+        return {}
+    calib = (table.get("calibration") or {}).get("columns", {})
+    expected, std = {}, {}
+    for o in mcfg["outputs"]:
+        p = pred.get(o["name"])
+        if o.get("kind") != "flow" or p is None or residual_mode(o) != "relative" or abs(p) < 1e-9:
+            continue
+        for col in o["columns"]:
+            c = calib.get(col, {})
+            expected[col] = p * (1 + (bias_at(c, mcfg, cond) if c else 0.0))
+            if c.get("std"):
+                std[col] = c["std"]
+    return {"expected": expected, "std": std} if expected else {}
+
+
 def model_check(seg: pd.DataFrame, mcfg: Dict, table: Dict, flagged: Optional[Set[str]] = None,
                 density_fn: Optional[DensityFn] = None, sigma: Optional[Dict] = None,
                 column_component: Optional[Dict[str, str]] = None) -> Dict:
@@ -190,9 +215,12 @@ def _group_finding(rule, mcfg, table, cond, cond_text, pred, rows, members, rq, 
                   f"更可能是模型输入“{inp}”（{spec.get('column', '')}）的测点偏了")
         title, target = "模型输入测点偏差", spec.get("column", inp)
     value = rq if mode == "absolute" else rq * 100
-    findings.append(finding(GROUP_CATEGORY[meaning], sev, title, detail, target, target, rule.get("component"),
-                            value, f"预警 {fmt_limit(warn_q, mode, members[0]['unit'])}，"
-                                   f"异常 {fmt_limit(alarm_q, mode, members[0]['unit'])}"))
+    f = finding(GROUP_CATEGORY[meaning], sev, title, detail, target, target, rule.get("component"),
+                value, f"预警 {fmt_limit(warn_q, mode, members[0]['unit'])}，"
+                       f"异常 {fmt_limit(alarm_q, mode, members[0]['unit'])}")
+    if "pressures_follow" in group:  # 结构化的判断依据，原因推断直接使用，不解析说明文字
+        f["pressures_follow"] = group["pressures_follow"]
+    findings.append(f)
     return group
 
 

@@ -216,7 +216,8 @@ FAULTS: List[Fault] = [
           "齿轮流量计有毛刺", ("B", "C")),
     Fault("F09", "F09_质量计零漂", "科氏质量流量计零点漂移（+12 kg/h）", MASS, mass_zero,
           {"col": MASS, "offset": 12.0}, "const", "+12kg/h", "abnormal",
-          "小流量时质量-体积不一致明显，大流量时较小", ("D", "C")),
+          "小流量时质量-体积不一致明显，大流量时较小", ("D", "C"),
+          expect_by={"C": "warning"}),  # 46℃ 约 530 L/h 时 12 kg/h 仅约 2.9%，低于 3% 的异常阈值
     Fault("F10", "F10_质量计标定漂移", "科氏质量流量计标定系数漂移（+5%）", MASS, k_factor,
           {"col": MASS, "ratio": 0.05}, "const", "明显5%", "abnormal",
           "质量流量与体积流量不一致（异常）", ("A", "B")),

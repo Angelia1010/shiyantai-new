@@ -34,7 +34,7 @@ def healthy_density_fn() -> DensityFn:
     """正常数据所用油品的密度模型（健康基准拟合的密度-温度关系）。"""
     from pump_test_bench.app.diagnosis.baseline import load_baseline
     from pump_test_bench.app.diagnosis.config import load_config
-    from pump_test_bench.app.diagnosis.engine import _density
+    from pump_test_bench.app.diagnosis.fuel import density as _density
     cfg, baseline = load_config(), load_baseline()
     return lambda t: _density(cfg, baseline, t, None)[0]
 

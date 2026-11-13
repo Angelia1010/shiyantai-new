@@ -109,7 +109,7 @@ def fuel_density(temperature: float) -> float:
     """油温下的燃油密度（kg/m³）：诊断设置里的 20 ℃ 密度优先，否则用健康基准/配置的密度-温度关系。"""
     from pump_test_bench.app.diagnosis.baseline import load_baseline
     from pump_test_bench.app.diagnosis.config import load_config
-    from pump_test_bench.app.diagnosis.engine import _density
+    from pump_test_bench.app.diagnosis.fuel import density as _density
     rho20 = None
     try:
         from pump_test_bench.app.diagnosis.settings import fuel_density_20

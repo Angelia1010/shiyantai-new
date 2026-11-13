@@ -9,7 +9,7 @@ from pump_test_bench.app.db import tasks as repo
 from pump_test_bench.app.diagnosis import settings as diag_settings
 from pump_test_bench.app.diagnosis.config import load_config
 from pump_test_bench.app.diagnosis.engine import diagnose_file
-from pump_test_bench.app.diagnosis.history import DEFAULTS as HISTORY_DEFAULTS, analyze_history
+from pump_test_bench.app.diagnosis.history import DEFAULTS as HISTORY_DEFAULTS, analyze_history, apply_history
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ def past_reports(task: Dict, days: float) -> List[Dict]:
 
 
 def _attach_history(task: Dict, body: Dict) -> None:
-    """长期漂移、质量流量计零点/标定拆分。只作补充，失败不影响本次诊断。"""
+    """长期漂移、质量流量计零点/标定拆分。失败不影响本次诊断。"""
     try:
         cfg = load_config()
         days = {**HISTORY_DEFAULTS, **cfg.get("history", {})}["window_days"]
@@ -66,20 +66,5 @@ def _attach_history(task: Dict, body: Dict) -> None:
     except Exception:
         logger.exception("历史趋势分析失败（不影响本次诊断）")
         return
-    if not hist:
-        return
-    body["history"] = hist
-    notes = [f["detail"] for f in hist["findings"]]
-    split = hist.get("mass_split")
-    if split:
-        for cause in body.get("causes", []):
-            if cause.get("target") == split.get("column") or "零点或标定" in cause.get("name", ""):
-                cause["explanation"] += "。" + split["text"]
-                cause["name"] = cause["name"].replace("零点或标定漂移", split["kind"])
-        body["summary"] = body.get("summary", "").replace("零点或标定漂移", split["kind"])
-        diag = body.get("diagnosis") or {}
-        if diag.get("fault_name"):
-            diag["fault_name"] = diag["fault_name"].replace("零点或标定漂移", split["kind"])
-        notes.append(split["text"])
-    if notes:
-        body["repair_advice"] = (body.get("repair_advice", "") + "\n历史趋势（不影响本次结论）：" + "；".join(notes)).strip()
+    if hist:
+        apply_history(body, hist)
