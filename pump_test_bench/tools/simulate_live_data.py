@@ -12,6 +12,7 @@
     python -m pump_test_bench.tools.simulate_live_data --cases all          # 全部故障用例（约 50 个）
     python -m pump_test_bench.tools.simulate_live_data --cases F01,F11      # 指定故障编号
     python -m pump_test_bench.tools.simulate_live_data --source D:\\我的数据  # 回放自己的数据
+    python -m pump_test_bench.tools.simulate_live_data --source 故障数据      # 回放 generate_fault_data 生成的故障数据（带预期结论）
 常用参数：--to 写入的目录（默认 当前目录下 live_test_data\\<时间>\\data）、--speed 倍速（默认 1 = 真实速度）、
 --gap 文件之间停顿秒数（默认 15，留时间给系统诊断）、--loop 循环、--no-wait 不等回车直接开始。
 """
@@ -30,13 +31,42 @@ QUICK_CODES = ("F01", "F05", "F06", "F11", "F14", "F16", "F17")
 RESULT_TEXT = {"normal": "正常", "warning": "预警", "abnormal": "异常", "inconclusive": "无法判定"}
 
 
+MANIFEST = "故障清单.csv"
+
+
+def _manifest(source: Path):
+    """generate_fault_data 生成的目录里有 故障清单.csv（指定的是其中某个故障子目录时在上一级）。
+    返回 (清单所在目录, {相对路径: 行})；没有清单时为 (None, {})。"""
+    for root in (source, source.parent) if source.is_dir() else (source.parent, source.parent.parent):
+        path = root / MANIFEST
+        if path.is_file():
+            with open(path, encoding="utf-8-sig", newline="") as fh:
+                return root, {Path(r["文件"]).as_posix(): r for r in csv.DictReader(fh)}
+    return None, {}
+
+
+def source_cases(source: Path) -> List[Dict]:
+    """回放已有的数据文件。子目录中的文件以“子目录_文件名”写入，避免不同故障的同名文件互相覆盖；
+    是 generate_fault_data 生成的故障数据时，从 故障清单.csv 读出注入的故障与预期结论。"""
+    files = [f for f in _source_files(source) if f.name != MANIFEST and not f.name.endswith("_数据清单.csv")]
+    if not files:
+        raise SystemExit(f"没有找到数据文件：{source}")
+    root, manifest = _manifest(source)
+    base = root or (source if source.is_dir() else source.parent)
+    cases = []
+    for f in files:
+        rel = f.relative_to(base).as_posix()
+        row = manifest.get(rel, {})
+        fault = f"{row['故障']}（{row['程度']}）" if row else "（自备数据）"
+        cases.append({"src": f, "name": rel.replace("/", "_").replace(" ", ""), "fault": fault,
+                      "expect": row.get("预期结论", ""), "expect_text": row.get("预期诊断", "")})
+    return cases
+
+
 def build_cases(args, work: Path) -> List[Dict]:
     """[{src, name, fault, expect, expect_text}]"""
     if args.source:
-        files = _source_files(args.source)
-        if not files:
-            raise SystemExit(f"没有找到数据文件：{args.source}")
-        return [{"src": f, "name": f.name, "fault": "（自备数据）", "expect": "", "expect_text": ""} for f in files]
+        return source_cases(args.source)
     healthy = args.healthy
     if not healthy.is_dir():
         raise SystemExit(f"没有找到正常数据目录：{healthy}（用 --healthy 指定，或用 --source 回放自己的数据）")
