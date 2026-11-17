@@ -103,7 +103,7 @@
       <history-trend v-if="trendVisible" />
     </el-dialog>
 
-    <el-dialog title="诊断报告" :visible.sync="reportDialog.visible" width="70%" top="5vh">
+    <el-dialog title="诊断报告" :visible.sync="reportDialog.visible" :width="hasCurves ? '88%' : '70%'" top="5vh">
       <div v-if="reportDialog.report" class="report-content">
         <el-descriptions title="基本信息" :column="3" border size="small" style="margin-bottom: 20px">
           <el-descriptions-item label="任务ID">{{ reportDialog.report.product_info.serial }}</el-descriptions-item>
@@ -117,6 +117,10 @@
           <el-descriptions-item label="结论" :span="3">{{ reportDialog.report.summary || '—' }}</el-descriptions-item>
         </el-descriptions>
 
+        <diagnosis-view v-if="hasCurves" :report="reportDialog.report" style="margin-bottom: 20px" />
+
+        <!-- 旧版报告（没有信号曲线） -->
+        <template v-if="!hasCurves">
         <div class="section-title">原因分析</div>
         <cause-list :causes="reportDialog.report.causes || []" :history="reportDialog.report.history" style="margin-bottom: 20px" />
 
@@ -138,6 +142,7 @@
           <div class="section-title">仿真模型对比</div>
           <model-compare :models="reportModels" style="margin-bottom: 20px" />
         </template>
+        </template>
 
         <div class="section-title">检测明细</div>
         <el-table :data="reportDialog.report.indicators" border size="small" style="margin-bottom: 20px">
@@ -150,8 +155,10 @@
           </el-table-column>
         </el-table>
 
-        <div class="section-title">处理建议</div>
-        <el-card shadow="never" class="advice">{{ reportDialog.report.repair_advice }}</el-card>
+        <template v-if="!hasCurves">
+          <div class="section-title">处理建议</div>
+          <el-card shadow="never" class="advice">{{ reportDialog.report.repair_advice }}</el-card>
+        </template>
 
         <review-list :reviews="reportDialog.report.reviews" />
         <div v-if="reportDialog.report.algorithm" class="algo-note">
@@ -172,6 +179,7 @@
 import { deleteTasks, downloadReport, getReport, listTasks } from '@/api/tasks'
 import { RESULT_TAG, SEVERITY_LABELS, resultLabel } from '@/utils/report'
 import CauseList from '@/components/CauseList'
+import DiagnosisView from '@/components/DiagnosisView'
 import ModelCompare from '@/components/ModelCompare'
 import ReviewList from '@/components/ReviewList'
 import HistoryTrend from './HistoryTrend'
@@ -184,7 +192,7 @@ const DAY_MS = 24 * 3600 * 1000
 
 export default {
   name: 'Tasks',
-  components: { CauseList, HistoryTrend, ModelCompare, ReviewList },
+  components: { CauseList, DiagnosisView, HistoryTrend, ModelCompare, ReviewList },
   data() {
     return {
       STATUS_LABELS,
@@ -204,6 +212,11 @@ export default {
     }
   },
   computed: {
+    /** 新版报告带信号曲线，用管路示意图 + 信号曲线展示 */
+    hasCurves() {
+      const r = this.reportDialog.report
+      return !!(r && r.curves && (r.curves.signals || []).length)
+    },
     /** 报告中的仿真模型对比（兼容旧报告的单个 model） */
     reportModels() {
       const r = this.reportDialog.report

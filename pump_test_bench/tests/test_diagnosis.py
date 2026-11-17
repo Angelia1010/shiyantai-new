@@ -76,6 +76,33 @@ def test_only_diagnosis_signals_are_used():
     assert body["result"] == "normal" and not any(f["target"] in ("供油流量1-1", "T6循环管路温度") for f in body["findings"])
 
 
+def test_report_curves_for_result_page():
+    """结果页画图用的信号曲线：正常数据都在正常范围内；故障信号跑出范围，受影响的信号有标记。"""
+    body = diagnose(_real())
+    curves = body["curves"]
+    n = len(curves["time"])
+    assert 30 <= n <= 300 and curves["segment"] is not None
+    by_key = {s["key"]: s for s in curves["signals"]}
+    assert set(by_key) == {s["key"] for s in load_config()["signals"]}
+    for key in ("supply_flow", "return_flow", "outlet_pressure", "back_pressure", "control_pressure",
+                "return_temperature"):
+        s = by_key[key]
+        assert len(s["values"]) == len(s["expected"]) == len(s["band_low"]) == n
+        inside = [lo <= v <= hi for v, lo, hi in zip(s["values"], s["band_low"], s["band_high"])
+                  if None not in (v, lo, hi)]
+        assert sum(inside) / len(inside) > 0.9, key
+        assert s["severity"] == "info" and not s.get("affected")
+    for key in ("speed", "supply_temperature", "inlet_pressure"):   # 工况输入没有模型预期
+        assert "expected" not in by_key[key]
+    assert by_key["inlet_pressure"]["setpoints"]
+
+    leak = {s["key"]: s for s in diagnose(_inject(_real(), gen.leak, ratio=0.04))["curves"]["signals"]}
+    ret = leak["return_flow"]
+    assert ret["affected"] and ret["residual"] < -0.02
+    assert ret["values"][-1] < ret["band_low"][-1]            # 注入之后跑出正常范围下限
+    assert not leak["supply_flow"].get("affected")
+
+
 # ---------------------------------------------------------------- 流量计
 def test_meter_drift_located_and_confirmed_by_turbine_model():
     body = diagnose(_inject(_real(), gen.k_factor, col=R, ratio=-0.04))

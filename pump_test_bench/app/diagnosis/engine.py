@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 
 from pump_test_bench.app.core.data_reader import read_table
-from pump_test_bench.app.diagnosis import checks as ck, flow_diagnosis, section_checks
+from pump_test_bench.app.diagnosis import checks as ck, flow_diagnosis, section_checks, series
 from pump_test_bench.app.diagnosis.bench_signals import (INLET_PRESSURE, SPEED, SUPPLY_FLOW, SUPPLY_TEMPERATURE,
                                                           RETURN_FLOW, SignalSet)
 from pump_test_bench.app.diagnosis.causes import infer_causes
@@ -204,9 +204,17 @@ def analyze(df: pd.DataFrame, cfg: Dict, baseline: Optional[Dict] = None,
         findings += section_checks.temperature_rise(signals, status, view, cfg, True)
     findings += _model_notices(view, active)
     findings += _segment_notice(segment, active)
+    models = _model_report(view, status, cfg, loop) if active else []
+    try:
+        curves = series.build(df, t, segment, signals, status, view, cfg, sims, density_fn, findings,
+                              models[0]["rows"] if models else [], loop.get("isolation"),
+                              lambda col, kind, mode: _fault_limits(cfg, col, kind, mode))
+    except Exception:
+        logger.warning("生成信号曲线失败（只影响结果页的曲线展示）", exc_info=True)
+        curves = None
     return {"segment": segment, "loops": [loop], "findings": findings,
             "condition": _condition(status, signals, loop.get("consensus")),
-            "models": _model_report(view, status, cfg, loop) if active else [],
+            "models": models, "curves": curves,
             "signals": [st.as_dict() for st in status.values()], "view": view, "status": status,
             "observations": flow.observations if flow else [], "change": flow.change if flow else None,
             "ignored": []}
@@ -318,6 +326,7 @@ def build_report_body(analysis: Dict, baseline: Optional[Dict] = None) -> Dict:
         },
         "models": [_model_summary(m) for m in analysis.get("models") or []],
         "signals": analysis.get("signals", []),
+        "curves": analysis.get("curves"),
     }
 
 

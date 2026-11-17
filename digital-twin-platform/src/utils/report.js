@@ -41,6 +41,8 @@ export function summarizeReport(taskId, fileName, report) {
     models: report.models || (report.model ? [{ ...report.model, name: '仿真模型' }] : []),
     loops: report.loops || [],
     repairAdvice: report.repair_advice || '',
+    // 完整报告：有 curves（信号曲线）时结果页用 DiagnosisView 展示
+    report,
     // 三维模型中需要告警闪烁的部件（异常优先）
     alarmComponents: [...new Set(decisive
       .slice().sort((a, b) => (a.severity === 'abnormal' ? -1 : 0) - (b.severity === 'abnormal' ? -1 : 0))

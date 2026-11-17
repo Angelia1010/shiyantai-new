@@ -23,7 +23,11 @@
       </div>
     </div>
 
-    <el-row :gutter="20">
+    <diagnosis-view v-if="detailed" :report="diagnosisResult.report" />
+    <review-list v-if="detailed" :reviews="diagnosisResult.report.reviews" />
+
+    <!-- 旧版报告（没有信号曲线）沿用原来的展示 -->
+    <el-row v-else :gutter="20">
       <el-col :span="8">
         <el-card shadow="never" class="result-info-card">
           <div slot="header">诊断信息</div>
@@ -137,6 +141,7 @@
 import * as echarts from 'echarts'
 import { RESULT_TAG, SEVERITY_LABELS } from '@/utils/report'
 import CauseList from '@/components/CauseList'
+import DiagnosisView from '@/components/DiagnosisView'
 import ModelCompare from '@/components/ModelCompare'
 import ReviewList from '@/components/ReviewList'
 
@@ -144,7 +149,7 @@ const SEVERITY_TAG = { info: 'info', notice: 'info', warning: 'warning', abnorma
 
 export default {
   name: 'ResultDisplayStep',
-  components: { CauseList, ModelCompare, ReviewList },
+  components: { CauseList, DiagnosisView, ModelCompare, ReviewList },
   props: {
     // utils/report.js summarizeReport() 的结果
     diagnosisResult: { type: Object, default: null },
@@ -159,6 +164,11 @@ export default {
     }
   },
   computed: {
+    /** 新版报告带逐时刻的信号曲线，用管路示意图 + 信号曲线展示 */
+    detailed() {
+      const r = this.diagnosisResult
+      return !!(r && r.report && r.report.curves && (r.report.curves.signals || []).length)
+    },
     fields() {
       return Object.keys(this.experimentSeries)
     },
@@ -181,7 +191,7 @@ export default {
   },
   watch: {
     diagnosisResult() {
-      this.$nextTick(this.updateChart)
+      this.$nextTick(this.ensureChart)
     },
     fields: {
       handler(fields) {
@@ -194,8 +204,7 @@ export default {
     }
   },
   mounted() {
-    this.chart = echarts.init(this.$refs.chartContainer)
-    this.updateChart()
+    this.ensureChart()
     window.addEventListener('resize', this.handleResize)
   },
   beforeDestroy() {
@@ -206,6 +215,16 @@ export default {
     }
   },
   methods: {
+    /** 旧版展示里的曲线图：容器只在旧版报告时存在 */
+    ensureChart() {
+      const el = this.$refs.chartContainer
+      if (this.chart && (!el || this.chart.getDom() !== el)) {
+        this.chart.dispose()
+        this.chart = null
+      }
+      if (el && !this.chart) this.chart = echarts.init(el)
+      this.updateChart()
+    },
     handleResize() {
       if (this.chart) this.chart.resize()
     },
