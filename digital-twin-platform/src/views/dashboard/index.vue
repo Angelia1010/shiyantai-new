@@ -182,9 +182,9 @@
             </span>
           </div>
           <div v-if="detail.loading" class="empty">加载中...</div>
-          <!-- 与任务记录中的报告是同一份数据、同一个展示组件（暗色主题） -->
+          <!-- 与任务记录中的报告是同一份数据、同一个展示组件（白色主题，与任务记录一致） -->
           <div v-else-if="detailHasCurves" class="modal-body">
-            <diagnosis-view :report="detail.report" dark />
+            <diagnosis-view :report="detail.report" />
           </div>
           <div v-else class="modal-body">
             <div class="kv"><span>诊断结果</span><b :class="detail.result">{{ detail.statusText }}</b></div>
@@ -1242,6 +1242,17 @@ $warn: #f59e0b;
 .modal-card.wide {
   width: min(1280px, 96vw);
   max-height: 92vh;
+  background: #f0f2f5;
+  border-color: #dcdfe6;
+  color: #303133;
+  .modal-head {
+    background: #fff;
+    border-bottom-color: #ebeef5;
+    color: #303133;
+    border-radius: 10px 10px 0 0;
+    i { color: #909399; }
+  }
+  .modal-head-actions .text-btn { color: #409eff; }
 }
 .modal-head-actions {
   display: flex;
