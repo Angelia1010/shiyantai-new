@@ -5,7 +5,7 @@
 2. 区分质量流量计的零点漂移和标定漂移：零点漂移是固定的 kg/h，小流量时百分比大；
    标定漂移是固定的百分比。需要几次不同流量的测试才能分开，单次诊断做不到。
 
-长期漂移超过 drift 时作为“注意”；如果历次结果还单调地朝一个方向走（秩相关 ≥ consistency），
+长期漂移超过 drift（0.8%，健康数据中各次之间的离散约 ±0.4%）时作为“注意”；如果历次结果还单调地朝一个方向走（秩相关 ≥ consistency），
 说明是持续发展的漂移而不是偶然波动，升为“预警”：本次单次检查正常时，结论也改为预警（apply_history）。
 """
 from typing import Dict, List, Optional
@@ -14,7 +14,7 @@ import numpy as np
 
 from pump_test_bench.app.diagnosis.checks import NOTICE, SEVERITY_TEXT, WARNING, finding
 
-DEFAULTS = {"window_days": 90, "min_tests": 6, "drift": 0.01, "consistency": 0.7,
+DEFAULTS = {"window_days": 90, "min_tests": 6, "drift": 0.008, "consistency": 0.7,
             "mass_split_min_tests": 3, "mass_split_flow_ratio": 1.5}
 
 
@@ -80,12 +80,14 @@ def drift_findings(series: List[Dict], cfg: Dict) -> List[Dict]:
         out.append(_drift("drift", values, opt, "流量计长期漂移",
                           f"{label}最近几次诊断的偏差比最早几次{{dir_high}} {{d:.2f}}%（共 {{n}} 次），"
                           "读数在往一个方向变化，建议安排校准", col, label))
-    values = [s["balance"] for s in series if s.get("balance") is not None]
-    d = _shift(values)
-    hint = "可能有缓慢发展的泄漏" if d is not None and d > 0 else "回油侧读数在逐渐增大"
-    out.append(_drift("drift", values, opt, "供回油差长期变化",
-                      f"供油与回油之差最近几次比最早几次{{dir_big}} {{d:.2f}}%（共 {{n}} 次），{hint}",
-                      "balance", "供回油平衡"))
+    # 供回油差的变化：已由某只流量计的漂移解释时不重复报（它只是那只表漂移的后果）
+    if not any(out):
+        values = [s["balance"] for s in series if s.get("balance") is not None]
+        d = _shift(values)
+        hint = "可能有缓慢发展的泄漏" if d is not None and d > 0 else "回油侧读数在逐渐增大"
+        out.append(_drift("drift", values, opt, "供回油差长期变化",
+                          f"供油与回油之差最近几次比最早几次{{dir_big}} {{d:.2f}}%（共 {{n}} 次），{hint}",
+                          "balance", "供回油平衡"))
     if current.get("mass"):
         mass = [s["mass"]["deviation"] for s in series if s.get("mass")]
         out.append(_drift("drift", mass, opt, "质量流量计长期漂移",

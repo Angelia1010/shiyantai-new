@@ -46,30 +46,39 @@ def spikes(df: pd.DataFrame, col: str, ratio: float = 0.02, size: float = 0.5, s
     return out
 
 
-def leak(df: pd.DataFrame, return_cols: List[str], ratio: float) -> pd.DataFrame:
-    """供油后、回油前泄漏 ratio：回油侧所有表读数同时减少。"""
+def leak(df: pd.DataFrame, return_flow: str, pressures: List[str], ratio: float,
+         mass: str = "", pressure_exp: float = 0.82) -> pd.DataFrame:
+    """供油后、回油前泄漏 ratio：回油流量（及回油质量流量）减少 ratio，随回油流量变化的压力按 Q^0.82 降低。"""
     out = df.copy()
-    for col in return_cols:
+    for col in [return_flow] + ([mass] if mass and mass in out.columns else []):
         out[col] = _num(out, col) * (1 - ratio)
+    for col in pressures:
+        out[col] = _num(out, col) * (1 - ratio) ** pressure_exp
+    return out
+
+
+def offset(df: pd.DataFrame, col: str, value: float) -> pd.DataFrame:
+    """读数多一个固定量（压力、温度传感器零点漂移）。"""
+    out = df.copy()
+    out[col] = _num(out, col) + value
     return out
 
 
 def scenarios(cfg: Dict) -> Dict[str, Callable[[pd.DataFrame], pd.DataFrame]]:
-    """按配置生成一组典型故障场景：{场景名: 注入函数}。"""
-    main = next(lp for lp in cfg["loops"] if lp.get("meters"))
-    meters = [m["column"] for m in main["meters"]]
-    returns = [m["column"] for m in main["meters"] if m.get("group") == "回油"]
-    mass = main.get("mass_meter", {}).get("column")
-    first, second = meters[0], meters[1]
-    s = {
-        f"{first} 漂移 +3%": lambda d: drift(d, first, 0.03),
-        f"{first} 漂移 +5%": lambda d: drift(d, first, 0.05),
-        f"{second} 漂移 -5%": lambda d: drift(d, second, -0.05),
-        f"{first} 卡死": lambda d: stuck(d, first),
-        f"{second} 噪声 5%": lambda d: noise(d, second, 0.05),
-        f"{first} 毛刺 2%": lambda d: spikes(d, first),
-        "回油侧泄漏 3%": lambda d: leak(d, returns + ([mass] if mass else []), 0.03),
+    """按配置的诊断信号生成一组典型故障场景：{场景名: 注入函数}。场景名以被注入的列开头（泄漏除外）。"""
+    from pump_test_bench.app.diagnosis.bench_signals import (BACK_PRESSURE, OUTLET_PRESSURE, RETURN_FLOW,
+                                                              SUPPLY_FLOW, SignalSet)
+    sig = SignalSet.from_config(cfg)
+    S, R = sig.column(SUPPLY_FLOW), sig.column(RETURN_FLOW)
+    p5, p6 = sig.column(OUTLET_PRESSURE), sig.column(BACK_PRESSURE)
+    mass = (cfg.get("turbine") or {}).get("mass_column", "")
+    return {
+        f"{S} 漂移 +3%": lambda d: drift(d, S, 0.03),
+        f"{S} 漂移 +5%": lambda d: drift(d, S, 0.05),
+        f"{R} 漂移 -5%": lambda d: drift(d, R, -0.05),
+        f"{S} 卡死": lambda d: stuck(d, S),
+        f"{R} 噪声 5%": lambda d: noise(d, R, 0.05),
+        f"{S} 毛刺 2%": lambda d: spikes(d, S),
+        f"{p5} 零漂 +0.012MPa": lambda d: offset(d, p5, 0.012),
+        "供回油泄漏 3%": lambda d: leak(d, R, [p5, p6], 0.03, mass),
     }
-    if mass:
-        s[f"{mass} 漂移 +4%"] = lambda d: drift(d, mass, 0.04)
-    return s

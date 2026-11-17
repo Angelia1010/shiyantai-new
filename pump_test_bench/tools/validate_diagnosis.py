@@ -44,8 +44,7 @@ def run(files, baseline, cfg):
                 s["located"] += any(f["category"] == "balance" for f in decisive) and \
                     not any(f["category"] == "redundancy" for f in decisive)
             else:
-                s["located"] += bool(decisive) and all(f["target"] == target for f in decisive
-                                                       if not f["category"].startswith("model"))
+                s["located"] += bool(decisive) and all(f["target"] == target for f in decisive)
     return stats
 
 

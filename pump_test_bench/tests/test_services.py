@@ -119,7 +119,7 @@ def test_live_monitor_endpoints(file_client, sample_dir, token, monkeypatch):
     monitor.stop()  # 测试中手动调用 scan，避免与后台线程交错
 
     target = sub / "run.txt"
-    target.write_bytes("时间\t回油流量1-1\t\n\n\n".encode("gbk"))
+    target.write_bytes("时间\t回油流量1-2\t\n\n\n".encode("gbk"))
     lines = [f"10:00:{i // 10:02d}.{i % 10}00\t{150 + i}\t\n" for i in range(25)]
     with target.open("ab") as f:
         f.write("".join(lines[:12]).encode("gbk"))
@@ -128,7 +128,7 @@ def test_live_monitor_endpoints(file_client, sample_dir, token, monkeypatch):
     assert live["state"] == "live" and live["file"] == "36-38摄氏度/run.txt"
     frames = file_client.get("/live/frames?since=0", headers=auth(token)).get_json()
     assert [f["time"] for f in frames["frames"]] == ["10:00:00"]  # 第 1 秒已完整，第 2 秒还在累积
-    assert frames["frames"][0]["stats"]["回油流量1-1"]["avg"] == 154.5
+    assert frames["frames"][0]["stats"]["回油流量1-2"]["avg"] == 154.5
 
     with target.open("ab") as f:
         f.write("".join(lines[12:]).encode("gbk"))
@@ -139,7 +139,7 @@ def test_live_monitor_endpoints(file_client, sample_dir, token, monkeypatch):
     events = file_client.get("/watch/events?since=0", headers=auth(token)).get_json()["events"]
     assert [(e["type"], e["file_name"]) for e in events] == [("created", "36-38摄氏度/run.txt")]
 
-    # 写完后自动诊断：后台建任务（mode=auto）。只有一只流量计，无法互校 → 无法判定
+    # 写完后自动诊断：后台建任务（mode=auto）。只有一只流量计、没有模型的工况信号 → 无法判定
     from pump_test_bench.app.db import tasks as repo
     fs.auto_diagnoser.drain()
     for _ in range(50):
@@ -217,24 +217,19 @@ def test_diagnosis_settings(task_client, token):
     assert task_client.get("/diagnosis/settings", headers=auth(token)).get_json()["fuel_density_20"] == 801.5
 
 
-def test_history_splits_mass_zero_drift(task_client, sample_dir, token):
-    """质量流量计零点漂移：多次不同流量的诊断后，历史分析能判断是零点而不是标定。"""
-    from pump_test_bench.tests.test_diagnosis import healthy_frame
-    report = None
-    for flow in (150, 300, 500):
-        df = healthy_frame(flow=flow, seed=flow)
-        df["回油质量流量2"] = df["回油质量流量2"] + 12.0
-        df.to_csv(sample_dir / f"mz{flow}.csv", index=False)
+def test_diagnosis_history_endpoint(task_client, sample_dir, token):
+    """手动诊断的结果按时间记入诊断历史（试验台实时/自动诊断与手动选择的文件分开）。"""
+    import shutil
+    from pump_test_bench.tests.conftest import REPO_ROOT
+    src = REPO_ROOT / "标准台性能录取数据" / "标准台性能录取数据" / "36-38摄氏度"
+    for name in ("S1295-P0.15.txt", "S4975-P0.15.txt", "S9980-P0.15.txt"):
+        shutil.copy(src / name, sample_dir / name)
         task_id = task_client.post("/tasks", headers=auth(token), json={
-            "path": str(sample_dir), "file_name": f"mz{flow}.csv", "mode": "file"}).get_json()["task_id"]
+            "path": str(sample_dir), "file_name": name, "mode": "file"}).get_json()["task_id"]
         report = task_client.post(f"/tasks/{task_id}/diagnose", headers=auth(token), json={}).get_json()
-        # 500 L/h 时 12 kg/h 约为 3%，正好在异常阈值附近（合成数据没有真实表的固有偏差），预警或异常都可以
-        assert report["result"] == "abnormal" if flow < 500 else report["result"] in ("warning", "abnormal")
-    split = report["history"]["mass_split"]
-    assert split["kind"] == "零点漂移" and abs(split["zero_kg_h"] - 12) < 2
-    assert "零点漂移" in report["summary"]
+        assert report["result"] == "normal", report["summary"]
     hist = task_client.get("/diagnosis/history?source=file", headers=auth(token)).get_json()
-    assert [round(i["flow"], -1) for i in hist["items"]] == [150, 300, 500]
+    assert [round(i["flow"], -1) for i in hist["items"]] == [150, 370, 530]
     assert task_client.get("/diagnosis/history?source=live", headers=auth(token)).get_json()["items"] == []
 
 
@@ -261,8 +256,8 @@ def test_simulation_endpoints(task_client, env, token):
     assert "13217.85" not in text and "质量流量 +" not in text and "expression" not in text
 
     pred = task_client.post("/simulation/models/bench/predict", headers=auth(token),
-                            json={"condition": {"电机转速": 1000, "电传转速": 2000, "油温": 36}}).get_json()
-    flow = next(e for e in pred["expected"] if e["name"] == "回油流量（大流量管路）")
+                            json={"condition": {"进口压力": 0.15, "电传转速": 2000, "油温": 36}}).get_json()
+    flow = next(e for e in pred["expected"] if e["name"] == "回油流量")
     assert 350 < flow["value"] < 390 and pred["outside"] == []
     turb = task_client.post("/simulation/models/turbine_large/predict", headers=auth(token),
                             json={"condition": {"入口压力": 0.048, "质量流量": 290 / 3600, "温度": 36, "密度": 782}}).get_json()

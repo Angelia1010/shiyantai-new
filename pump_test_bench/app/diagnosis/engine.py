@@ -1,241 +1,215 @@
-"""诊断入口：读文件 → 识别稳定段 → 各管路流量诊断 → 模型对比与其他自检 → 汇总结论。
+"""诊断入口：读文件 → 识别稳定段 → 单信号自检 → 模型预期 → 主油路流量故障隔离 → 分段检查 → 汇总结论。
 
-判定依据：
-1. 传感器自检：卡死/冻结、掉零、无数据、噪声、毛刺、超量程，同位置温度传感器互校；
-2. 流量协调与故障隔离（flow_loop.py → reconcile.py → isolation.py）：同一路油上串联的体积流量计、
-   按密度换算的质量流量计、以及仿真模型给出的真实流量参照，一起检验“单表偏离 / 两表偏离 / 泄漏 /
-   回油夹气 / 一侧整体偏 / 体积表共模偏 / 实际流量变化”等假设，取最简洁一致的解释并给出概率与其他可能；
-   有健康基准时先扣除各表在当前工况下的固有偏差；
-3. 变点检测（changepoint.py）：稳定段内偏差突变或渐变时，按变化之后（渐变取末段）的数据判断当前状态；
-4. 零点：没有流量的管路上，流量计读数应接近 0；
-5. 模型残差（有仿真基准表时）：各表一致但整体偏离（被试泵出力变化等），以及没有冗余表的压力测点偏离
-   （见 pump_test_bench/app/simulation/）；
-6. 原经验公式（质量流量→涡轮转速→理论流量）只作参考，不参与判定。
+诊断只使用 bench.json 中的 9 个信号（P9、供油温度1-2、供油流量1-2、P1、电传转速、P5、回油温度1-1、
+回油流量1-2、P6），判定依据：
+1. 单信号自检（sensor_checks.py）：无数据、卡死、冻结、掉零、超量程、噪声、毛刺，P1 偏离设定档位；
+2. 模型预期（expectation.py）：仿真模型按电传转速、油温、P1 给出两只流量计、P9、P5、P6、回油温度的
+   健康预期值（含各测点的固有偏差）；
+3. 流量故障隔离（flow_diagnosis.py → hypotheses.py → isolation.py）：两只流量计、P5、P6 与模型预期一起检验
+   “某只流量计偏 / 两只同时偏 / 泄漏 / 实际流量变化（被试泵出力、电传转速信号）/ 回油阻力增大 / P5、P6 传感器偏”
+   等假设，取最简洁一致的解释并给出可能性与其他解释；稳定段内有突变或渐变时按变化之后的数据判断（changepoint.py）；
+4. 涡轮流量计二级诊断（turbine_check.py）：怀疑某只流量计时用涡轮流量计模型复核，以较低权重并入隔离；
+5. 分段检查（section_checks.py）：供油段压差（P9 相对预期）、温升（回油温度相对预期）。
 
 结论分四级：正常 / 预警 / 异常 / 无法判定。
 """
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 
 from pump_test_bench.app.core.data_reader import read_table
-from pump_test_bench.app.diagnosis import checks as ck, flow_loop, reconcile
+from pump_test_bench.app.diagnosis import checks as ck, flow_diagnosis, section_checks
+from pump_test_bench.app.diagnosis.bench_signals import (INLET_PRESSURE, SPEED, SUPPLY_FLOW, SUPPLY_TEMPERATURE,
+                                                          RETURN_FLOW, SignalSet)
 from pump_test_bench.app.diagnosis.causes import infer_causes
-from pump_test_bench.app.diagnosis.checks import ABNORMAL, INFO, NOTICE, SEVERITY_RANK, WARNING, finding
+from pump_test_bench.app.diagnosis.checks import ABNORMAL, NOTICE, SEVERITY_RANK, WARNING, finding, grade
 from pump_test_bench.app.diagnosis.config import config_path, load_config
+from pump_test_bench.app.diagnosis.expectation import ModelView, model_view
 from pump_test_bench.app.diagnosis.fuel import density
+from pump_test_bench.app.diagnosis.sensor_checks import check_signals
 from pump_test_bench.app.diagnosis.signals import Segment, find_steady, time_axis
-from pump_test_bench.app.simulation.check import expected_flows, model_check, summary_rows
+from pump_test_bench.app.simulation.check import summary_rows
 from pump_test_bench.app.simulation.config import list_models
 from pump_test_bench.app.simulation.table import is_stale, load_table
 
 logger = logging.getLogger(__name__)
 
-ALGORITHM_VERSION = "3.0"
+ALGORITHM_VERSION = "4.0"
 RESULT_NORMAL, RESULT_WARNING, RESULT_ABNORMAL, RESULT_INCONCLUSIVE = "normal", "warning", "abnormal", "inconclusive"
 
 
 # --------------------------------------------------------------------------- 分析（诊断与建基准共用）
-def _model_setting(mcfg: Dict, profile: Optional[Dict]) -> Dict:
-    return (profile or {}).get(mcfg["id"], {"mode": mcfg.get("default_mode", "decisive")})
-
-
 def _density_fn(cfg: Dict, baseline: Optional[Dict], fuel_density_20: Optional[float]):
     return lambda t: density(cfg, baseline, t, fuel_density_20)[0]
 
 
-def _locate(df: pd.DataFrame, t: np.ndarray, cfg: Dict):
-    """找出有流量的管路，以第一路有流量的管路确定稳定段。返回 (稳定段, [(管路配置, 是否有流量, 流量序列)])。"""
-    loops, segment = [], None
-    for loop in cfg["loops"]:
-        cols = [m["column"] for m in loop["meters"] if m["column"] in df.columns]
-        consensus = df[cols].apply(pd.to_numeric, errors="coerce").median(axis=1) if cols else pd.Series(dtype=float)
-        active = bool(len(consensus.dropna())) and float(consensus.mean()) > cfg["thresholds"]["loop_active_flow"]
-        loops.append((loop, active, consensus))
-        if active and segment is None:
-            segment = find_steady(consensus.to_numpy(dtype=float), t, cfg["steady"])
-    if segment is None:
-        segment = Segment(0, len(df), float(t[0]) if len(t) else 0.0, float(t[-1]) if len(t) else 0.0, False)
-    return segment, loops
+def _flow_consensus(df: pd.DataFrame, signals: SignalSet) -> pd.Series:
+    cols = [c for c in (signals.column(SUPPLY_FLOW), signals.column(RETURN_FLOW)) if c in df.columns]
+    return df[cols].apply(pd.to_numeric, errors="coerce").mean(axis=1)
 
 
-def _flow_anchor(seg: pd.DataFrame, cfg: Dict, sims: Optional[List], profile: Optional[Dict],
-                 density_fn) -> Optional[reconcile.Anchor]:
-    """仿真模型（整体偏移含义为“实际流量”的模型，且参与判定）给出的真实流量参照。"""
-    floor = cfg.get("isolation", {}).get("anchor_sigma_floor", 0.006)
-    for mcfg, table in sims or []:
-        rule = (mcfg.get("rules") or {}).get("group_shift") or {}
-        if rule.get("meaning") != "pump" or _model_setting(mcfg, profile).get("mode", "decisive") != "decisive":
+def _locate(df: pd.DataFrame, t: np.ndarray, cfg: Dict, signals: SignalSet):
+    """返回 (稳定段, 是否有流量)。对每只流量计各找一次稳定段，取最长的：
+    一只表出故障（掉零、中途突变）时，按另一只表仍能找到完整的稳定段。"""
+    consensus = _flow_consensus(df, signals)
+    active = bool(len(consensus.dropna())) and float(consensus.mean()) > cfg["thresholds"]["active_flow"]
+    n = len(df)
+    whole = Segment(0, n, float(t[0]) if n else 0.0, float(t[-1]) if n else 0.0, False)
+    if not active:
+        return whole, False
+    candidates = []
+    for col in (signals.column(SUPPLY_FLOW), signals.column(RETURN_FLOW)):
+        if col and col in df.columns:
+            values = pd.to_numeric(df[col], errors="coerce").to_numpy(dtype=float)
+            if np.nanmean(values) > cfg["thresholds"]["active_flow"]:
+                candidates.append(find_steady(values, t, cfg["steady"]))
+    found = [c for c in candidates if c.found]
+    return (max(found, key=lambda c: c.duration) if found else whole), True
+
+
+def _fault_limits(cfg: Dict, column: str, kind: str, mode: str) -> tuple:
+    th = cfg["thresholds"]
+    if kind == "flow":
+        return th["faults"]["meter"]["warn"], th["faults"]["meter"]["alarm"]
+    if kind == "temperature":
+        return th["temperature_rise"]["warn"], th["temperature_rise"]["alarm"]
+    if mode == "absolute":
+        return th["supply_drop"]["warn"], th["supply_drop"]["alarm"]
+    return th["faults"]["pressure_sensor"]["warn"], th["faults"]["pressure_sensor"]["alarm"]
+
+
+def _model_report(view: ModelView, status: Dict, cfg: Dict, loop: Dict) -> List[Dict]:
+    """报告中的模型对比：各信号实测 vs 模型预期（展示用；判定由故障隔离与分段检查给出）。"""
+    base = {"id": view.model_id, "name": view.name or "标准台系统模型", "mode": view.mode, "model": view.label,
+            "table_created": view.table_created, "condition": view.condition, "notes": view.notes,
+            "outside": view.outside, "available": view.available, "rows": []}
+    for col, e in view.expected.items():
+        st = status.get(col)
+        if not st or st.mean is None:
             continue
-        try:
-            exp = expected_flows(seg, mcfg, table, density_fn)
-        except Exception:
-            logger.warning("模型 %s 计算预期流量失败，本次不用作参照", mcfg["id"], exc_info=True)
-            continue
-        if exp:
-            std = list(exp["std"].values())
-            return reconcile.Anchor(mcfg["id"], mcfg["name"], exp["expected"],
-                                    max(float(np.median(std)) if std else 0.0, floor))
-    return None
-
-
-def _model_checks(seg: pd.DataFrame, cfg: Dict, loops: List[Dict], sims: Optional[List], profile: Optional[Dict],
-                  density_fn) -> Tuple[List[Dict], List[Dict]]:
-    """与仿真模型在同一工况下的预期值比较（已判为有问题的表不参与系统性判断）。返回 (模型结果, 发现)。"""
-    if not sims or not any(lp["active"] for lp in loops):  # 没有流量时不做模型对比
-        return [], []
-    flagged = {m["column"] for lp in loops for m in lp["meters"] if m.get("severity", INFO) != INFO}
-    components = {m["column"]: m.get("component") for lp in cfg["loops"] for m in lp["meters"] if m.get("component")}
-    results, findings = [], []
-    for mcfg, table in sims:
-        setting = _model_setting(mcfg, profile)
-        if setting.get("mode") == "off":
-            continue
-        res = model_check(seg, mcfg, table, flagged, density_fn, setting, components)
-        res["mode"] = setting.get("mode", "decisive")
-        if res["mode"] == "reference":  # 仅作参考：不影响结论
-            for f in res["findings"]:
-                if f["severity"] in (WARNING, ABNORMAL):
-                    f["raw_severity"], f["severity"], f["reference_only"] = f["severity"], NOTICE, True
-        findings.extend(res["findings"])
-        results.append(res)
-    return results, findings
-
-
-def _temperature_pairs(seg: pd.DataFrame, cfg: Dict, used_columns: Set[str]) -> List[Dict]:
-    """同位置温度传感器互校（油温决定密度修正，偏了会把质量-体积校核带偏）。"""
-    out = []
-    for pair in cfg.get("temperature_pairs", []):
-        a, b = pair["columns"]
-        if a not in seg.columns or b not in seg.columns:
-            continue
-        rule = ck.range_rule(a, cfg.get("sensor_ranges", [])) or {"min": -1e9, "max": 1e9}
-        ta, tb = ck.mean_of(seg[a]), ck.mean_of(seg[b])
-        if ta is None or tb is None or not all(rule["min"] <= x <= rule["max"] for x in (ta, tb)):
-            continue  # 超量程由量程自检报出
-        diff = abs(ta - tb)
-        sev = ck.grade(diff, pair.get("warn", 3.0), pair.get("alarm", 6.0))
-        if sev == INFO:
-            continue
-        used = a in used_columns and a or (b in used_columns and b) or None
-        out.append(finding(
-            "temperature", sev if used else NOTICE, "同位置温度传感器不一致",
-            f"{a} {ta:.1f} ℃，{b} {tb:.1f} ℃，相差 {diff:.1f} ℃（健康数据中不超过约 1.5 ℃），至少一只有偏差"
-            + (f"；密度修正使用的是 {used}，油温每偏 1 ℃ 密度约偏 0.07%" if used else ""),
-            used or a, used or a, None, diff, f"预警 {pair.get('warn', 3.0)} ℃，异常 {pair.get('alarm', 6.0)} ℃"))
+        r = e.residual(st.mean)
+        warn, alarm = _fault_limits(cfg, col, e.kind, e.mode)
+        if e.sigma:
+            warn, alarm = max(warn, 4 * e.sigma), max(alarm, 8 * e.sigma)
+        base["rows"].append({"column": col, "output": e.output, "kind": e.kind, "unit": e.unit, "mode": e.mode,
+                             "measured": st.mean, "expected": e.value, "residual": r, "warn": warn, "alarm": alarm,
+                             "severity": grade(r, warn, alarm), "component": e.component, "excluded": False})
+    out = [base]
+    turbine = [t for t in (loop.get("isolation") or {}).get("turbine") or [] if t.get("available")]
+    if turbine:
+        out.append({"id": "turbine", "name": "涡轮流量计模型（二级诊断）", "mode": "reference", "model": "",
+                    "available": True, "condition": turbine[0].get("condition", {}), "notes": [], "outside": [],
+                    "rows": [{"column": f"{t['label']} 转速", "output": t["label"], "kind": "flow", "unit": "Hz",
+                              "mode": "relative", "measured": t["measured_hz"], "expected": t["expected_hz"],
+                              "residual": t["residual"], "warn": 2 * t["sigma"], "alarm": 4 * t["sigma"],
+                              "severity": grade(t["residual"], 2 * t["sigma"], 4 * t["sigma"]), "excluded": False}
+                             for t in turbine]})
     return out
 
 
-def _fuel_notice(cfg: Dict, baseline: Optional[Dict], fuel_density_20: Optional[float]) -> List[Dict]:
-    """燃油换批：设置的密度与建立健康基准时的油品相差较大。"""
-    model = (baseline or {}).get("density")
-    if not fuel_density_20 or not model:
+def _model_notices(view: ModelView, active: bool) -> List[Dict]:
+    if not active:
         return []
-    base20 = model["rho15"] + model["slope"] * 5
-    diff = (fuel_density_20 - base20) / base20
-    if abs(diff) <= 0.01:
-        return []
-    return [finding(
-        "fuel", NOTICE, "燃油与健康基准的油品不同",
-        f"设置的燃油密度 {fuel_density_20:.1f} kg/m³，建立健康基准时的油品约 {base20:.1f} kg/m³（20 ℃），"
-        f"相差 {diff * 100:+.1f}%。质量-体积校核已按设置的密度计算；涡轮流量计的固有偏差与油品粘度有关，"
-        "长期使用新油品时建议用新油的正常数据重建健康基准", "fuel", "燃油", None, diff * 100)]
+    if not view.available:
+        return [finding("model", NOTICE, "没有模型参照",
+                        "；".join(view.notes) + "。只能比较两只流量计，无法判断泄漏、被试泵出力与压力测点",
+                        view.model_id, view.name or "仿真模型")]
+    if view.outside:
+        return [finding("model_range", NOTICE, "工况超出仿真模型范围",
+                        f"{view.name}：" + "、".join(view.outside) + "，按模型边界估算，结论可信度下降",
+                        view.model_id, view.name)]
+    return []
 
 
-def _sensor_ranges(df: pd.DataFrame, cfg: Dict, used_columns: Set[str]) -> List[Dict]:
-    """传感器量程自检（全部数值列；诊断用到的列影响结论，其余只作“注意”）。已知故障的测点不重复报警。"""
-    ignored = {s["column"]: s.get("reason", "") for s in cfg.get("ignored_sensors", [])}
-    out = []
-    for col in df.columns:
-        rule = ck.range_rule(col, cfg.get("sensor_ranges", []))
-        if not rule or df[col].dtype.kind != "f":
-            continue
-        ratio = ck.out_of_range_ratio(df[col], rule)
-        if col in ignored:
-            if ratio == 0 and not ck.is_stuck(df[col]):
-                out.append(finding("sensor", NOTICE, "已屏蔽的测点读数恢复正常",
-                                   f"{col} 在已知故障清单中（{ignored[col] or '未注明原因'}），本次读数正常，"
-                                   "确认修复后可从 bench.json 的 ignored_sensors 中移除", col, col))
-            continue
-        if ratio > 0.05:
-            mean = ck.mean_of(df[col])
-            out.append(finding("sensor", ABNORMAL if col in used_columns else NOTICE, "传感器读数超出合理范围",
-                               f"{col} 均值 {mean:.3f}，{ratio * 100:.0f}% 的读数超出 [{rule['min']}, {rule['max']}]，"
-                               "可能是断线、未接入或量程设置错误", col, col, None, mean,
-                               f"[{rule['min']}, {rule['max']}]"))
-    return out
-
-
-def _segment_notice(segment: Segment, loops: List[Dict]) -> List[Dict]:
-    if segment.found or not any(lp["active"] for lp in loops):
+def _segment_notice(segment: Segment, active: bool) -> List[Dict]:
+    if segment.found or not active:
         return []
     return [finding("segment", NOTICE, "未识别到稳定段",
                     "流量在整个文件中都没有稳定下来（升降速、调节过程或采集时间过短），已用全部数据分析；"
                     "各项偏差包含了工况变化的影响，结论仅供参考", "segment", "分析数据段")]
 
 
-def analyze(df: pd.DataFrame, cfg: Dict, baseline: Optional[Dict] = None,
-            fuel_density_20: Optional[float] = None, sims: Optional[List] = None,
-            profile: Optional[Dict] = None) -> Dict:
-    """fuel_density_20：当前燃油 20 ℃ 密度（kg/m³），不填时用健康基准/配置的密度-温度模型。
-    sims：[(模型配置, 仿真基准表), ...]；profile：诊断方案 {模型 id: {mode, sigma_warn, sigma_alarm}}。"""
-    configured = [m["column"] for lp in cfg["loops"] for m in lp["meters"]]
-    if not any(c in df.columns for c in configured):
-        raise ValueError(f"文件中没有诊断配置里的任何流量计列（{'、'.join(configured)}），"
-                         "请确认数据文件，或在 pump_test_bench/config/bench.json 中核对列名")
-    t = time_axis(df)
-    segment, located = _locate(df, t, cfg)
-    seg = df.iloc[segment.start:segment.end]
-    density_fn = _density_fn(cfg, baseline, fuel_density_20)
-    ctx = flow_loop.Context(cfg, baseline, segment, seg, t[segment.start:segment.end], fuel_density_20,
-                            _flow_anchor(seg, cfg, sims, profile, density_fn))
-
-    loops, findings, used_columns = [], [], set()
-    for loop, active, consensus in located:
-        level = float(consensus.iloc[segment.start:segment.end].mean()) if active else 0.0
-        res = flow_loop.analyze_loop(ctx, loop, active, level)
-        loops.append(res.summary)
-        findings += res.findings
-        used_columns |= res.columns
-
-    models, model_findings = _model_checks(seg, cfg, loops, sims, profile, density_fn)
-    findings += model_findings
-    findings += _temperature_pairs(seg, cfg, used_columns)
-    findings += _fuel_notice(cfg, baseline, fuel_density_20)
-    findings += _sensor_ranges(df, cfg, used_columns)
-    findings += _segment_notice(segment, loops)
-    ignored = {s["column"]: s.get("reason", "") for s in cfg.get("ignored_sensors", [])}
-    return {"segment": segment, "loops": loops, "findings": findings,
-            "condition": _condition(seg, cfg, loops), "models": models,
-            "ignored": [f"{c}（{r}）" if r else c for c, r in ignored.items() if c in df.columns]}
+def _missing_notice(missing: List[str]) -> List[Dict]:
+    if not missing:
+        return []
+    return [finding("sensor", NOTICE, "数据中缺少诊断信号", f"文件中没有 {'、'.join(missing)}，相关判断已跳过",
+                    "signals", "诊断信号")]
 
 
-def _condition(seg: pd.DataFrame, cfg: Dict, loops: List[Dict]) -> Dict:
+def _condition(status: Dict, signals: SignalSet, flow: Optional[float]) -> Dict:
     cond = {}
-    main = next((r for r in loops if r["active"]), None)
-    if main and main.get("temperature") is not None:
-        cond["温度"] = round(main["temperature"], 1)
-    for name, col in cfg.get("condition", {}).get("speed_columns", {}).items():
-        if col in seg.columns:
-            v = ck.mean_of(seg[col])
-            step = cfg["condition"]["speed_step"].get(name, 1)
-            if v is not None:
-                cond[name] = int(round(v / step) * step)
-    if main and main.get("consensus"):
-        cond["流量"] = round(main["consensus"], 1)
+
+    def mean(key):
+        col = signals.column(key)
+        st = status.get(col) if col else None
+        return st.mean if st and st.usable else None
+
+    t, n, p1 = mean(SUPPLY_TEMPERATURE), mean(SPEED), mean(INLET_PRESSURE)
     parts = []
-    if "温度" in cond:
+    if t is not None:
+        cond["温度"] = round(t, 1)
         parts.append(f"油温 {cond['温度']}℃")
-    for name in cfg.get("condition", {}).get("speed_columns", {}):
-        if name in cond:
-            parts.append(f"{name} {cond[name]} rpm")
-    if "流量" in cond:
+    if n is not None:
+        cond["电传"] = int(round(n / 500) * 500)
+        parts.append(f"电传 {cond['电传']} rpm")
+    if p1 is not None:
+        cond["P1"] = round(p1, 3)
+        parts.append(f"P1 {p1:.2f} MPa")
+    if flow:
+        cond["流量"] = round(flow, 1)
         parts.append(f"流量 {cond['流量']} L/h")
     cond["label"] = " · ".join(parts) or "未知工况"
     return cond
+
+
+def analyze(df: pd.DataFrame, cfg: Dict, baseline: Optional[Dict] = None,
+            fuel_density_20: Optional[float] = None, sims: Optional[List] = None,
+            profile: Optional[Dict] = None) -> Dict:
+    """fuel_density_20：当前燃油 20 ℃ 密度（kg/m³，涡轮流量计二级诊断用）。
+    sims：[(模型配置, 仿真基准表), ...]；profile：诊断方案 {模型 id: {mode}}。"""
+    all_signals = SignalSet.from_config(cfg)
+    signals = all_signals.present(df.columns)
+    if not any(signals.get(k) for k in (SUPPLY_FLOW, RETURN_FLOW)):
+        flows = "、".join(c for c in (all_signals.column(SUPPLY_FLOW), all_signals.column(RETURN_FLOW)) if c)
+        raise ValueError(f"文件中没有诊断用的流量计列（{flows}），请确认数据文件，"
+                         "或在 pump_test_bench/config/bench.json 的 signals 中核对列名")
+    missing = [s.column for s in all_signals if s.column not in df.columns]
+    t = time_axis(df)
+    segment, active = _locate(df, t, cfg, signals)
+    seg, seg_t = df.iloc[segment.start:segment.end], t[segment.start:segment.end]
+    level = float(_flow_consensus(seg, signals).mean()) if active else 0.0
+    # 没有流量（停机）时读数不变是正常的，只检查量程
+    status, findings = check_signals(df, seg, seg_t, segment.duration, signals, cfg, baseline, level,
+                                     only=None if active else ("range",))
+    findings += _missing_notice(missing)
+    temp_col = signals.column(SUPPLY_TEMPERATURE)
+    temperature = status[temp_col].mean if temp_col and status[temp_col].usable else None
+    density_fn = _density_fn(cfg, baseline, fuel_density_20)
+    unusable = {c for c, st in status.items() if not st.usable}
+    view = model_view(seg, cfg, sims, profile, density_fn, unusable, signals.column(SUPPLY_FLOW)) if active \
+        else ModelView(False)
+
+    loop = {"name": "主油路", "active": False, "meters": [], "balance": None, "mass": None, "consensus": None}
+    flow = None
+    if active:
+        ctx = flow_diagnosis.FlowContext(cfg, baseline, seg, seg_t, signals, status, view, list(sims or []),
+                                         density_fn, temperature)
+        flow = flow_diagnosis.diagnose(ctx)
+        loop = flow.loop
+        findings += flow.findings
+        findings += section_checks.supply_section(signals, status, view, cfg, True)
+        findings += section_checks.temperature_rise(signals, status, view, cfg, True)
+    findings += _model_notices(view, active)
+    findings += _segment_notice(segment, active)
+    return {"segment": segment, "loops": [loop], "findings": findings,
+            "condition": _condition(status, signals, loop.get("consensus")),
+            "models": _model_report(view, status, cfg, loop) if active else [],
+            "signals": [st.as_dict() for st in status.values()], "view": view, "status": status,
+            "observations": flow.observations if flow else [], "change": flow.change if flow else None,
+            "ignored": []}
 
 
 # --------------------------------------------------------------------------- 诊断
@@ -247,15 +221,14 @@ def _indicators(analysis: Dict) -> List[Dict]:
          "value": f"{seg.start_s:.1f}–{seg.end_s:.1f} 秒（{seg.duration:.0f} 秒，{seg.end - seg.start} 行）"
          if seg.found else f"未识别到稳定段，使用全部数据（{seg.end - seg.start} 行）"},
     ]
-    if analysis.get("ignored"):
-        rows.append({"name": "已屏蔽测点", "reference": "bench.json ignored_sensors",
-                     "value": "、".join(analysis["ignored"])})
     for loop in analysis["loops"]:
         if not loop["active"]:
             continue
-        if loop.get("consensus"):
-            rows.append({"name": f"{loop['name']} 流量共识值", "reference": "正常流量计的读数",
-                         "value": f"{loop['consensus']:.1f} L/h"})
+        iso_info = loop.get("isolation")
+        if iso_info:
+            rows.append({"name": "故障隔离结论", "reference": "最可能的解释",
+                         "value": f"{iso_info['explanation']}（可能性约 {iso_info['probability'] * 100:.0f}%）",
+                         "abnormal": iso_info["explanation"] != "各信号都正常"})
         for m in loop["meters"]:
             if "corrected" in m:
                 rows.append({"name": f"{m['label']} 偏差", "reference": f"±{m['warn'] * 100:.1f}% / ±{m['alarm'] * 100:.1f}%",
@@ -263,23 +236,8 @@ def _indicators(analysis: Dict) -> List[Dict]:
                              "abnormal": m["severity"] in (WARNING, ABNORMAL)})
         if loop.get("balance"):
             b = loop["balance"]
-            rows.append({"name": f"{loop['name']} 供回油平衡", "reference": f"±{b['warn'] * 100:.1f}% / ±{b['alarm'] * 100:.1f}%",
+            rows.append({"name": "供回油平衡", "reference": f"±{b['warn'] * 100:.1f}% / ±{b['alarm'] * 100:.1f}%",
                          "value": f"{b['corrected'] * 100:+.2f}%", "abnormal": b["severity"] in (WARNING, ABNORMAL)})
-        mass = loop.get("mass")
-        if mass and mass.get("density"):
-            rows.append({"name": "燃油密度", "reference": mass["density_source"],
-                         "value": f"{mass['density']:.1f} kg/m³" + (f"（{mass['temperature']:.1f}℃）"
-                                                                   if mass.get("temperature") is not None else "")})
-        if mass and "deviation" in mass:
-            rows.append({"name": f"{mass['label']} 质量-体积校核",
-                         "reference": f"±{mass['warn'] * 100:.1f}% / ±{mass['alarm'] * 100:.1f}%",
-                         "value": f"{mass['deviation'] * 100:+.2f}%（{mass['q_mass']:.1f} L/h）",
-                         "abnormal": mass["severity"] in (WARNING, ABNORMAL)})
-        if loop.get("legacy"):
-            lg = loop["legacy"]
-            rows.append({"name": "经验公式理论流量（参考）", "reference": "不参与判定",
-                         "value": f"{lg['q_theory']:.1f} L/h，偏差 {lg['deviation'] * 100:+.1f}%"
-                         + ("" if lg["valid"] else "（超出公式适用范围）")})
     for m in analysis.get("models") or []:
         if m.get("available"):
             rows += summary_rows(m)
@@ -301,7 +259,7 @@ def build_report_body(analysis: Dict, baseline: Optional[Dict] = None) -> Dict:
     else:
         result = RESULT_NORMAL
 
-    causes = infer_causes(findings, analysis["loops"])
+    causes = infer_causes(findings, analysis.get("signals"))
     if decisive:
         fault_name = "、".join(c["name"] for c in causes)
         location = "、".join(dict.fromkeys(c["location"] for c in causes if c["location"]))
@@ -319,7 +277,7 @@ def build_report_body(analysis: Dict, baseline: Optional[Dict] = None) -> Dict:
             f" 等 {len(causes)} 项" if len(causes) > 1 else "")
     elif result == RESULT_INCONCLUSIVE and not active:
         fault_name, location = "无法判定", "—"
-        analysis_text = "所有管路都没有流量，无法诊断流量计。"
+        analysis_text = "主油路没有流量，无法诊断。"
         advice = ["在有流量的稳定工况下重新采集数据后再诊断。"]
         summary = "无法判定：没有流量"
     elif result == RESULT_INCONCLUSIVE and not analysis["segment"].found:
@@ -329,14 +287,14 @@ def build_report_body(analysis: Dict, baseline: Optional[Dict] = None) -> Dict:
         summary = "无法判定：没有稳定工况"
     elif result == RESULT_INCONCLUSIVE:
         fault_name, location = "无法判定", "、".join(lp["name"] for lp in active)
-        analysis_text = "有效的流量计不足两只，且没有可用的质量流量计，无法互相校核。"
-        advice = ["确认数据文件包含诊断配置中的各流量计列，或在 bench.json 中核对管路与测点的对应关系。"]
-        summary = "无法判定：可校核的流量计不足"
+        analysis_text = "可用的流量计不足，且没有可用的模型参照，无法判断。"
+        advice = ["确认数据文件包含诊断信号（bench.json 的 signals），并在“仿真模型”页面建立标准台系统模型。"]
+        summary = "无法判定：可用的信号不足"
     else:
         fault_name, location = "未发现异常", "、".join(lp["name"] for lp in active)
-        analysis_text = "各流量计读数相互一致，质量-体积校核通过，传感器自检正常。"
+        analysis_text = "各信号自检正常，两只流量计、P5、P6、P9、回油温度都与模型预期一致。"
         advice = ["无需处理。"]
-        summary = "正常：各流量计读数一致"
+        summary = "正常：各信号与模型预期一致"
 
     notices = [f for f in findings if f["severity"] == NOTICE]
     if notices:
@@ -359,6 +317,7 @@ def build_report_body(analysis: Dict, baseline: Optional[Dict] = None) -> Dict:
             "baseline": {k: baseline[k] for k in ("created", "source", "files") if k in baseline} if baseline else None,
         },
         "models": [_model_summary(m) for m in analysis.get("models") or []],
+        "signals": analysis.get("signals", []),
     }
 
 
@@ -368,7 +327,7 @@ def _loop_summary(loop: Dict) -> Dict:
             "severity", "cv", "stuck")
     out = {"name": loop["name"], "active": loop["active"], "consensus": loop.get("consensus"),
            "meters": [{k: m[k] for k in keep if k in m} for m in loop["meters"]]}
-    for key in ("balance", "mass", "legacy", "isolation"):
+    for key in ("balance", "isolation"):
         if loop.get(key):
             out[key] = loop[key]
     return out

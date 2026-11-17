@@ -1,53 +1,68 @@
-"""故障隔离、变点检测与历史漂移：纯算法单元测试 + 真实数据上的典型场景。"""
+"""故障隔离与变点检测：纯算法单元测试（不读数据文件）。"""
 import numpy as np
-import pandas as pd
 import pytest
 
-from pump_test_bench.app.diagnosis import changepoint, isolation as iso
-from pump_test_bench.app.diagnosis.engine import diagnose_frame
-from pump_test_bench.tests.test_diagnosis import METERS, _real, decisive, healthy_frame
+from pump_test_bench.app.diagnosis import changepoint, hypotheses as hy, isolation as iso
 
-SIGMA = 0.003
-LAYOUT = {"R1": (iso.RETURN, iso.VOLUME), "R2": (iso.RETURN, iso.VOLUME), "S1": (iso.SUPPLY, iso.VOLUME),
-          "S2": (iso.SUPPLY, iso.VOLUME), "G": (iso.SUPPLY, iso.VOLUME), "M": (iso.RETURN, iso.MASS)}
+S, R, P5, P6 = "供油流量1-2", "回油流量1-2", "P5低压压力", "P6定压压力"
+E = 0.8   # 压力对流量的弹性
+SIGMA = {S: 0.0025, R: 0.0025, P5: 0.009, P6: 0.009, hy.ANCHOR: 0.006}
 
 
-def _isolate(deviations, anchor=None):
-    obs = [iso.Observation(k, side, kind, deviations.get(k, 0.0), SIGMA) for k, (side, kind) in LAYOUT.items()]
-    if anchor is not None:
-        obs.append(iso.Observation("model", iso.SUPPLY, iso.ANCHOR, anchor, 0.006))
-    return iso.isolate(obs)
+def _isolate(dev, turbine=None):
+    obs = [iso.Observation(S, dev.get(S, 0.0), SIGMA[S]), iso.Observation(R, dev.get(R, 0.0), SIGMA[R]),
+           iso.Observation(P5, dev.get(P5, 0.0), SIGMA[P5], E), iso.Observation(P6, dev.get(P6, 0.0), SIGMA[P6], E),
+           iso.Observation(hy.ANCHOR, 0.0, SIGMA[hy.ANCHOR])]
+    layout = hy.Layout(S, R, {P5: E, P6: E}, {})
+    for col, value in (turbine or {}).items():
+        key = hy.turbine_key(col)
+        obs.append(iso.Observation(key, value, 0.005 / np.sqrt(0.3), 0.0))
+        layout.turbine[col] = key
+    pool = hy.catalog(layout, [o.key for o in obs], 9.0, 3.0)
+    return iso.isolate(obs, pool)
 
 
 def _kinds(result):
     return sorted(c.kind for c in result.best.causes)
 
 
-@pytest.mark.parametrize("deviations, anchor, kinds", [
-    ({}, 0.0, []),
-    ({"R2": -0.03}, None, [iso.METER]),
-    ({"S1": -0.03, "R1": -0.03}, None, [iso.METER, iso.METER]),          # 两只表同时坏：不会把好表也拖下水
-    ({"R1": -0.03, "R2": -0.03, "M": -0.03}, 0.0, [iso.LEAK]),
-    ({"S1": 0.03, "S2": 0.03, "G": 0.03}, 0.0, [iso.SUPPLY_GROUP]),       # 有模型参照：供油侧整体偏高 ≠ 泄漏
-    ({"R1": -0.03, "R2": -0.03}, None, [iso.RETURN_GROUP]),
-    ({"R1": 0.04, "R2": 0.04, "M": -0.02}, None, [iso.AERATION]),
-    ({k: -0.02 for k in ("R1", "R2", "S1", "S2", "G")}, 0.0, [iso.VOLUME_GROUP]),
-    ({k: -0.08 for k in LAYOUT}, 0.0, [iso.METER]),                       # 所有表一致偏低、模型预期不变：实际流量变了
+@pytest.mark.parametrize("dev, kinds", [
+    ({}, []),
+    ({R: -0.03}, [hy.METER]),
+    ({S: 0.03}, [hy.METER]),
+    ({R: -0.03, P5: -0.024, P6: -0.024}, [hy.LEAK]),                          # 回油少了，压力随之降低
+    ({S: -0.05, R: -0.05, P5: -0.04, P6: -0.04}, [hy.FLOW_CHANGE]),          # 实际流量变了，各信号一致
+    ({S: -0.03, R: -0.03}, [hy.METERS_COMMON]),                                # 两表同偏，压力不变
+    ({P5: 0.06, P6: 0.06}, [hy.RETURN_RESISTANCE]),                            # 流量不变，背压升高
+    ({P5: 0.06}, [hy.PRESSURE_SENSOR]),
+    ({S: 0.03, P6: -0.06}, [hy.METER, hy.PRESSURE_SENSOR]),                    # 两处独立故障
 ])
-def test_isolation_picks_simplest_consistent_explanation(deviations, anchor, kinds):
-    result = _isolate(deviations, anchor)
-    assert _kinds(result) == kinds
-    for cause in result.best.causes:
-        if cause.kind == iso.METER and cause.keys == ("model",):
-            assert result.best.magnitude(cause) == pytest.approx(0.08, abs=0.002)
+def test_isolation_picks_simplest_consistent_explanation(dev, kinds):
+    assert _kinds(_isolate(dev)) == kinds
 
 
-def test_isolation_reports_ambiguity_without_anchor():
-    """没有模型参照时，供油侧整体偏高与泄漏在流量计上表现相同：取更常见的泄漏，并给出另一种解释的概率。"""
-    result = _isolate({"S1": 0.03, "S2": 0.03, "G": 0.03})
-    assert _kinds(result) == [iso.LEAK]
-    alt = result.alternatives()
-    assert alt and alt[0].causes[0].kind == iso.SUPPLY_GROUP and 0.05 < alt[0].probability < result.best.probability
+def test_flow_change_magnitude_and_sign():
+    best = _isolate({S: -0.05, R: -0.05, P5: -0.04, P6: -0.04}).best
+    cause = best.causes[0]
+    assert cause.kind == hy.FLOW_CHANGE and best.magnitude(cause) == pytest.approx(0.05, abs=0.005)  # 锚点偏高 = 实际流量偏低
+    assert "实际流量比模型预期低" in hy.describe_fit(best, {})
+
+
+def test_turbine_evidence_shifts_meter_vs_leak():
+    """回油表偏低 2%、压力只降了一点：只看主信号时泄漏与单表偏离难分；涡轮模型复核让结论更明确。"""
+    dev = {R: -0.02, P5: -0.008, P6: -0.008}
+
+    def p_meter(r):
+        return r.probability_of(lambda f: hy.involves(f, R))
+
+    base = _isolate(dev)
+    assert p_meter(_isolate(dev, {R: -0.02})) > p_meter(base)       # 涡轮模型也说这只表少计 → 更像表的问题
+    assert p_meter(_isolate(dev, {R: 0.0})) < p_meter(base)         # 涡轮模型说这只表准 → 更像泄漏
+
+
+def test_ambiguity_is_reported_as_alternatives():
+    result = _isolate({R: -0.02, P5: -0.008, P6: -0.008})
+    assert result.alternatives(0.05) and abs(sum(f.probability for f in result.ranked) - 1) < 1e-9
 
 
 def test_changepoint_step_ramp_and_noise():
@@ -62,75 +77,4 @@ def test_changepoint_step_ramp_and_noise():
     assert ramp.kind == changepoint.RAMP and ramp.onset_s == pytest.approx(10, abs=3)
     assert changepoint.detect(t, noise, scale) is None
     # 缓慢游走（变化与残差同一量级）不算变化
-    wander = 0.01 * np.sin(t / 4)
-    assert changepoint.detect(t, {"A": wander, "B": noise["B"]}, scale) is None
-
-
-def _scaled(df, cols, ratio, start=0.0):
-    out = df.copy()
-    g = (np.arange(len(df)) >= int(len(df) * start)).astype(float)
-    for c in cols:
-        out[c] = pd.to_numeric(out[c], errors="coerce") * (1 + ratio * g)
-    return out
-
-
-def test_mid_test_step_is_judged_on_data_after_the_change():
-    body = diagnose_frame(_scaled(healthy_frame(seconds=40), ["回油流量1-2"], -0.05, start=0.5))
-    assert body["result"] == "abnormal"
-    assert {f["target"] for f in decisive(body)} == {"回油流量1-2"}
-    assert body["causes"][0]["name"].endswith("（中途突变）")
-    change = body["loops"][0]["isolation"]["change"]
-    assert change["kind"] == "step" and change["onset_s"] == pytest.approx(20, abs=2)
-
-
-def test_two_bad_meters_do_not_implicate_good_ones():
-    body = diagnose_frame(_scaled(healthy_frame(), ["回油流量1-1", "供油流量1-1"], -0.03))
-    assert {f["target"] for f in decisive(body)} == {"回油流量1-1", "供油流量1-1"}
-    good = [m for m in body["loops"][0]["meters"] if m["column"] not in ("回油流量1-1", "供油流量1-1")]
-    assert all(abs(m["corrected"]) < 0.005 for m in good)
-
-
-def test_supply_side_bias_is_not_called_leak_with_model():
-    df = _scaled(_real(), ["供油流量1-1", "供油流量1-2", "齿轮流量计"], 0.03)
-    body = diagnose_frame(df)
-    assert body["causes"][0]["name"] == "供油侧流量计整体偏高"
-    assert not any(f["category"] == "balance" for f in decisive(body))
-    # 不用模型时两者无法区分：判为泄漏，并把“供油侧整体偏高”作为其他可能列出
-    no_model = diagnose_frame(df, sims=None)
-    assert no_model["causes"][0]["name"] == "供回油之间泄漏"
-    assert any("供油侧流量计整体偏高" in a for a in no_model["causes"][0]["alternatives"])
-
-
-def test_common_mode_volume_bias_is_not_blamed_on_mass_meter():
-    body = diagnose_frame(_scaled(_real(), METERS, -0.025))
-    assert body["causes"][0]["name"] == "体积流量计整体偏低"
-    assert body["causes"][0]["confidence"] > 0.5
-
-
-def test_no_steady_segment_is_inconclusive():
-    df = healthy_frame(seconds=30)
-    ramp = np.linspace(0.5, 1.5, len(df))
-    for c in METERS + ["回油质量流量2"]:
-        df[c] = df[c] * ramp
-    body = diagnose_frame(df)
-    assert body["result"] == "inconclusive" and body["summary"] == "无法判定：没有稳定工况"
-    assert any(f["category"] == "segment" for f in body["findings"])
-
-
-def test_consistent_long_term_drift_becomes_warning():
-    from pump_test_bench.app.diagnosis import faults
-    from pump_test_bench.app.diagnosis.config import load_config
-    from pump_test_bench.app.diagnosis.history import analyze_history, apply_history
-    cfg = load_config()
-    reports = [diagnose_frame(faults.drift(healthy_frame(seed=i), "回油流量1-2", -0.0017 * i), cfg=cfg)
-               for i in range(12)]
-    current = reports[-1]
-    assert current["result"] == "normal"
-    hist = analyze_history(current, reports[:-1], cfg)
-    assert [(f["category"], f["severity"]) for f in hist["findings"]] == [("drift", "warning")]
-    apply_history(current, hist)
-    assert current["result"] == "warning" and "长期漂移" in current["causes"][0]["name"]
-    # 来回波动、没有一致方向的偏差：只作注意
-    jitter = [diagnose_frame(faults.drift(healthy_frame(seed=i), "回油流量1-2", 0.012 * (-1) ** i), cfg=cfg)
-              for i in range(12)]
-    assert all(f["severity"] != "warning" for f in analyze_history(jitter[-1], jitter[:-1], cfg)["findings"])
+    assert changepoint.detect(t, {"A": 0.01 * np.sin(t / 4), "B": noise["B"]}, scale) is None

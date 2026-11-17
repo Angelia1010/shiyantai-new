@@ -24,9 +24,12 @@ import numpy as np
 
 from pump_test_bench.app.core.table_parser import decode_bytes, parse_time
 
-RETURN_METERS = ["回油流量1-1", "回油流量1-2"]
+# 诊断用的 9 个信号（config/bench.json 的 signals），另加涡轮流量计二级诊断参照用的回油质量流量
+SUPPLY, RETURN = "供油流量1-2", "回油流量1-2"
+P9, P1, P5, P6 = "P9控制腔压力", "P1进口压力", "P5低压压力", "P6定压压力"
+T_SUPPLY, T_RETURN, SPEED = "供油温度1-2", "回油温度1-1", "电传实际转速"
 MASS = "回油质量流量2"
-TEMP = "供油温度1-1"
+FLOWS = [SUPPLY, RETURN]
 
 # ---------------------------------------------------------------------------
 # 时间曲线：故障从什么时候、以什么方式出现。g(t) ∈ [0, 1]，1 表示故障完全出现
@@ -48,18 +51,25 @@ def profile(kind: str, t: np.ndarray, at: float = 0.4) -> np.ndarray:
 PROFILE_LABEL = {"const": "全程", "step": "中途突发", "ramp": "逐渐发展"}
 
 # ---------------------------------------------------------------------------
-# 故障模型：f(列数据字典, g, rng, 参数) -> 修改后的列数据字典（只返回改动的列）
+# 测点之间的关系（由 60 个正常文件拟合，见输出目录的 故障注入清单.md）
+#   被试泵是容积泵：流量由电传转速决定；P5、P6 ∝ Q^0.82（P6 在 P5 下游，两者只差约 0.001 MPa）
+#   供油段：P9 − P1 ∝ Q^1.57（P1 由增压泵闭环控制在设定值）
+#   回油质量流量计（涡轮流量计二级诊断的参照）测的是实际回油流量
 # ---------------------------------------------------------------------------
+OUTLET_EXP, SUPPLY_DROP_EXP = 0.82, 1.57
 Cols = Dict[str, np.ndarray]
 
 
+# ---------------------------------------------------------------------------
+# 故障模型：f(列数据字典, g, rng, 参数) -> 修改后的列数据字典（只返回改动的列）
+# ---------------------------------------------------------------------------
 def k_factor(cols: Cols, g, rng, col: str, ratio: float) -> Cols:
     """涡轮流量计 K 系数漂移：读数按比例偏移。磨损 → 偏低，沉积/流道变窄 → 偏高。"""
     return {col: cols[col] * (1 + ratio * g)}
 
 
 def k_factor_many(cols: Cols, g, rng, names: List[str], ratio: float) -> Cols:
-    """几只流量计同时 K 系数漂移（同一批次、同样工况下磨损）：互校只能看出“一侧整体偏了”。"""
+    """几只流量计同时 K 系数漂移（油品粘度与标定时不同、同一批次磨损、同一采集模块）。"""
     return {c: cols[c] * (1 + ratio * g) for c in names}
 
 
@@ -102,76 +112,29 @@ def pulse_loss(cols: Cols, g, rng, col: str, ratio: float, depth: float = 0.5) -
     return {col: v}
 
 
-def mass_zero(cols: Cols, g, rng, col: str, offset: float) -> Cols:
-    """科氏质量流量计零点漂移：测量管应力、安装振动或未做零点标定，读数多一个固定量（kg/h）。"""
-    return {col: cols[col] + offset * g}
+def _flow_pressures(cols: Cols, out: Cols, k) -> None:
+    """流过回油管路的流量变为 k 倍：P5、P6 ∝ Q^0.82。"""
+    for c in (P5, P6):
+        if c in cols:
+            out[c] = cols[c] * k ** OUTLET_EXP
 
 
 def leak(cols: Cols, g, rng, ratio: float) -> Cols:
-    """供油流量计之后、回油流量计之前泄漏（或内漏旁通）：回油侧所有表（含质量流量计）同时少 ratio；
-    流过回油管路的油少了，回油管路压降（回油压力1-2 − 回油压力1-1）按 ΔP ∝ Q^1.1 相应减小。"""
-    out = {c: cols[c] * (1 - ratio * g) for c in RETURN_METERS + [MASS]}
-    _return_drop(cols, out, (1 - ratio * g) ** RETURN_DROP_EXP)
+    """供油流量计之后、回油流量计之前泄漏（接头、密封外漏或被试件内漏旁通）：回油流量与回油质量流量
+    同时少 ratio；流过回油管路的油少了，P5、P6 随之降低。供油流量、P9、P1 不变。"""
+    k = 1 - ratio * g
+    out = {c: cols[c] * k for c in (RETURN, MASS) if c in cols}
+    _flow_pressures(cols, out, k)
     return out
-
-
-def aeration(cols: Cols, g, rng, ratio: float) -> Cols:
-    """回油夹气 / 气穴：气泡占体积，涡轮表读的是混合物体积 → 偏高且抖动；科氏表两相解耦 → 偏低且抖动。"""
-    out = {}
-    for c in RETURN_METERS:
-        v = cols[c]
-        out[c] = v * (1 + ratio * g) + rng.normal(0, 0.02, len(v)) * v * g
-    v = cols[MASS]
-    out[MASS] = v * (1 - 0.5 * ratio * g) + rng.normal(0, 0.04, len(v)) * v * g
-    return out
-
-
-# ---------------------------------------------------------------------------
-# 主要测点之间的关系（由 60 个正常文件拟合，见 docs/故障注入清单.md）
-#   离心泵（燃油泵）：供油压力、P1 ≈ K·n² + 常数（n 为燃油泵转速，P1 由转速闭环控制在设定值）
-#   供油管路压降：供油压力 − P1 ∝ Q^0.25        被试件出口：P5 ∝ Q^0.82
-#   回油管路压降：回油压力1-2 − 回油压力1-1 ∝ Q^1.1（回油压力1-1 靠近油箱，恒为约 0.048 MPa）
-# ---------------------------------------------------------------------------
-PUMP_HEAD_K = 1.69e-7            # MPa / rpm²
-SUPPLY_DROP_EXP, OUTLET_EXP, RETURN_DROP_EXP = 0.25, 0.82, 1.1
-FEED_SPEED, DRIVE_SPEED = "燃油泵实际转速", "电传实际转速"
-INLET_P, OUTLET_P = "P1进口压力", "P5低压压力"
-SUPPLY_P = ["供油压力1-1", "供油压力1-2"]
-RETURN_P_UP, RETURN_P_DOWN = "回油压力1-2", "回油压力1-1"
-FLOW_PRESSURE = {OUTLET_P: OUTLET_EXP, "P6定压压力": 0.9}   # P6 不是主要测点，只为保持数据自洽一并修改
-ALL_FLOW_METERS = ["供油流量1-1", "供油流量1-2", "齿轮流量计"] + RETURN_METERS
-PRESSURES = SUPPLY_P + [INLET_P, OUTLET_P, RETURN_P_UP, RETURN_P_DOWN]
-PUMP_COLUMNS = ALL_FLOW_METERS + [MASS] + list(FLOW_PRESSURE) + PRESSURES
-LOOP_COLUMNS = PRESSURES + [FEED_SPEED]
-
-
-def _return_drop(cols: Cols, out: Cols, factor) -> None:
-    """回油管路压降按 factor 变化（缺少这两列时不处理）。"""
-    if RETURN_P_UP in cols and RETURN_P_DOWN in cols:
-        down = float(np.nanmean(cols[RETURN_P_DOWN]))
-        out[RETURN_P_UP] = down + (cols[RETURN_P_UP] - down) * factor
-
-
-def _feed_speed(cols: Cols, out: Cols, extra_head) -> None:
-    """闭环控制为了保持 P1 设定值，离心泵需要多提供 extra_head（MPa）的压力：转速按 P ∝ n² 变化。"""
-    if FEED_SPEED in cols:
-        out[FEED_SPEED] = np.sqrt(np.maximum(cols[FEED_SPEED] ** 2 + extra_head / PUMP_HEAD_K, 0.0))
 
 
 def pump_wear(cols: Cols, g, rng, ratio: float) -> Cols:
-    """被试泵容积效率下降（内泄漏增大、配流面磨损）：同一转速下实际流量减少 ratio，
-    所有流量计（含质量流量计）同比例减少，各表彼此仍然一致；与流量相关的压力同步变化：
-    P5 ∝ Q^0.82，回油管路压降 ∝ Q^1.1，供油管路压降（供油压力 − P1）∝ Q^0.25。"""
+    """被试泵容积效率下降（内泄漏增大、配流面磨损）：同一转速下实际流量减少 ratio。两只流量计、
+    回油质量流量同比例减少，P5、P6 ∝ Q^0.82 降低，供油段压差 P9 − P1 ∝ Q^1.57 减小，电传转速不变。"""
     k = 1 - ratio * g
-    out = {c: cols[c] * k for c in ALL_FLOW_METERS + [MASS] if c in cols}
-    for c, e in FLOW_PRESSURE.items():
-        if c in cols:
-            out[c] = cols[c] * k ** e
-    _return_drop(cols, out, k ** RETURN_DROP_EXP)
-    if INLET_P in cols:
-        for c in SUPPLY_P:
-            if c in cols:
-                out[c] = cols[INLET_P] + (cols[c] - cols[INLET_P]) * k ** SUPPLY_DROP_EXP
+    out = {c: cols[c] * k for c in FLOWS + [MASS] if c in cols}
+    _flow_pressures(cols, out, k)
+    out[P9] = cols[P1] + (cols[P9] - cols[P1]) * k ** SUPPLY_DROP_EXP
     return out
 
 
@@ -181,42 +144,32 @@ def speed_signal_high(cols: Cols, g, rng, ratio: float) -> Cols:
     return pump_wear(cols, g, rng, ratio)
 
 
-def gear_slip(cols: Cols, g, rng, col: str, loss20: float, temp: str = TEMP) -> Cols:
-    """齿轮流量计内泄漏（齿顶/端面间隙磨损）：一部分油从间隙漏过不带动齿轮，少计一个基本固定的流量；
-    间隙泄漏量与粘度成反比，油温越高漏得越多（按每升高 1 ℃ 增加 2.5% 估算），小流量时百分比更大。"""
-    t = float(np.nanmean(cols[temp])) if temp in cols else 20.0
-    return {col: np.maximum(cols[col] - loss20 * (1 + 0.025 * (t - 20)) * g, 0.0)}
+def return_resistance(cols: Cols, g, rng, dp: float) -> Cols:
+    """回油管路（P6 之后到油箱，如回油滤网）堵塞：阻力增大，P5、P6 同时升高 dp（MPa）。
+    被试泵是容积泵，流量基本不变。"""
+    return {c: cols[c] + dp * g for c in (P5, P6)}
 
 
 def supply_clog(cols: Cols, g, rng, dp: float) -> Cols:
-    """供油管路/被试件进口滤网堵塞：供油压力测点到 P1 之间多出压降 dp（MPa）。P1 由离心泵转速闭环控制，
-    仍保持设定值；离心泵转速升高（P ∝ n²），供油压力1-1、1-2 同时升高 dp。流量由被试泵（容积泵）决定，不变。"""
-    out = {c: cols[c] + dp * g for c in SUPPLY_P}
-    _feed_speed(cols, out, dp * g)
-    return out
-
-
-def feed_pump_wear(cols: Cols, g, rng, ratio: float) -> Cols:
-    """离心泵（燃油泵）性能衰退（叶轮磨损、口环间隙增大、气蚀）：同一转速下扬程下降 ratio。
-    P1 闭环控制仍保持设定值，各压力不变，离心泵转速升高到 n/√(1−ratio) 才能维持同样的压力。"""
-    return {FEED_SPEED: cols[FEED_SPEED] / np.sqrt(1 - ratio * g)}
-
-
-def return_clog(cols: Cols, g, rng, ratio: float) -> Cols:
-    """回油管路/回油滤堵塞：回油管路阻力增大，回油压降（回油压力1-2 − 回油压力1-1）增大 ratio 倍；
-    被试件出口背压（P5）升高同样的压力值。被试泵是容积泵，流量基本不变。"""
-    out: Cols = {}
-    _return_drop(cols, out, 1 + ratio * g)
-    out[OUTLET_P] = cols[OUTLET_P] + (out[RETURN_P_UP] - cols[RETURN_P_UP])
-    return out
+    """供油段（P9 与 P1 之间：供油流量计、滤网、管路）堵塞：多出压降 dp。P1 由增压泵闭环控制仍保持设定值，
+    增压泵出口压力（P9）升高 dp。流量由被试泵决定，不变。"""
+    return {P9: cols[P9] + dp * g}
 
 
 def inlet_sensor_drift(cols: Cols, g, rng, offset: float) -> Cols:
     """P1 进口压力传感器零点漂移（读数偏高 offset）：P1 是闭环控制的被控量，控制器把“读数”保持在设定值，
-    实际进口压力被带低 offset：离心泵转速降低，供油压力1-1、1-2 同时降低 offset，而 P1 读数不变。"""
-    out = {c: cols[c] - offset * g for c in SUPPLY_P}
-    _feed_speed(cols, out, -offset * g)
-    return out
+    实际进口压力被带低 offset，增压泵出口压力 P9 也随之降低 offset；P1 读数不变。"""
+    return {P9: cols[P9] - offset * g}
+
+
+def inlet_off_setpoint(cols: Cols, g, rng, offset: float) -> Cols:
+    """增压泵控制偏差：实际进口压力偏离设定档位 offset（P1、P9 同时变化，P1 传感器正常）。"""
+    return {P1: cols[P1] + offset * g, P9: cols[P9] + offset * g}
+
+
+def pressure_offset(cols: Cols, g, rng, col: str, offset: float) -> Cols:
+    """压力传感器零点漂移（膜片疲劳、温漂、过压）：读数多一个固定量（MPa），其余测点不变。"""
+    return {col: cols[col] + offset * g}
 
 
 def signal_open(cols: Cols, g, rng, col: str, value: float = -0.375) -> Cols:
@@ -227,24 +180,8 @@ def signal_open(cols: Cols, g, rng, col: str, value: float = -0.375) -> Cols:
     return {col: v}
 
 
-def level_drop(cols: Cols, g, rng, col: str, drop: float) -> Cols:
-    """油箱液位持续下降（外漏、回油没有回到油箱）：液位读数随时间线性降低。"""
-    return {col: cols[col] - drop * g}
-
-
-def false_pulses(cols: Cols, g, rng, col: str, level: float) -> Cols:
-    """无流量时涡轮流量计有读数（管路振动使叶轮微动、或干扰产生虚假脉冲）。"""
-    v = cols[col]
-    return {col: v + np.abs(level + rng.normal(0, 0.15 * level, len(v))) * g}
-
-
-def pressure_offset(cols: Cols, g, rng, col: str, offset: float) -> Cols:
-    """压力传感器零点漂移：膜片疲劳、温漂或安装应力，读数多一个固定值（MPa）。该测点没有冗余表。"""
-    return {col: cols[col] + offset * g}
-
-
 def temp_offset(cols: Cols, g, rng, col: str, offset: float) -> Cols:
-    """温度传感器偏移：热电阻老化、接线电阻、安装不到位（未插到油里）。"""
+    """热电阻偏移（老化、接线电阻、未插到油里）：读数多一个固定量（℃）。"""
     return {col: cols[col] + offset * g}
 
 
@@ -275,7 +212,7 @@ class Fault:
     conditions: Sequence[str] = field(default_factory=lambda: ("B",))
     at: float = 0.4
     expect_by: Dict[str, str] = field(default_factory=dict)   # 个别工况的预期结论不同时
-    cols: Sequence[str] = ()                                   # 需要读取的列（默认按 col 参数或回油侧）
+    cols: Sequence[str] = ()                                   # 需要读取的列（默认按 col 参数）
     effect: str = ""                                           # 受影响的测点与注入规律（写入清单）
     group: str = ""                                            # 故障类别
 
@@ -288,173 +225,132 @@ CONDITIONS = {
     "D": ("27-30摄氏度", "S1295-P0.15.txt", "27℃_S1295-P0.15"),
 }
 
-LEAK_COLUMNS = RETURN_METERS + [MASS, RETURN_P_UP, RETURN_P_DOWN]
-SUPPLY_METERS = ["供油流量1-1", "供油流量1-2", "齿轮流量计"]
-G_METER, G_MASS, G_SYSTEM, G_PRESSURE, G_OTHER = "流量计本体", "质量流量计", "系统与管路", "压力测点与控制回路", "温度、液位与小流量管路"
+SYSTEM_COLUMNS = FLOWS + [MASS, P1, P5, P6, P9]
+G_METER, G_SYSTEM, G_PRESSURE, G_TEMP = "流量计", "系统与管路", "压力测点与控制回路", "温度测点"
 
 
 def _k(col: str, ratio: float) -> str:
     return f"{col} 读数 × {1 + ratio:.3f}（{ratio * 100:+.1f}%），其余测点不变"
 
 
+PUMP_EFFECT = ("两只流量计与回油质量流量 × {k}；P5、P6 × {k}^0.82；P9 − P1 × {k}^1.57；电传转速、P1、温度不变")
+
 FAULTS: List[Fault] = [
-    # ---------------------------------------------------------------- 一、流量计本体（涡轮 / 齿轮）
-    Fault("F01", "F01_涡轮磨损偏低", "涡轮流量计K系数漂移（叶片/轴承磨损，读数偏低）", "回油流量1-2", k_factor,
-          {"col": "回油流量1-2", "ratio": -0.02}, "const", "轻微2%", "warning",
-          "回油流量1-2 计量偏差（预警）", ("A", "B"), group=G_METER, effect=_k("回油流量1-2", -0.02)),
-    Fault("F01", "F01_涡轮磨损偏低", "涡轮流量计K系数漂移（叶片/轴承磨损，读数偏低）", "回油流量1-2", k_factor,
-          {"col": "回油流量1-2", "ratio": -0.05}, "const", "明显5%", "abnormal",
-          "回油流量1-2 计量偏差（异常）", ("C",), group=G_METER, effect=_k("回油流量1-2", -0.05)),
-    Fault("F02", "F02_涡轮沉积偏高", "涡轮流量计K系数漂移（沉积/流道变窄，读数偏高）", "供油流量1-1", k_factor,
-          {"col": "供油流量1-1", "ratio": 0.04}, "const", "明显4%", "abnormal",
-          "供油流量1-1 计量偏差（异常）", ("B",), group=G_METER, effect=_k("供油流量1-1", 0.04)),
-    Fault("F03", "F03_渐进磨损", "涡轮流量计渐进磨损（测试中由 0 发展到 −8%）", "回油流量1-1", k_factor,
-          {"col": "回油流量1-1", "ratio": -0.08}, "ramp", "末端8%", "abnormal",
-          "回油流量1-1 计量偏差（正在发展）", ("B",), group=G_METER,
-          effect="回油流量1-1 读数 × (1 − 0.08·x)，x 为测试进度 0→1"),
-    Fault("F04", "F04_轴承阻滞", "涡轮流量计轴承阻滞（少计固定流量，伴随抖动）", "供油流量1-2", bearing_drag,
-          {"col": "供油流量1-2", "loss": 12.0}, "const", "少计12L/h", "abnormal",
-          "小流量时供油流量1-2 偏离明显（异常），大流量时偏离较小（预警）", ("D", "C"),
-          expect_by={"C": "warning"}, group=G_METER,
-          effect="供油流量1-2 读数 − 12 L/h，并叠加标准差 1% 的随机抖动"),
-    Fault("F05", "F05_叶轮卡滞冻结", "流量计读数冻结（叶轮卡滞/变送器死机）", "回油流量1-1", freeze,
-          {"col": "回油流量1-1"}, "step", "40%处冻结", "abnormal",
-          "回油流量1-1 读数冻结", ("B",), group=G_METER, effect="回油流量1-1 从故障时刻起保持当时的读数不变"),
-    Fault("F06", "F06_断线归零", "流量计信号断线（读数归零）", "供油流量1-1", drop_zero,
-          {"col": "供油流量1-1"}, "step", "50%处断线", "abnormal",
-          "供油流量1-1 读数掉零", ("C",), 0.5, group=G_METER, effect="供油流量1-1 从故障时刻起读数为 0（±0.05 L/h 噪声）"),
-    Fault("F07", "F07_电磁干扰", "电磁干扰/接地不良（读数随机抖动）", "回油流量1-2", emi_noise,
-          {"col": "回油流量1-2", "ratio": 0.04}, "const", "抖动4%", "warning",
-          "回油流量1-2 波动过大", ("A",), group=G_METER, effect="回油流量1-2 叠加标准差为均值 4% 的随机噪声，均值不变"),
-    Fault("F08", "F08_脉冲丢失", "脉冲丢失（接插件松动，偶发漏计，向下毛刺）", "齿轮流量计", pulse_loss,
-          {"col": "齿轮流量计", "ratio": 0.01}, "const", "1%点丢失", "warning",
-          "齿轮流量计有毛刺", ("B",), group=G_METER, effect="齿轮流量计随机 1% 的采样点读数下跌 15–50%"),
-    Fault("F24", "F24_齿轮流量计内泄漏", "齿轮流量计内泄漏（齿顶/端面间隙磨损，少计，油温越高越明显）", "齿轮流量计", gear_slip,
-          {"col": "齿轮流量计", "loss20": 6.0}, "const", "20℃时少计6L/h", "abnormal",
-          "小流量时齿轮流量计偏低明显（异常），大流量时较小（预警）", ("D", "C"), expect_by={"C": "warning"},
-          cols=["齿轮流量计", TEMP], group=G_METER,
-          effect="齿轮流量计读数 − 6·(1 + 0.025·(油温 − 20)) L/h：27℃ 约 −7.1 L/h，46℃ 约 −9.9 L/h"),
-    Fault("F22", "F22_中途突发偏低", "回油流量计中途突然偏低（异物卡入/叶片损伤，−4%）", "回油流量1-2", k_factor,
-          {"col": "回油流量1-2", "ratio": -0.04}, "step", "50%处突变4%", "abnormal",
+    # ---------------------------------------------------------------- 一、流量计
+    Fault("F01", "F01_涡轮磨损偏低", "回油流量计 K 系数漂移（叶片/轴承磨损，读数偏低）", RETURN, k_factor,
+          {"col": RETURN, "ratio": -0.02}, "const", "轻微2%", "warning",
+          "回油流量1-2 计量偏差（预警）", ("A", "B"), group=G_METER, effect=_k(RETURN, -0.02)),
+    Fault("F01", "F01_涡轮磨损偏低", "回油流量计 K 系数漂移（叶片/轴承磨损，读数偏低）", RETURN, k_factor,
+          {"col": RETURN, "ratio": -0.05}, "const", "明显5%", "abnormal",
+          "回油流量1-2 计量偏差（异常）", ("C",), group=G_METER, effect=_k(RETURN, -0.05)),
+    Fault("F02", "F02_涡轮沉积偏高", "供油流量计 K 系数漂移（沉积/流道变窄，读数偏高）", SUPPLY, k_factor,
+          {"col": SUPPLY, "ratio": 0.04}, "const", "明显4%", "abnormal",
+          "供油流量1-2 计量偏差（异常）", ("B",), group=G_METER, effect=_k(SUPPLY, 0.04)),
+    Fault("F03", "F03_渐进磨损", "回油流量计渐进磨损（测试中由 0 发展到 −8%）", RETURN, k_factor,
+          {"col": RETURN, "ratio": -0.08}, "ramp", "末端8%", "abnormal",
+          "回油流量1-2 计量偏差（正在发展）", ("B",), group=G_METER,
+          effect="回油流量1-2 读数 × (1 − 0.08·x)，x 为测试进度 0→1"),
+    Fault("F04", "F04_轴承阻滞", "供油流量计轴承阻滞（少计固定流量，伴随抖动）", SUPPLY, bearing_drag,
+          {"col": SUPPLY, "loss": 12.0}, "const", "少计12L/h", "abnormal",
+          "小流量时供油流量1-2 偏离明显（异常），大流量时较小（预警）", ("D", "C"),
+          expect_by={"C": "warning"}, group=G_METER, effect="供油流量1-2 读数 − 12 L/h，并叠加标准差 1% 的随机抖动"),
+    Fault("F05", "F05_叶轮卡滞冻结", "流量计读数冻结（叶轮卡滞/变送器死机）", RETURN, freeze,
+          {"col": RETURN}, "step", "40%处冻结", "abnormal",
+          "回油流量1-2 读数冻结", ("B",), group=G_METER, effect="回油流量1-2 从故障时刻起保持当时的读数不变"),
+    Fault("F06", "F06_断线归零", "流量计信号断线（读数归零）", SUPPLY, drop_zero,
+          {"col": SUPPLY}, "step", "50%处断线", "abnormal",
+          "供油流量1-2 信号中断", ("C",), 0.5, group=G_METER, effect="供油流量1-2 从故障时刻起读数为 0（±0.05 L/h 噪声）"),
+    Fault("F07", "F07_电磁干扰", "电磁干扰/接地不良（读数随机抖动）", RETURN, emi_noise,
+          {"col": RETURN, "ratio": 0.04}, "const", "抖动4%", "warning",
+          "回油流量1-2 读数波动过大", ("A",), group=G_METER, effect="回油流量1-2 叠加标准差为均值 4% 的随机噪声，均值不变"),
+    Fault("F08", "F08_脉冲丢失", "脉冲丢失（接插件松动，偶发漏计，向下毛刺）", SUPPLY, pulse_loss,
+          {"col": SUPPLY, "ratio": 0.01}, "const", "1%点丢失", "warning",
+          "供油流量1-2 读数毛刺", ("B",), group=G_METER, effect="供油流量1-2 随机 1% 的采样点读数下跌 15–50%"),
+    Fault("F09", "F09_中途突发偏低", "回油流量计中途突然偏低（异物卡入/叶片损伤，−4%）", RETURN, k_factor,
+          {"col": RETURN, "ratio": -0.04}, "step", "50%处突变4%", "abnormal",
           "回油流量1-2 计量偏差（中途突变），给出变化开始时刻", ("B",), 0.5, group=G_METER,
           effect="回油流量1-2 从测试 50% 处起读数 × 0.96"),
-    Fault("F23", "F23_两只表同时偏低", "一只回油、一只供油流量计同时偏低（两处独立故障，−3%）", "回油流量1-1、供油流量1-1",
-          k_factor_many, {"names": ["回油流量1-1", "供油流量1-1"], "ratio": -0.03}, "const", "明显3%", "abnormal",
-          "只报回油流量1-1 与供油流量1-1，其余表正常", ("C",), cols=["回油流量1-1", "供油流量1-1"], group=G_METER,
-          effect="回油流量1-1、供油流量1-1 读数各 × 0.97"),
-    Fault("F19", "F19_两只回油表同时偏低", "两只回油流量计同时 K 系数漂移（同批磨损，−4%）", "回油流量1-1、1-2", k_factor_many,
-          {"names": RETURN_METERS, "ratio": -0.04}, "const", "明显4%", "abnormal",
-          "两只回油流量计同时偏低（不是泄漏：质量流量计与供油侧一致）", ("B",), cols=RETURN_METERS, group=G_METER,
-          effect="回油流量1-1、1-2 读数各 × 0.96；回油质量流量、压力不变"),
-    Fault("F20", "F20_供油侧整体偏高", "三只供油侧流量计同时偏高（同批次/同一采集模块，+3%）", "供油侧", k_factor_many,
-          {"names": SUPPLY_METERS, "ratio": 0.03}, "const", "明显3%", "warning",
-          "供油侧流量计整体偏高（不是泄漏：模型预期流量与回油侧一致）", ("B", "C"), expect_by={"C": "abnormal"},
-          cols=SUPPLY_METERS, group=G_METER, effect="供油流量1-1、1-2、齿轮流量计 读数各 × 1.03"),
-    Fault("F21", "F21_体积表共模偏低", "全部体积流量计同时偏低（油品粘度变化等共模因素，−3%）", "体积流量计", k_factor_many,
-          {"names": ALL_FLOW_METERS, "ratio": -0.03}, "const", "明显3%", "abnormal",
-          "体积流量计整体偏低（不是质量流量计漂移：模型预期流量与质量流量计一致）", ("B", "C"), expect_by={"C": "warning"},
-          cols=ALL_FLOW_METERS, group=G_METER, effect="5 只体积流量计读数各 × 0.97；回油质量流量不变"),
-    # ---------------------------------------------------------------- 二、质量流量计
-    Fault("F09", "F09_质量计零漂", "科氏质量流量计零点漂移（安装应力/未做零点标定，+12 kg/h）", MASS, mass_zero,
-          {"col": MASS, "offset": 12.0}, "const", "+12kg/h", "abnormal",
-          "小流量时质量-体积不一致明显（异常），大流量时较小（预警）", ("D", "C"),
-          expect_by={"C": "warning"}, group=G_MASS,  # 46℃ 约 530 L/h 时 12 kg/h 仅约 2.9%，低于 3% 的异常阈值
-          effect="回油质量流量（数据列 回油质量流量2）读数 + 12 kg/h"),
-    Fault("F10", "F10_质量计标定漂移", "科氏质量流量计标定系数漂移（+5%）", MASS, k_factor,
-          {"col": MASS, "ratio": 0.05}, "const", "明显5%", "abnormal",
-          "质量流量与体积流量不一致（异常）", ("A",), group=G_MASS, effect=_k("回油质量流量（数据列 回油质量流量2）", 0.05)),
-    # ---------------------------------------------------------------- 三、系统与管路（实际状态变化，多个测点联动）
-    Fault("F11", "F11_泄漏", "供回油之间泄漏（接头/密封外漏或内漏旁通）", "回油侧", leak,
-          {"ratio": 0.015}, "const", "轻微1.5%", "warning",
-          "供回油之间泄漏（预警），各流量计本身正常", ("B",), cols=LEAK_COLUMNS, group=G_SYSTEM,
-          effect="回油流量1-1、1-2、回油质量流量 × 0.985；回油管路压降（回油压力1-2 − 1-1）× 0.985^1.1"),
-    Fault("F11", "F11_泄漏", "供回油之间泄漏（接头/密封外漏或内漏旁通）", "回油侧", leak,
+    Fault("F10", "F10_两只流量计同时偏低", "两只流量计同时偏低（油品粘度与标定时不同等共模因素，−3%）", "供油流量1-2、回油流量1-2",
+          k_factor_many, {"names": FLOWS, "ratio": -0.03}, "const", "轻微3%", "warning",
+          "两只流量计同时偏低（预警；不是泵出力下降：P5、P6 与预期一致）", ("B",), cols=FLOWS, group=G_METER,
+          effect="供油流量1-2、回油流量1-2 读数各 × 0.97；P5、P6、回油质量流量不变"),
+    Fault("F10", "F10_两只流量计同时偏低", "两只流量计同时偏低（油品粘度与标定时不同等共模因素，−5%）", "供油流量1-2、回油流量1-2",
+          k_factor_many, {"names": FLOWS, "ratio": -0.05}, "const", "明显5%", "abnormal",
+          "两只流量计同时偏低（异常）", ("C",), cols=FLOWS, group=G_METER,
+          effect="供油流量1-2、回油流量1-2 读数各 × 0.95；P5、P6、回油质量流量不变"),
+    # ---------------------------------------------------------------- 二、系统与管路（实际状态变化，多个测点联动）
+    Fault("F11", "F11_泄漏", "供回油之间泄漏（接头/密封外漏或被试件内漏旁通）", "主油路", leak,
+          {"ratio": 0.02}, "const", "轻微2%", "warning",
+          "供回油之间泄漏（预警），两只流量计本身正常", ("B",), cols=SYSTEM_COLUMNS, group=G_SYSTEM,
+          effect="回油流量1-2、回油质量流量 × 0.98；P5、P6 × 0.98^0.82；供油流量、P9、P1 不变"),
+    Fault("F11", "F11_泄漏", "供回油之间泄漏（接头/密封外漏或被试件内漏旁通）", "主油路", leak,
           {"ratio": 0.04}, "const", "明显4%", "abnormal",
-          "供回油之间泄漏（异常），各流量计本身正常", ("A", "C"), cols=LEAK_COLUMNS, group=G_SYSTEM,
-          effect="回油流量1-1、1-2、回油质量流量 × 0.96；回油管路压降（回油压力1-2 − 1-1）× 0.96^1.1"),
-    Fault("F12", "F12_渐进泄漏", "泄漏逐渐扩大（由 0 发展到 6%）", "回油侧", leak,
+          "供回油之间泄漏（异常），两只流量计本身正常", ("A", "C"), cols=SYSTEM_COLUMNS, group=G_SYSTEM,
+          effect="回油流量1-2、回油质量流量 × 0.96；P5、P6 × 0.96^0.82；供油流量、P9、P1 不变"),
+    Fault("F12", "F12_渐进泄漏", "泄漏逐渐扩大（由 0 发展到 6%）", "主油路", leak,
           {"ratio": 0.06}, "ramp", "末端6%", "abnormal",
-          "供回油之间泄漏（正在扩大）", ("B",), cols=LEAK_COLUMNS, group=G_SYSTEM,
-          effect="回油流量1-1、1-2、回油质量流量 × (1 − 0.06·x)；回油管路压降同步减小，x 为测试进度 0→1"),
-    Fault("F13", "F13_回油夹气", "回油夹气/气穴（涡轮偏高、质量计偏低，均抖动）", "回油侧", aeration,
-          {"ratio": 0.04}, "const", "含气约4%", "abnormal",
-          "回油夹气（回油比供油多，不可能是泄漏）", ("C",), group=G_SYSTEM,
-          effect="回油流量1-1、1-2 × 1.04 并叠加 2% 抖动；回油质量流量 × 0.98 并叠加 4% 抖动"),
-    Fault("F16", "F16_被试泵出力下降", "被试泵容积效率下降（内泄漏增大，实际流量减少，各表仍一致）", "被试泵", pump_wear,
-          {"ratio": 0.035}, "const", "3.5%", "warning",
-          "被试泵出力低于预期（预警）；不用仿真模型时判为正常", ("B",), cols=PUMP_COLUMNS, group=G_SYSTEM,
-          effect="全部流量计（含质量流量计）× 0.965；P5 × 0.965^0.82；回油管路压降 × 0.965^1.1；"
-                 "供油管路压降（供油压力 − P1）× 0.965^0.25；电传转速不变"),
-    Fault("F16", "F16_被试泵出力下降", "被试泵容积效率下降（内泄漏增大，实际流量减少，各表仍一致）", "被试泵", pump_wear,
+          "供回油之间泄漏（正在扩大）", ("B",), cols=SYSTEM_COLUMNS, group=G_SYSTEM,
+          effect="回油流量1-2、回油质量流量 × (1 − 0.06·x)；P5、P6 同步降低；x 为测试进度 0→1"),
+    Fault("F13", "F13_被试泵出力下降", "被试泵容积效率下降（内泄漏增大，实际流量减少，各信号仍一致）", "被试泵", pump_wear,
+          {"ratio": 0.04}, "const", "4%", "warning",
+          "被试泵出力低于预期（预警）", ("B",), cols=SYSTEM_COLUMNS, group=G_SYSTEM, effect=PUMP_EFFECT.format(k="0.96")),
+    Fault("F13", "F13_被试泵出力下降", "被试泵容积效率下降（内泄漏增大，实际流量减少，各信号仍一致）", "被试泵", pump_wear,
           {"ratio": 0.08}, "const", "8%", "abnormal",
-          "被试泵出力低于预期（异常）；不用仿真模型时判为正常", ("A", "C"), cols=PUMP_COLUMNS, group=G_SYSTEM,
-          effect="全部流量计（含质量流量计）× 0.92；P5 × 0.92^0.82；回油管路压降 × 0.92^1.1；"
-                 "供油管路压降（供油压力 − P1）× 0.92^0.25；电传转速不变"),
-    Fault("F25", "F25_供油管路堵塞", "供油管路/被试件进口滤网堵塞（供油压力到 P1 之间压降增大）", "供油管路", supply_clog,
-          {"dp": 0.03}, "const", "压降+0.03MPa", "abnormal",
-          "压力测点偏离（按燃油泵转速，P1 低于模型预期；目前不能直接给出“供油管路堵塞”）", ("B",), cols=LOOP_COLUMNS, group=G_SYSTEM,
-          effect="供油压力1-1、1-2 各 + 0.03 MPa；P1 不变（闭环）；燃油泵转速 n → √(n² + 0.03/1.69e-7)（约 +8%）；流量不变"),
-    Fault("F25", "F25_供油管路堵塞", "供油管路/被试件进口滤网堵塞（供油压力到 P1 之间压降增大）", "供油管路", supply_clog,
-          {"dp": 0.05}, "ramp", "压降由0增至0.05MPa", "abnormal",
-          "压力测点偏离（按燃油泵转速，P1 低于模型预期；目前不能直接给出“供油管路堵塞”）", ("C",), cols=LOOP_COLUMNS, group=G_SYSTEM,
-          effect="供油压力1-1、1-2 各 + 0.05·x MPa；燃油泵转速同步升高；x 为测试进度 0→1"),
-    Fault("F26", "F26_离心泵性能衰退", "离心泵（燃油泵）性能衰退（叶轮磨损/口环间隙增大/气蚀，扬程下降）", "离心泵", feed_pump_wear,
-          {"ratio": 0.12}, "const", "扬程-12%", "abnormal",
-          "供油压力1-1、1-2、P1 同时低于模型预期（目前不能直接给出“离心泵性能衰退”）", ("B",), cols=[FEED_SPEED], group=G_SYSTEM,
-          effect="燃油泵转速 n → n/√(1 − 0.12)（约 +6.6%）；各压力、流量不变（P1 闭环）"),
-    Fault("F27", "F27_回油管路堵塞", "回油管路/回油滤堵塞（回油阻力增大，背压升高）", "回油管路", return_clog,
-          {"ratio": 0.5}, "const", "回油压降+50%", "abnormal",
-          "P5、回油压力1-2 同时高于模型预期，流量正常（目前不能直接给出“回油管路堵塞”）", ("B",), cols=PRESSURES, group=G_SYSTEM,
-          effect="回油管路压降（回油压力1-2 − 1-1）× 1.5；P5 升高同样的压力值；回油压力1-1、流量不变"),
-    Fault("F27", "F27_回油管路堵塞", "回油管路/回油滤堵塞（回油阻力增大，背压升高）", "回油管路", return_clog,
-          {"ratio": 0.8}, "ramp", "回油压降由0增至+80%", "abnormal",
-          "P5、回油压力1-2 同时高于模型预期，流量正常（目前不能直接给出“回油管路堵塞”）", ("C",), cols=PRESSURES, group=G_SYSTEM,
-          effect="回油管路压降 × (1 + 0.8·x)；P5 升高同样的压力值；x 为测试进度 0→1"),
-    # ---------------------------------------------------------------- 四、压力测点与控制回路
-    Fault("F17", "F17_压力传感器零漂", "被试件出口压力传感器零点漂移（P5低压压力 +0.02 MPa）", OUTLET_P, pressure_offset,
-          {"col": OUTLET_P, "offset": 0.02}, "const", "+0.02MPa", "abnormal",
-          "P5低压压力 压力测点偏离（无冗余表，只能靠模型发现）", ("B",), group=G_PRESSURE,
-          effect="P5低压压力 读数 + 0.02 MPa，其余测点不变"),
-    Fault("F28", "F28_P1传感器零漂", "P1 进口压力传感器零点漂移（+0.02 MPa，被控量被带偏）", INLET_P, inlet_sensor_drift,
-          {"offset": 0.02}, "const", "+0.02MPa", "abnormal",
-          "P1进口压力 压力测点偏离（P1 高于模型预期，供油压力与模型一致）", ("B",), cols=LOOP_COLUMNS, group=G_PRESSURE,
-          effect="P1 读数不变（闭环保持设定值）；供油压力1-1、1-2 各 − 0.02 MPa；燃油泵转速 n → √(n² − 0.02/1.69e-7)（约 −6%）"),
-    Fault("F29", "F29_供油压力传感器零漂", "供油压力1-1 传感器零点漂移（膜片疲劳/温漂，+0.02 MPa）", "供油压力1-1", pressure_offset,
-          {"col": "供油压力1-1", "offset": 0.02}, "const", "+0.02MPa", "abnormal",
-          "供油压力1-1 压力测点偏离（供油压力1-2、P1 正常）", ("B",), group=G_PRESSURE,
-          effect="供油压力1-1 读数 + 0.02 MPa，其余测点不变"),
-    Fault("F30", "F30_回油压力传感器零漂", "回油压力1-2 传感器零点漂移（+0.015 MPa）", RETURN_P_UP, pressure_offset,
-          {"col": RETURN_P_UP, "offset": 0.015}, "const", "+0.015MPa", "abnormal",
-          "回油压力1-2 压力测点偏离（P5、流量正常）", ("C",), group=G_PRESSURE,
-          effect="回油压力1-2 读数 + 0.015 MPa，其余测点不变"),
-    Fault("F31", "F31_压力变送器断线", "压力变送器断线（4–20 mA 回路开路，读数跌到量程下限）", "供油压力1-2", signal_open,
-          {"col": "供油压力1-2"}, "step", "40%处断线", "abnormal",
-          "供油压力1-2 压力测点偏离", ("B",), group=G_PRESSURE,
-          effect="供油压力1-2 从故障时刻起读数固定为 −0.375 MPa"),
-    Fault("F32", "F32_电传转速信号偏高", "电传转速信号偏高（测速标定错误，实际转速偏低 3.5%）", DRIVE_SPEED, speed_signal_high,
-          {"ratio": 0.035}, "const", "3.5%", "warning",
-          "被试泵出力低于预期（其他可能中列出“电传转速信号偏高”；数据上与 F16 无法区分）", ("C",), cols=PUMP_COLUMNS,
-          group=G_PRESSURE, effect="显示的电传转速不变；实际转速低 3.5%，全部流量与相关压力的变化同 F16（3.5%）"),
-    # ---------------------------------------------------------------- 五、温度、液位与小流量管路
-    Fault("F14", "F14_油温传感器偏移", "油温传感器偏移（热电阻老化/未插到油里，密度修正被带偏）", TEMP, temp_offset,
-          {"col": TEMP, "offset": 4.0}, "const", "+4℃", "warning",
-          "同位置两只温度传感器不一致（预警）", ("B",), group=G_OTHER, effect="供油温度1-1 读数 + 4 ℃"),
-    Fault("F14", "F14_油温传感器偏移", "油温传感器偏移（热电阻老化/未插到油里，密度修正被带偏）", TEMP, temp_offset,
-          {"col": TEMP, "offset": 8.0}, "const", "+8℃", "abnormal",
-          "同位置两只温度传感器不一致（异常）", ("C",), group=G_OTHER, effect="供油温度1-1 读数 + 8 ℃"),
-    Fault("F15", "F15_油温传感器断路", "油温热电阻断路（读数固定约157.6℃）", TEMP, temp_open,
-          {"col": TEMP}, "step", "30%处断路", "abnormal",
-          "供油温度1-1 超出量程（异常）", ("B",), 0.3, group=G_OTHER, effect="供油温度1-1 从故障时刻起读数固定为 157.595 ℃"),
-    Fault("F33", "F33_油箱液位下降", "油箱液位持续下降（外漏/回油没有回到油箱）", "YW1燃油油箱液位", level_drop,
-          {"col": "YW1燃油油箱液位", "drop": 5.0}, "ramp", "测试中下降5", "abnormal",
-          "YW1燃油油箱液位 测点偏离（低于模型预期）", ("B",), group=G_OTHER, effect="YW1燃油油箱液位 读数 − 5·x，x 为测试进度 0→1"),
-    Fault("F34", "F34_小流量表虚假读数", "小流量管路无流量时涡轮流量计有读数（振动/干扰产生虚假脉冲）", "回油流量2-1", false_pulses,
-          {"col": "回油流量2-1", "level": 4.0}, "const", "约4L/h", "warning",
-          "无流量时回油流量2-1 读数不为零", ("B",), group=G_OTHER, effect="回油流量2-1 读数 + 4 L/h（±15% 抖动）；该管路实际无流量"),
-    Fault("F35", "F35_小流量质量计零漂", "小流量管路质量流量计零点漂移（无流量时读数偏大）", "回油质量流量1", mass_zero,
-          {"col": "回油质量流量1", "offset": 20.0}, "const", "+20kg/h", "warning",
-          "质量流量计零点偏移", ("B",), group=G_OTHER,
-          effect="小流量管路质量流量计（数据列 回油质量流量1）读数 + 20 kg/h；该管路实际无流量"),
+          "被试泵出力低于预期（异常）", ("A", "C"), cols=SYSTEM_COLUMNS, group=G_SYSTEM, effect=PUMP_EFFECT.format(k="0.92")),
+    Fault("F14", "F14_电传转速信号偏高", "电传转速信号偏高（测速标定错误，实际转速偏低 5%）", SPEED, speed_signal_high,
+          {"ratio": 0.05}, "const", "5%", "warning",
+          "被试泵出力低于预期（其他可能中列出“电传转速信号偏高”；数据上与 F13 无法区分）", ("C",),
+          cols=SYSTEM_COLUMNS, group=G_SYSTEM, effect="显示的电传转速不变；实际转速低 5%，其余变化同 F13（k = 0.95）"),
+    Fault("F15", "F15_回油管路阻力增大", "回油管路（P6 之后，如回油滤网）堵塞，背压升高", "回油管路", return_resistance,
+          {"dp": 0.010}, "const", "背压+0.010MPa", "warning",
+          "回油管路阻力增大（P5、P6 同时升高，流量正常）", ("B",), cols=[P5, P6], group=G_SYSTEM,
+          effect="P5、P6 各 + 0.010 MPa；流量、P9、P1 不变"),
+    Fault("F15", "F15_回油管路阻力增大", "回油管路（P6 之后，如回油滤网）堵塞，背压升高", "回油管路", return_resistance,
+          {"dp": 0.025}, "ramp", "背压由0增至+0.025MPa", "abnormal",
+          "回油管路阻力增大（正在发展）", ("C",), cols=[P5, P6], group=G_SYSTEM,
+          effect="P5、P6 各 + 0.025·x MPa；x 为测试进度 0→1"),
+    Fault("F16", "F16_供油段堵塞", "供油段（供油流量计、滤网）堵塞，P9 与 P1 之间压降增大", "供油段", supply_clog,
+          {"dp": 0.035}, "const", "压降+0.035MPa", "warning",
+          "供油段压差异常（最可能：供油段阻力增大）", ("B",), cols=[P9, P1], group=G_SYSTEM,
+          effect="P9 + 0.035 MPa；P1 不变（闭环）；流量不变"),
+    Fault("F16", "F16_供油段堵塞", "供油段（供油流量计、滤网）堵塞，P9 与 P1 之间压降增大", "供油段", supply_clog,
+          {"dp": 0.06}, "const", "压降+0.06MPa", "abnormal",
+          "供油段压差异常（最可能：供油段阻力增大）", ("C",), cols=[P9, P1], group=G_SYSTEM,
+          effect="P9 + 0.06 MPa；P1 不变（闭环）；流量不变"),
+    # ---------------------------------------------------------------- 三、压力测点与控制回路
+    Fault("F17", "F17_P5传感器零漂", "被试泵出口压力传感器零点漂移（P5低压压力 +0.012 MPa）", P5, pressure_offset,
+          {"col": P5, "offset": 0.012}, "const", "+0.012MPa", "abnormal",
+          "P5低压压力 传感器偏差（P6 与流量正常）", ("B",), group=G_PRESSURE, effect="P5低压压力 读数 + 0.012 MPa，其余测点不变"),
+    Fault("F18", "F18_P6传感器零漂", "定压压力传感器零点漂移（P6定压压力 −0.010 MPa）", P6, pressure_offset,
+          {"col": P6, "offset": -0.010}, "const", "-0.010MPa", "warning",
+          "P6定压压力 传感器偏差（P5 与流量正常）", ("C",), group=G_PRESSURE, effect="P6定压压力 读数 − 0.010 MPa，其余测点不变"),
+    Fault("F19", "F19_P9传感器零漂", "P9 控制腔压力传感器零点漂移（+0.035 MPa）", P9, pressure_offset,
+          {"col": P9, "offset": 0.035}, "const", "+0.035MPa", "warning",
+          "供油段压差异常（其他可能中列出 P9 传感器偏高；单次测试与供油段堵塞无法区分）", ("C",), group=G_PRESSURE,
+          effect="P9控制腔压力 读数 + 0.035 MPa，其余测点不变"),
+    Fault("F20", "F20_P1传感器零漂", "P1 进口压力传感器零点漂移（读数偏高 0.035 MPa，被控量被带偏）", P1, inlet_sensor_drift,
+          {"offset": 0.035}, "const", "+0.035MPa", "warning",
+          "供油段压差异常（最可能：P1 传感器偏高）", ("B",), cols=[P9, P1], group=G_PRESSURE,
+          effect="P1 读数不变（闭环保持设定值）；实际进口压力低 0.035 MPa，P9 − 0.035 MPa"),
+    Fault("F21", "F21_增压泵控制偏差", "增压泵控制偏差（进口压力偏离设定档位 −0.015 MPa）", P1, inlet_off_setpoint,
+          {"offset": -0.015}, "const", "-0.015MPa", "warning",
+          "P1进口压力 偏离设定值", ("B",), cols=[P9, P1], group=G_PRESSURE,
+          effect="P1、P9 各 − 0.015 MPa（实际压力变化，传感器正常）"),
+    Fault("F22", "F22_压力变送器断线", "压力变送器断线（4–20 mA 回路开路，读数跌到量程下限）", P5, signal_open,
+          {"col": P5}, "step", "40%处断线", "abnormal",
+          "P5低压压力 读数冻结（固定在 −0.375 MPa，仍在压力量程内，按冻结报出）", ("B",), group=G_PRESSURE,
+          effect="P5低压压力 从故障时刻起读数固定为 −0.375 MPa"),
+    # ---------------------------------------------------------------- 四、温度测点
+    Fault("F23", "F23_回油温度传感器偏移", "回油温度热电阻偏移（老化/接线电阻，+5 ℃）", T_RETURN, temp_offset,
+          {"col": T_RETURN, "offset": 5.0}, "const", "+5℃", "warning",
+          "温升异常（回油温度1-1 偏高或被试泵发热）", ("B",), group=G_TEMP, effect="回油温度1-1 读数 + 5 ℃"),
+    Fault("F24", "F24_供油温度传感器偏移", "供油温度热电阻偏移（未插到油里，−7 ℃）", T_SUPPLY, temp_offset,
+          {"col": T_SUPPLY, "offset": -7.0}, "const", "-7℃", "warning",
+          "温升异常（其他可能中列出供油温度1-2 偏低）", ("C",), group=G_TEMP,
+          effect="供油温度1-2 读数 − 7 ℃（它也是模型的油温输入）"),
+    Fault("F25", "F25_油温传感器断路", "回油温度热电阻断路（读数固定约 157.6 ℃）", T_RETURN, temp_open,
+          {"col": T_RETURN}, "step", "30%处断路", "abnormal",
+          "回油温度1-1 传感器故障（超出量程）", ("B",), 0.3, group=G_TEMP, effect="回油温度1-1 从故障时刻起读数固定为 157.595 ℃"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -525,7 +421,7 @@ def generate(src_root: Path, out: Path, seed: int = 2026) -> List[Dict]:
             folder, name, label = CONDITIONS[key]
             src = src_root / folder / name
             raw = cache.setdefault(key, read_raw(src))
-            needed = set(fault.cols) or ({fault.kwargs["col"]} if "col" in fault.kwargs else set(RETURN_METERS + [MASS]))
+            needed = set(fault.cols) or {fault.kwargs["col"]}
             cols = {c: column(raw, c) for c in needed}
             g = profile(fault.profile, raw.t, fault.at)
             rng = np.random.default_rng(seed + n * 10 + ord(key))
@@ -564,34 +460,31 @@ MANIFEST_HEAD = """# 故障注入清单
 文件格式与试验台原始文件完全一致，只改动下面写明的测点，其余列的每个字节都与正常数据相同。
 逐个文件的清单见同目录的 `故障清单.csv`。
 
-## 一、涉及的主要测量点
+## 一、诊断用的信号
 
-| 系统 | 主要测量点 | 数据文件中的列 | 说明 |
-|---|---|---|---|
-| 油箱系统 | 油箱供油压力 | P13燃油油箱压力 | 本批正常数据中恒为 −0.375 MPa（疑似未接入），不注入故障 |
-| 油箱系统 | 油箱液位 | YW1燃油油箱液位 | 正常时约 47.9，几乎不变 |
-| 离心泵驱动电机 | 电机转速 | 燃油泵实际转速 | 闭环调节，使 P1 保持设定值 |
-| 供油系统 | 供油压力 1-1、1-2 | 供油压力1-1、供油压力1-2 | |
-| 供油系统 | 供油流量 1-1、1-2 | 供油流量1-1、供油流量1-2 | 涡轮流量计 |
-| 传动系统 | 电传实际转速 | 电传实际转速 | 决定被试泵流量 |
-| 被试件 | P1 进口压力 | P1进口压力 | 被控量：0.10 / 0.15 / 0.25 MPa |
-| 被试件 | 总流量计 | 齿轮流量计 | |
-| 被试件 | 被试件出口压力 | P5低压压力 | |
-| 回油系统（大流量管路） | 回油压力 1-1、1-2 | 回油压力1-1、回油压力1-2 | 1-1 靠近油箱，恒为约 0.048 MPa |
-| 回油系统（大流量管路） | 回油流量 1-1、1-2 | 回油流量1-1、回油流量1-2 | 涡轮流量计 |
-| 回油系统（大流量管路） | 回油质量流量 1 | 回油质量流量2 | 数据列名与原理图编号相反 |
-| 回油系统（小流量管路） | 回油压力 / 流量 2-1、2-2，回油质量流量 2 | 回油流量2-1 等，回油质量流量1 | 本批数据中该管路没有流量 |
-| （辅助） | 油温 | 供油温度1-1 | 用于密度修正和模型工况 |
+按标准台原理图：增压泵 → P9 → 供油温度/流量1-2 → P1 → 被试泵（电传） → P5 → 回油温度1-1/流量1-2 → P6 → 油箱。
+
+| 信号 | 数据列 | 位置 |
+|---|---|---|
+| P9控制腔压力 | P9控制腔压力 | 增压泵出口、供油流量计前 |
+| 供油温度1-2 | 供油温度1-2 | 供油流量计处（也是模型的油温输入） |
+| 供油流量1-2 | 供油流量1-2 | 供油管路（涡轮流量计） |
+| P1进口压力 | P1进口压力 | 被试泵进口，由增压泵闭环控制在 0.10 / 0.15 / 0.25 MPa |
+| 电传转速 | 电传实际转速 | 被试泵驱动，决定流量 |
+| P5低压压力 | P5低压压力 | 被试泵出口 |
+| 回油温度1-1 | 回油温度1-1 | 回油流量计处 |
+| 回油流量1-2 | 回油流量1-2 | 回油管路（涡轮流量计） |
+| P6定压压力 | P6定压压力 | 回油流量计后、油箱前 |
+| （二级诊断参照）回油质量流量 | 回油质量流量2 | 回油管路，只在涡轮流量计二级诊断中使用 |
 
 ## 二、注入时用到的测点关系（由 60 个正常文件拟合）
 
-- 离心泵：供油压力、P1 ≈ 1.69×10⁻⁷ · n² + 常数（n 为燃油泵转速，rpm；压力 MPa）。P1 由燃油泵转速闭环控制。
-- 供油管路压降：供油压力 − P1 ∝ Q^0.25。
-- 被试件出口压力：P5 ∝ Q^0.82。
-- 回油管路压降：回油压力1-2 − 回油压力1-1 ∝ Q^1.1。
 - 被试泵是容积泵：流量由电传转速决定，基本不受进出口压力影响。
+- P5、P6 ∝ Q^0.82（P6 在 P5 下游，两者只差约 0.001 MPa）。
+- 供油段压差 P9 − P1 ∝ Q^1.57；P1 由增压泵闭环控制在设定值。
+- 回油质量流量计测的是实际回油流量（泄漏、泵出力变化时随之变化，流量计 K 系数漂移时不变）。
 
-系统类故障（泄漏、被试泵出力下降、管路堵塞、离心泵衰退、P1 传感器漂移）按这些关系让相关测点一起变化，
+系统类故障（泄漏、被试泵出力下降、电传转速信号偏差、管路堵塞、P1 传感器漂移）按这些关系让相关测点一起变化，
 而不是只改一个测点。
 
 ## 三、源文件（正常数据）

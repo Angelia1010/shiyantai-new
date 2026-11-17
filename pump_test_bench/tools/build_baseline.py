@@ -25,12 +25,14 @@ def main(argv=None) -> int:
     print(f"使用 {baseline['files']} 个文件，跳过 {len(skipped)} 个")
     for s in skipped:
         print("  跳过", s)
-    print("\n流量计固有偏差（相对其余表中位数）：")
-    for col, m in baseline["meters"].items():
-        cv = f"{m['cv'] * 100:.3f}%" if m.get("cv") is not None else "-"
-        print(f"  {col:10s} 偏差 {m['bias'] * 100:+.2f}%  标准差 {m['std'] * 100:.2f}%  短时波动 {cv}")
-    for name, b in baseline.get("balance", {}).items():
-        print(f"供回油平衡（{name}）：{b['bias'] * 100:+.2f}% ± {b['std'] * 100:.2f}%")
+    print("\n各信号短时波动：" + "，".join(f"{c} {v['cv'] * 100:.3f}%" for c, v in baseline["signals"].items()))
+    if baseline.get("isolation"):
+        print("故障隔离各观测量的健康离散：" + "，".join(f"{k} {v * 100:.2f}%"
+                                              for k, v in baseline["isolation"]["sigma"].items()))
+    p = baseline["pair"]
+    print(f"两只流量计固有差异：离散 {p['std'] * 100:.2f}%（{p['n']} 个文件）")
+    for meter, t in (baseline.get("turbine") or {}).items():
+        print(f"涡轮流量计模型复核 {meter}：离散 {t['std'] * 100:.2f}%（{t['n']} 个文件）")
     if "density" in baseline:
         d = baseline["density"]
         print(f"密度模型：ρ = {d['rho15']:.1f} {d['slope']:+.3f}·(T−15) kg/m³，残差 {d['resid_std']:.2f}，"

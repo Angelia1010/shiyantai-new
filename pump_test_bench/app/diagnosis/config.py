@@ -30,16 +30,10 @@ def load_config() -> Dict:
         cfg = json.loads(path.read_text(encoding="utf-8"))
     except ValueError as exc:
         raise ValueError(f"诊断配置文件格式错误：{path}（{exc}）") from None
-    if not cfg.get("loops"):
-        raise ValueError(f"诊断配置文件中没有定义管路（loops）：{path}")
+    keys = {item.get("key") for item in cfg.get("signals") or []}
+    missing = [k for k in ("supply_flow", "return_flow") if k not in keys]
+    if missing:
+        raise ValueError(f"诊断配置文件的 signals 中缺少必需的信号（{'、'.join(missing)}）：{path}")
     with _lock:
         _cache[str(path)] = (mtime, cfg)
     return cfg
-
-
-def all_meter_columns(cfg: Dict):
-    for loop in cfg["loops"]:
-        for meter in loop.get("meters", []):
-            yield meter["column"]
-        if loop.get("mass_meter"):
-            yield loop["mass_meter"]["column"]
