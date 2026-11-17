@@ -1,5 +1,5 @@
 <template>
-  <div class="diagnosis-view">
+  <div :class="['diagnosis-view', { dark }]">
     <!-- 1. 结论 -->
     <div :class="['conclusion', report.result]">
       <el-tag :type="RESULT_TAG[report.result] || 'info'" size="medium" effect="dark">{{ resultLabel(report.result) }}</el-tag>
@@ -12,17 +12,17 @@
     </div>
 
     <!-- 2. 管路示意图 -->
-    <el-card shadow="never" class="block">
-      <div slot="header" class="block-head">
+    <section class="block">
+      <div class="block-head">
         <span>管路示意图</span>
         <span class="block-sub">9 个诊断信号的位置与状态，数值为稳定段均值，下方为相对正常预期的偏差</span>
       </div>
       <pipeline-schematic :curves="curves" :causes="report.causes || []" :selected="selected" @select="select" />
-    </el-card>
+    </section>
 
     <!-- 3. 信号曲线 -->
-    <el-card shadow="never" class="block">
-      <div slot="header" class="block-head">
+    <section class="block">
+      <div class="block-head">
         <span>信号曲线</span>
         <span class="block-sub">
           <i class="key measured"></i>实测（3 秒平均）
@@ -43,29 +43,29 @@
         />
       </div>
       <div v-if="selectedSignal" ref="detail" class="detail-wrap">
-        <signal-detail :signal="selectedSignal" :time="curves.time" :segment="curves.segment" />
+        <signal-detail :signal="selectedSignal" :time="curves.time" :segment="curves.segment" :dark="dark" />
       </div>
-    </el-card>
+    </section>
 
     <!-- 4. 原因 | 指纹 + 涡轮 -->
     <el-row :gutter="16" class="block-row">
       <el-col :xs="24" :md="13">
-        <el-card shadow="never" class="block fill">
-          <div slot="header" class="block-head"><span>原因分析</span></div>
-          <cause-list :causes="report.causes || []" :history="report.history" />
-        </el-card>
+        <section class="block">
+          <div class="block-head"><span>原因分析</span></div>
+          <cause-list :causes="report.causes || []" :history="report.history" :dark="dark" />
+        </section>
       </el-col>
       <el-col :xs="24" :md="11">
-        <el-card v-if="prints.length" shadow="never" class="block">
-          <div slot="header" class="block-head">
+        <section v-if="prints.length" class="block">
+          <div class="block-head">
             <span>偏差指纹</span>
             <span class="block-sub">各信号偏差是正常波动的多少倍，灰带内为正常波动</span>
           </div>
           <div ref="print" class="print-chart" :style="{ height: printHeight + 'px' }"></div>
           <div class="print-note">实心为实测偏差，空心为“{{ isolationText }}”应有的偏差，两者吻合说明这一解释与数据一致。</div>
-        </el-card>
-        <el-card v-if="turbine.length" shadow="never" class="block">
-          <div slot="header" class="block-head">
+        </section>
+        <section v-if="turbine.length" class="block">
+          <div class="block-head">
             <span>涡轮流量计二级诊断</span>
             <span class="block-sub">怀疑流量计时，用涡轮流量计模型复核叶轮转速</span>
           </div>
@@ -80,10 +80,10 @@
             </div>
             <div class="turbine-row">
               <span>复核结论</span>
-              <el-tag :type="VERDICT_TAG[tb.verdict] || 'info'" size="mini">{{ tb.verdict }}</el-tag>
+              <el-tag :type="VERDICT_TAG[tb.verdict] || 'info'" size="mini" :effect="dark ? 'dark' : 'light'">{{ tb.verdict }}</el-tag>
             </div>
           </div>
-        </el-card>
+        </section>
       </el-col>
     </el-row>
 
@@ -97,7 +97,7 @@
         </div>
       </el-collapse-item>
       <el-collapse-item v-if="models.length" title="仿真模型对比（稳定段均值）" name="models">
-        <model-compare :models="models" />
+        <model-compare :models="models" :dark="dark" />
       </el-collapse-item>
       <el-collapse-item v-if="advice" title="处理建议" name="advice">
         <div class="advice">{{ advice }}</div>
@@ -124,7 +124,9 @@ export default {
   components: { CauseList, ModelCompare, PipelineSchematic, SignalSpark, SignalDetail },
   props: {
     // 后端诊断报告（含 curves）
-    report: { type: Object, required: true }
+    report: { type: Object, required: true },
+    // 暗色主题（工作台大屏）
+    dark: { type: Boolean, default: false }
   },
   data() {
     return { selected: null, RESULT_TAG, SEVERITY_TAG, SEVERITY_LABELS, VERDICT_TAG }
@@ -178,6 +180,9 @@ export default {
     }
   },
   watch: {
+    dark() {
+      this.$nextTick(this.renderPrint)
+    },
     report: {
       handler() {
         this.selected = defaultSignal(this.curves)
@@ -222,6 +227,9 @@ export default {
         })
       }
       const rows = this.prints
+      const c = this.dark
+        ? { text: '#c7d2e0', split: 'rgba(148, 163, 184, 0.12)', band: 'rgba(148, 163, 184, 0.14)', zero: '#4a5d75', dot: '#eef6ff', dotFill: '#0c1828' }
+        : { text: '#606266', split: '#f0f2f5', band: 'rgba(144, 147, 153, 0.12)', zero: '#c0c4cc', dot: '#303133', dotFill: '#fff' }
       const lim = Math.max(PRINT_NORMAL * 2, ...rows.map(r => Math.abs(r.measured)), ...rows.map(r => Math.abs(r.fitted))) * 1.1
       this.printChart.setOption({
         animation: false,
@@ -231,20 +239,21 @@ export default {
           formatter: items => `${items[0].name}<br/>` + items.map(i => `${i.seriesName} ${i.value.toFixed(1)} 倍正常波动`).join('<br/>')
         },
         xAxis: {
-          type: 'value', min: -lim, max: lim, splitLine: { lineStyle: { color: '#f0f2f5' } },
-          axisLabel: { formatter: v => v.toFixed(0) }
+          type: 'value', min: -lim, max: lim, splitLine: { lineStyle: { color: c.split } },
+          axisLabel: { formatter: v => v.toFixed(0), color: c.text }
         },
-        yAxis: { type: 'category', inverse: true, data: rows.map(r => r.label), axisTick: { show: false } },
+        yAxis: { type: 'category', inverse: true, data: rows.map(r => r.label), axisTick: { show: false },
+          axisLabel: { color: c.text }, axisLine: { lineStyle: { color: c.zero } } },
         series: [
           {
             name: '实测偏差', type: 'bar', barWidth: 10,
             data: rows.map(r => ({ value: r.measured, itemStyle: { color: r.state === 'normal' ? '#a0cfff' : STATE_COLOR[r.state] } })),
-            markArea: { silent: true, itemStyle: { color: 'rgba(144, 147, 153, 0.12)' }, data: [[{ xAxis: -PRINT_NORMAL }, { xAxis: PRINT_NORMAL }]] },
-            markLine: { silent: true, symbol: 'none', label: { show: false }, lineStyle: { color: '#c0c4cc', type: 'solid' }, data: [{ xAxis: 0 }] }
+            markArea: { silent: true, itemStyle: { color: c.band }, data: [[{ xAxis: -PRINT_NORMAL }, { xAxis: PRINT_NORMAL }]] },
+            markLine: { silent: true, symbol: 'none', label: { show: false }, lineStyle: { color: c.zero, type: 'solid' }, data: [{ xAxis: 0 }] }
           },
           {
             name: '解释应有的偏差', type: 'scatter', symbol: 'circle', symbolSize: 11,
-            itemStyle: { color: '#fff', borderColor: '#303133', borderWidth: 1.5 },
+            itemStyle: { color: c.dotFill, borderColor: c.dot, borderWidth: 1.5 },
             data: rows.map(r => r.fitted)
           }
         ]
@@ -255,17 +264,56 @@ export default {
 }
 </script>
 
-<style scoped>
+<style lang="scss" scoped>
+/* 颜色都走变量：浅色用于自动诊断、任务记录，暗色（dark）用于工作台大屏；子组件继承这些变量 */
+.diagnosis-view {
+  --dv-card: #fff;
+  --dv-card-solid: #fff;
+  --dv-border: #ebeef5;
+  --dv-text: #303133;
+  --dv-text2: #606266;
+  --dv-muted: #909399;
+  --dv-faint: #c0c4cc;
+  --dv-hover: #c6e2ff;
+  --dv-band: rgba(144, 147, 153, 0.18);
+  --dv-seg: rgba(64, 158, 255, 0.06);
+  --dv-device: #f4f4f5;
+  --dv-device-border: #909399;
+  --dv-pipe: #c0c4cc;
+  --dv-loop: #dcdfe6;
+  --dv-abnormal-bg: #fffafa;
+  --dv-warning-bg: #fdf6ec;
+  --dv-danger-bg: #fef0f0;
+  color: var(--dv-text);
+}
+.diagnosis-view.dark {
+  --dv-card: rgba(255, 255, 255, 0.03);
+  --dv-card-solid: #0c1828;
+  --dv-border: rgba(56, 189, 248, 0.16);
+  --dv-text: #eef6ff;
+  --dv-text2: #c7d2e0;
+  --dv-muted: #7891ad;
+  --dv-faint: #4a5d75;
+  --dv-hover: rgba(56, 189, 248, 0.45);
+  --dv-band: rgba(148, 163, 184, 0.2);
+  --dv-seg: rgba(56, 189, 248, 0.08);
+  --dv-device: #13243a;
+  --dv-device-border: #4a6584;
+  --dv-pipe: #3b5372;
+  --dv-loop: #2a3f58;
+  --dv-abnormal-bg: rgba(239, 68, 68, 0.08);
+  --dv-warning-bg: rgba(245, 158, 11, 0.12);
+  --dv-danger-bg: rgba(239, 68, 68, 0.14);
+}
 .conclusion {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 8px 14px;
   padding: 12px 16px;
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--dv-border);
   border-left: 4px solid #67c23a;
-  border-radius: 0;
-  background: #fff;
+  background: var(--dv-card);
   margin-bottom: 12px;
 }
 .conclusion.warning { border-left-color: #e6a23c; }
@@ -274,18 +322,22 @@ export default {
 .conclusion-text {
   font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: var(--dv-text);
 }
 .conclusion-sub {
   font-size: 13px;
-  color: #606266;
+  color: var(--dv-text2);
 }
 .conclusion-meta {
   margin-left: auto;
   font-size: 13px;
-  color: #909399;
+  color: var(--dv-muted);
 }
 .block {
+  background: var(--dv-card);
+  border: 1px solid var(--dv-border);
+  border-radius: 4px;
+  padding: 0 16px 14px;
   margin-bottom: 12px;
 }
 .block-head {
@@ -294,11 +346,14 @@ export default {
   flex-wrap: wrap;
   gap: 4px 12px;
   font-weight: 600;
+  padding: 12px 0 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--dv-border);
 }
 .block-sub {
   font-size: 12px;
   font-weight: 400;
-  color: #909399;
+  color: var(--dv-muted);
 }
 .key {
   display: inline-block;
@@ -308,9 +363,9 @@ export default {
   vertical-align: 0;
 }
 .key.measured { height: 2px; background: #409eff; vertical-align: 3px; }
-.key.expected { height: 0; border-top: 1.5px dashed #909399; vertical-align: 3px; }
-.key.band { background: rgba(144, 147, 153, 0.25); }
-.key.seg { background: rgba(64, 158, 255, 0.12); border: 1px solid rgba(64, 158, 255, 0.3); }
+.key.expected { height: 0; border-top: 1.5px dashed var(--dv-muted); vertical-align: 3px; }
+.key.band { background: var(--dv-band); }
+.key.seg { background: var(--dv-seg); border: 1px solid rgba(64, 158, 255, 0.3); }
 .spark-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -322,43 +377,44 @@ export default {
 .detail-wrap {
   margin-top: 14px;
   padding-top: 12px;
-  border-top: 1px solid #ebeef5;
+  border-top: 1px solid var(--dv-border);
 }
 .print-chart {
   width: 100%;
 }
 .print-note {
   font-size: 12px;
-  color: #909399;
+  color: var(--dv-muted);
   line-height: 1.6;
 }
 .turbine + .turbine {
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px dashed #ebeef5;
+  border-top: 1px dashed var(--dv-border);
 }
 .turbine-name {
   font-weight: 600;
   margin-bottom: 6px;
-  color: #303133;
+  color: var(--dv-text);
 }
 .turbine-row {
   display: flex;
   justify-content: space-between;
   font-size: 13px;
   line-height: 1.9;
-  color: #606266;
+  color: var(--dv-text2);
 }
 .turbine-row b {
   font-weight: 500;
-  color: #303133;
+  color: var(--dv-text);
 }
 .more {
   border-top: none;
+  border-bottom: none;
 }
 .finding {
   padding: 6px 0;
-  border-bottom: 1px dashed #ebeef5;
+  border-bottom: 1px dashed var(--dv-border);
   font-size: 13px;
 }
 .finding-title {
@@ -366,13 +422,30 @@ export default {
   font-weight: 600;
 }
 .finding-detail {
-  color: #606266;
+  color: var(--dv-text2);
   margin-top: 4px;
   line-height: 1.6;
 }
 .advice {
   white-space: pre-line;
   line-height: 1.7;
-  color: #606266;
+  color: var(--dv-text2);
+}
+.more ::v-deep .el-collapse-item__header,
+.more ::v-deep .el-collapse-item__wrap {
+  background: var(--dv-card);
+  color: var(--dv-text);
+  border-color: var(--dv-border);
+}
+.more ::v-deep .el-collapse-item__header {
+  padding: 0 16px;
+  border: 1px solid var(--dv-border);
+}
+.more ::v-deep .el-collapse-item__content {
+  padding: 10px 16px;
+  color: var(--dv-text2);
+}
+.more ::v-deep .el-collapse-item + .el-collapse-item .el-collapse-item__header {
+  border-top: none;
 }
 </style>

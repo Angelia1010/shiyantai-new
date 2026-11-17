@@ -24,7 +24,7 @@
         ref="bench"
         :feature-map="featureMap"
         :alarms="alarmComponents"
-        @loaded="parts = $event"
+        @loaded="onModelLoaded"
         @select="selectedPart = $event"
       />
     </section>
@@ -42,6 +42,15 @@
         <div class="verdict-fault">{{ latestResult.summary || latestResult.diagnosis.fault_name || '—' }}</div>
         <div v-if="latestResult.condition && latestResult.condition.label" class="verdict-cond">
           {{ latestResult.condition.label }}
+        </div>
+        <div v-if="latestSignals.length" class="verdict-signals">
+          <span
+            v-for="sg in latestSignals"
+            :key="sg.column"
+            :class="['sig', sg.state]"
+            :title="`${sg.label}：${sg.text}`"
+            @click="openDetail(latestResult)"
+          ><i />{{ sg.name }}</span>
         </div>
         <div class="verdict-actions">
           <button v-if="alarmComponents.length" class="text-btn danger" @click="locateAlarm">定位异常部件</button>
@@ -86,7 +95,10 @@
 
       <div class="panel-title sub">
         诊断记录
-        <span class="counter">{{ records.length }} 条<template v-if="abnormalCount">，异常 {{ abnormalCount }}</template></span>
+        <span class="counter">
+          {{ records.length }} 条<template v-if="abnormalCount">，异常 {{ abnormalCount }}</template>
+          <router-link to="/tasks" class="all-link">全部 ›</router-link>
+        </span>
       </div>
       <div class="records">
         <div
@@ -156,12 +168,24 @@
     <!-- 诊断详情 -->
     <transition name="fade">
       <div v-if="detail" class="modal" @click.self="detail = null">
-        <div class="modal-card">
+        <div :class="['modal-card', { wide: detailHasCurves }]">
           <div class="modal-head">
             <span>诊断详情 · {{ detail.fileName }}</span>
-            <i class="el-icon-close" @click="detail = null" />
+            <span class="modal-head-actions">
+              <button v-if="detailLocateTarget" class="text-btn" @click="locateDetail">
+                <i class="el-icon-location-outline" /> 在三维模型中定位
+              </button>
+              <button v-if="detail.taskId" class="text-btn" @click="openDetailPage">
+                <i class="el-icon-top-right" /> 在新页面打开
+              </button>
+              <i class="el-icon-close" @click="detail = null" />
+            </span>
           </div>
           <div v-if="detail.loading" class="empty">加载中...</div>
+          <!-- 与任务记录中的报告是同一份数据、同一个展示组件（暗色主题） -->
+          <div v-else-if="detailHasCurves" class="modal-body">
+            <diagnosis-view :report="detail.report" dark />
+          </div>
           <div v-else class="modal-body">
             <div class="kv"><span>诊断结果</span><b :class="detail.result">{{ detail.statusText }}</b></div>
             <div class="kv"><span>诊断时间</span><b>{{ detail.timestamp }}</b></div>
@@ -269,11 +293,14 @@ import screenfull from 'screenfull'
 import { getDataDirs, getLiveFrames, removeDataDir, setAutoDiagnose, setWatchPath } from '@/api/files'
 import { downloadReport, getDiagnosisSettings, getReport, listTasks, saveDiagnosisSettings } from '@/api/tasks'
 import CauseList from '@/components/CauseList'
+import DiagnosisView from '@/components/DiagnosisView'
 import ModelCompare from '@/components/ModelCompare'
 import { errorMessage } from '@/utils/request'
 import { MessageType, openChannel } from '@/utils/broadcastChannel'
 import { fieldUnit, formatValue, loadDerivedFields } from '@/utils/features'
 import { SEVERITY_LABELS, resultLabel, summarizeReport } from '@/utils/report'
+import { SHORT_NAMES, STATE_TEXT, deviationText, orderedSignals, signalState } from '@/utils/diagnosisCurves'
+import { openReportInNewTab } from '@/utils/reportLinks'
 import TestBenchView from './TestBenchView.vue'
 import TrendChart from './TrendChart.vue'
 
@@ -315,7 +342,7 @@ function formatTime(ms) {
 
 export default {
   name: 'Dashboard',
-  components: { TestBenchView, TrendChart, CauseList, ModelCompare },
+  components: { TestBenchView, TrendChart, CauseList, DiagnosisView, ModelCompare },
   data() {
     return {
       featureMap: {},
@@ -378,6 +405,30 @@ export default {
     },
     detailFindings() {
       return ((this.detail && this.detail.findings) || []).filter(f => f.severity !== 'info')
+    },
+    // 最新诊断的 9 个信号状态（与报告中的管路示意图一致）
+    latestSignals() {
+      const report = this.latestResult && this.latestResult.report
+      return orderedSignals(report && report.curves).map(sg => {
+        const state = signalState(sg)
+        const dev = sg.residual != null ? `，偏差 ${deviationText(sg)}` : ''
+        return { column: sg.column, label: sg.label, name: SHORT_NAMES[sg.key] || sg.label, state, text: STATE_TEXT[state] + dev }
+      })
+    },
+    detailHasCurves() {
+      const report = this.detail && this.detail.report
+      return !!(report && report.curves && (report.curves.signals || []).length)
+    },
+    // 详情中可在三维模型里定位的部件（三维模型中没有的部件，如电传系统，不提供定位）
+    detailLocateTarget() {
+      const keys = new Set(this.parts.map(p => p.key))
+      return ((this.detail && this.detail.alarmComponents) || []).find(k => keys.has(k)) || null
+    }
+  },
+  watch: {
+    // 从报告页“在工作台定位部件”跳转过来：/?focus=部件
+    '$route.query.focus'() {
+      this.focusFromRoute()
     }
   },
   created() {
@@ -563,6 +614,24 @@ export default {
     },
     onFullscreenChange() {
       this.isFullscreen = screenfull.isFullscreen
+    },
+    onModelLoaded(parts) {
+      this.parts = parts
+      this.focusFromRoute()
+    },
+    focusFromRoute() {
+      const key = this.$route.query.focus
+      if (!key || !this.parts.some(p => p.key === key)) return
+      this.$refs.bench.focus(key)
+      this.selectedPart = key
+    },
+    locateDetail() {
+      const key = this.detailLocateTarget
+      this.detail = null
+      if (key) this.$refs.bench.focus(key)
+    },
+    openDetailPage() {
+      openReportInNewTab(this.$router, this.detail.taskId)
     },
     locateAlarm() {
       if (this.alarmComponents.length) this.$refs.bench.focus(this.alarmComponents[0])
@@ -1169,6 +1238,48 @@ $warn: #f59e0b;
 .modal-body {
   padding: 14px 18px;
   overflow-y: auto;
+}
+.modal-card.wide {
+  width: min(1280px, 96vw);
+  max-height: 92vh;
+}
+.modal-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-weight: 400;
+}
+.all-link {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 400;
+  color: $accent;
+}
+.verdict-signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 8px 0 2px;
+  font-size: 11px;
+  color: $muted;
+  .sig {
+    cursor: pointer;
+    white-space: nowrap;
+    i {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      margin-right: 3px;
+      background: $ok;
+      vertical-align: 1px;
+    }
+    &.affected i { background: transparent; border: 1.5px dashed $warn; width: 5px; height: 5px; }
+    &.warning { color: $warn; i { background: $warn; } }
+    &.abnormal { color: $bad; i { background: $bad; } }
+    &.unusable i { background: $muted; }
+    &:hover { color: $bright; }
+  }
 }
 .path-card {
   width: min(560px, 92vw);

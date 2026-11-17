@@ -168,6 +168,13 @@
       </div>
       <div v-else class="loading-text">加载中...</div>
       <span slot="footer">
+        <el-button
+          v-if="reportDialog.row"
+          icon="el-icon-location-outline"
+          :disabled="!reportLocateTarget"
+          @click="locateFromDialog"
+        >在工作台定位部件</el-button>
+        <el-button v-if="reportDialog.row" icon="el-icon-top-right" @click="openInNewTab(reportDialog.row)">在新页面打开</el-button>
         <el-button @click="reportDialog.visible = false">关闭</el-button>
         <el-button type="primary" :disabled="!reportDialog.row" @click="download(reportDialog.row)">下载报告</el-button>
       </span>
@@ -177,7 +184,8 @@
 
 <script>
 import { deleteTasks, downloadReport, getReport, listTasks } from '@/api/tasks'
-import { RESULT_TAG, SEVERITY_LABELS, resultLabel } from '@/utils/report'
+import { RESULT_TAG, SEVERITY_LABELS, resultLabel, summarizeReport } from '@/utils/report'
+import { firstAlarmComponent, locateOnDashboard, openReportInNewTab } from '@/utils/reportLinks'
 import CauseList from '@/components/CauseList'
 import DiagnosisView from '@/components/DiagnosisView'
 import ModelCompare from '@/components/ModelCompare'
@@ -212,6 +220,11 @@ export default {
     }
   },
   computed: {
+    /** 报告里第一个需要在工作台三维模型中定位的部件 */
+    reportLocateTarget() {
+      const { report, row } = this.reportDialog
+      return report && row ? firstAlarmComponent(summarizeReport(row.task_id, row.file_name, report)) : null
+    },
     /** 新版报告带信号曲线，用管路示意图 + 信号曲线展示 */
     hasCurves() {
       const r = this.reportDialog.report
@@ -283,6 +296,13 @@ export default {
       const d = new Date(ms)
       const pad = n => String(n).padStart(2, '0')
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+    },
+    openInNewTab(row) {
+      openReportInNewTab(this.$router, row.task_id)
+    },
+    locateFromDialog() {
+      this.reportDialog.visible = false
+      locateOnDashboard(this.$router, this.reportLocateTarget)
     },
     async viewReport(row) {
       this.reportDialog = { visible: true, report: null, row }

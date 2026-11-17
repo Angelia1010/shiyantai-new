@@ -72,19 +72,19 @@ export default {
 
 <style scoped>
 .spark {
-  border: 1px solid #ebeef5;
+  border: 1px solid var(--dv-border, #ebeef5);
   border-radius: 6px;
   padding: 8px 10px 6px;
   cursor: pointer;
-  background: #fff;
+  background: var(--dv-card, #fff);
   transition: border-color 0.15s;
   outline: none;
   min-width: 0;
 }
-.spark:hover { border-color: #c6e2ff; }
+.spark:hover { border-color: var(--dv-hover, #c6e2ff); }
 .spark:focus-visible { box-shadow: 0 0 0 2px #a0cfff; }
 .spark.warning { border-color: #f3d19e; }
-.spark.abnormal { border-color: #fab6b6; background: #fffafa; }
+.spark.abnormal { border-color: #fab6b6; background: var(--dv-abnormal-bg, #fffafa); }
 .spark.selected { border-color: #409eff; box-shadow: 0 0 0 1px #409eff; }
 .spark-head {
   display: flex;
@@ -94,7 +94,7 @@ export default {
   font-size: 13px;
 }
 .spark-name {
-  color: #303133;
+  color: var(--dv-text, #303133);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -109,11 +109,11 @@ export default {
   display: block;
   margin: 6px 0 4px;
 }
-.seg { fill: rgba(64, 158, 255, 0.06); }
-.band { fill: rgba(144, 147, 153, 0.18); }
+.seg { fill: var(--dv-seg, rgba(64, 158, 255, 0.06)); }
+.band { fill: var(--dv-band, rgba(144, 147, 153, 0.18)); }
 .expected {
   fill: none;
-  stroke: #909399;
+  stroke: var(--dv-muted, #909399);
   stroke-width: 1;
   stroke-dasharray: 4 3;
 }
@@ -125,8 +125,8 @@ export default {
   display: flex;
   gap: 10px;
   font-size: 12px;
-  color: #606266;
+  color: var(--dv-text2, #606266);
 }
-.spark-foot .unit { margin-left: auto; color: #909399; }
-.muted { color: #c0c4cc; }
+.spark-foot .unit { margin-left: auto; color: var(--dv-muted, #909399); }
+.muted { color: var(--dv-faint, #c0c4cc); }
 </style>

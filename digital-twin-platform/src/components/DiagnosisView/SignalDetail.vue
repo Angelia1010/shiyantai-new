@@ -4,7 +4,7 @@
       <div>
         <span class="detail-name">{{ signal.label }}</span>
         <span class="detail-pos">{{ signal.position }}</span>
-        <el-tag :type="TAG[state]" size="mini" effect="plain">{{ STATE_TEXT[state] }}</el-tag>
+        <el-tag :type="TAG[state]" size="mini" :effect="dark ? 'dark' : 'plain'">{{ STATE_TEXT[state] }}</el-tag>
       </div>
       <div class="detail-compare">{{ compareText }}</div>
     </div>
@@ -29,7 +29,8 @@ export default {
   props: {
     signal: { type: Object, required: true },
     time: { type: Array, required: true },
-    segment: { type: Array, default: null }
+    segment: { type: Array, default: null },
+    dark: { type: Boolean, default: false }
   },
   data() {
     return { TAG, STATE_TEXT }
@@ -54,6 +55,9 @@ export default {
   watch: {
     signal() {
       this.$nextTick(this.render)
+    },
+    dark() {
+      this.$nextTick(this.render)
     }
   },
   mounted() {
@@ -75,6 +79,9 @@ export default {
       this.chart.resize()
       const s = this.signal
       const t = this.time
+      const c = this.dark
+        ? { text: '#c7d2e0', muted: '#7891ad', faint: '#4a5d75', split: 'rgba(148, 163, 184, 0.12)', band: 'rgba(148, 163, 184, 0.2)', seg: 'rgba(56, 189, 248, 0.08)' }
+        : { text: '#606266', muted: '#909399', faint: '#c0c4cc', split: '#f0f2f5', band: 'rgba(144, 147, 153, 0.18)', seg: 'rgba(64, 158, 255, 0.06)' }
       const color = this.state === 'abnormal' || this.state === 'warning' ? STATE_COLOR[this.state] : '#409eff'
       const d = digits(s)
       const [lo, hi] = valueRange(s)
@@ -86,17 +93,19 @@ export default {
       const xAxis = grids.map((g, i) => ({
         type: 'value', gridIndex: i, min: t[0], max: t[t.length - 1],
         name: i === grids.length - 1 ? '时间（秒）' : '', nameLocation: 'middle', nameGap: 24,
-        axisLabel: { show: i === grids.length - 1, formatter: v => Math.round(v) },
+        axisLabel: { show: i === grids.length - 1, formatter: v => Math.round(v), color: c.text },
+        nameTextStyle: { color: c.muted }, axisLine: { lineStyle: { color: c.faint } },
         splitLine: { show: false }
       }))
       const yAxis = [{
-        type: 'value', gridIndex: 0, min: lo, max: hi, name: s.unit, nameTextStyle: { align: 'right' },
-        axisLabel: { formatter: v => v.toFixed(d) }, splitLine: { lineStyle: { color: '#f0f2f5' } }
+        type: 'value', gridIndex: 0, min: lo, max: hi, name: s.unit,
+        axisLabel: { formatter: v => v.toFixed(d), color: c.text }, splitLine: { lineStyle: { color: c.split } },
+        nameTextStyle: { align: 'right', color: c.muted }, axisLine: { lineStyle: { color: c.faint } }
       }]
       const series = []
       const segArea = this.segment ? {
-        silent: true, itemStyle: { color: 'rgba(64, 158, 255, 0.06)' },
-        label: { show: true, position: 'insideTop', color: '#909399', fontSize: 11, formatter: '稳定段（判定用）' },
+        silent: true, itemStyle: { color: c.seg },
+        label: { show: true, position: 'insideTop', color: c.muted, fontSize: 11, formatter: '稳定段（判定用）' },
         data: [[{ xAxis: this.segment[0] }, { xAxis: this.segment[1] }]]
       } : null
 
@@ -106,14 +115,14 @@ export default {
           { name: '正常范围下限', type: 'line', data: pair(s.band_low), stack: 'band', symbol: 'none',
             lineStyle: { opacity: 0 }, tooltip: { show: false }, silent: true },
           { name: '正常范围', type: 'line', data: pair(band), stack: 'band', symbol: 'none',
-            lineStyle: { opacity: 0 }, areaStyle: { color: 'rgba(144, 147, 153, 0.18)' }, silent: true },
+            lineStyle: { opacity: 0 }, areaStyle: { color: c.band }, silent: true },
           { name: '正常预期', type: 'line', data: pair(s.expected), symbol: 'none',
-            lineStyle: { color: '#909399', type: 'dashed', width: 1.5 }, itemStyle: { color: '#909399' } }
+            lineStyle: { color: c.muted, type: 'dashed', width: 1.5 }, itemStyle: { color: c.muted } }
         )
       }
       if (s.raw) {
         series.push({ name: '未平均读数', type: 'line', data: pair(s.raw), symbol: 'none',
-          lineStyle: { color: '#c0c4cc', width: 1 }, itemStyle: { color: '#c0c4cc' }, z: 1 })
+          lineStyle: { color: c.faint, width: 1 }, itemStyle: { color: c.faint }, z: 1 })
       }
       const measured = { name: '实测', type: 'line', data: pair(s.values), symbol: 'none', z: 3,
         lineStyle: { color, width: 2 }, itemStyle: { color }, markArea: segArea || undefined }
@@ -124,8 +133,8 @@ export default {
       }
       if (!two && s.setpoints) {
         series.push({ name: '设定档位', type: 'line', data: [], silent: true,
-          markLine: { silent: true, symbol: 'none', lineStyle: { color: '#c0c4cc', type: 'dotted' },
-            label: { formatter: p => `设定 ${p.value}`, color: '#909399', fontSize: 11 },
+          markLine: { silent: true, symbol: 'none', lineStyle: { color: c.faint, type: 'dotted' },
+            label: { formatter: p => `设定 ${p.value}`, color: c.muted, fontSize: 11 },
             data: s.setpoints.filter(v => v >= lo && v <= hi).map(v => ({ yAxis: v })) } })
       }
       series.push(measured)
@@ -136,8 +145,8 @@ export default {
         const absMax = Math.max(lim.alarm * 1.15, ...dev.filter(v => v != null).map(Math.abs))
         yAxis.push({
           type: 'value', gridIndex: 1, min: -absMax, max: absMax, name: `偏差 ${lim.unit}`,
-          nameTextStyle: { align: 'right' }, splitNumber: 2,
-          axisLabel: { formatter: v => v.toFixed(lim.unit === '%' ? 1 : d) }, splitLine: { show: false }
+          nameTextStyle: { align: 'right', color: c.muted }, splitNumber: 2, axisLine: { lineStyle: { color: c.faint } },
+          axisLabel: { formatter: v => v.toFixed(lim.unit === '%' ? 1 : d), color: c.text }, splitLine: { show: false }
         })
         const mk = (v, c, label) => ({ yAxis: v, lineStyle: { color: c }, label: { formatter: label, color: c, fontSize: 11 } })
         series.push({
@@ -147,14 +156,14 @@ export default {
           markLine: { silent: true, symbol: 'none', lineStyle: { type: 'dashed' }, data: [
             mk(lim.warn, '#e6a23c', '预警'), mk(-lim.warn, '#e6a23c', ''),
             mk(lim.alarm, '#f56c6c', '异常'), mk(-lim.alarm, '#f56c6c', ''),
-            { yAxis: 0, lineStyle: { color: '#c0c4cc', type: 'solid' }, label: { show: false } }
+            { yAxis: 0, lineStyle: { color: c.faint, type: 'solid' }, label: { show: false } }
           ] }
         })
       }
 
       this.chart.setOption({
         animation: false,
-        legend: { top: 4, right: 24, itemWidth: 18, textStyle: { fontSize: 12 },
+        legend: { top: 4, right: 24, itemWidth: 18, textStyle: { fontSize: 12, color: c.text }, inactiveColor: c.faint,
           data: (two ? ['实测', '正常预期', '正常范围'] : ['实测']).concat(s.raw ? ['未平均读数'] : []),
           selected: { 未平均读数: false } },
         tooltip: {
@@ -198,17 +207,17 @@ export default {
 .detail-name {
   font-size: 15px;
   font-weight: 600;
-  color: #303133;
+  color: var(--dv-text, #303133);
   margin-right: 8px;
 }
 .detail-pos {
   font-size: 12px;
-  color: #909399;
+  color: var(--dv-muted, #909399);
   margin-right: 8px;
 }
 .detail-compare {
   font-size: 13px;
-  color: #606266;
+  color: var(--dv-text2, #606266);
 }
 .detail-findings {
   margin-top: 6px;

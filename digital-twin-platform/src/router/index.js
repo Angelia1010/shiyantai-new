@@ -41,6 +41,18 @@ export const constantRoutes = [
     }]
   },
   {
+    // 独立报告页：工作台、任务记录都可以在新标签页打开，链接可复制给别人
+    path: '/report',
+    component: Layout,
+    hidden: true,
+    children: [{
+      path: ':taskId',
+      name: 'Report',
+      component: () => import('@/views/report/index'),
+      meta: { title: '诊断报告', activeMenu: '/tasks' }
+    }]
+  },
+  {
     path: '/autoDiagnosis',
     component: Layout,
     children: [{

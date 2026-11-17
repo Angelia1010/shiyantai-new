@@ -147,7 +147,7 @@ export default {
   display: block;
 }
 .pipe {
-  stroke: #c0c4cc;
+  stroke: var(--dv-pipe, #c0c4cc);
   stroke-width: 6;
   stroke-linecap: round;
 }
@@ -156,27 +156,27 @@ export default {
 .arrow { stroke: transparent; }
 .loop-line {
   fill: none;
-  stroke: #dcdfe6;
+  stroke: var(--dv-loop, #dcdfe6);
   stroke-width: 2;
   stroke-dasharray: 6 5;
 }
 .loop-text, .segment-text {
   font-size: 12px;
-  fill: #909399;
+  fill: var(--dv-muted, #909399);
 }
 .device rect {
-  fill: #f4f4f5;
-  stroke: #909399;
+  fill: var(--dv-device, #f4f4f5);
+  stroke: var(--dv-device-border, #909399);
   stroke-width: 1;
 }
 .device text {
   font-size: 14px;
-  fill: #303133;
+  fill: var(--dv-text, #303133);
 }
-.device.is-warning rect { fill: #fdf6ec; stroke: #e6a23c; stroke-width: 2; }
-.device.is-abnormal rect { fill: #fef0f0; stroke: #f56c6c; stroke-width: 2; }
+.device.is-warning rect { fill: var(--dv-warning-bg, #fdf6ec); stroke: #e6a23c; stroke-width: 2; }
+.device.is-abnormal rect { fill: var(--dv-danger-bg, #fef0f0); stroke: #f56c6c; stroke-width: 2; }
 .drive {
-  stroke: #909399;
+  stroke: var(--dv-device-border, #909399);
   stroke-width: 2;
   stroke-dasharray: 4 3;
 }
@@ -184,13 +184,13 @@ export default {
 .drive.is-abnormal { stroke: #f56c6c; }
 .node { cursor: pointer; outline: none; }
 .node .hit { fill: transparent; }
-.node .dot { stroke: #fff; stroke-width: 2; }
+.node .dot { stroke: var(--dv-card-solid, #fff); stroke-width: 2; }
 .node .ring { fill: none; stroke: #409eff; stroke-width: 2; }
 .node:focus-visible .hit { stroke: #409eff; stroke-width: 2; }
 .node.affected .dot { stroke: #d4880f; stroke-dasharray: 3 2; }
-.node .name { font-size: 13px; fill: #303133; }
-.node .value { font-size: 12px; fill: #606266; }
-.node .deviation { font-size: 12px; fill: #909399; }
+.node .name { font-size: 13px; fill: var(--dv-text, #303133); }
+.node .value { font-size: 12px; fill: var(--dv-text2, #606266); }
+.node .deviation { font-size: 12px; fill: var(--dv-muted, #909399); }
 .node.abnormal .name, .node.warning .name { font-weight: 600; }
 .node:hover .name { fill: #409eff; }
 .legend {
@@ -198,7 +198,7 @@ export default {
   flex-wrap: wrap;
   gap: 16px;
   font-size: 12px;
-  color: #606266;
+  color: var(--dv-text2, #606266);
   padding: 4px 4px 0;
 }
 .legend-item i {
@@ -211,6 +211,6 @@ export default {
 }
 .legend-hint {
   margin-left: auto;
-  color: #909399;
+  color: var(--dv-muted, #909399);
 }
 </style>
