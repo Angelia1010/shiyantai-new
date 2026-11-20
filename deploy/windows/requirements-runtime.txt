@@ -1,0 +1,13 @@
+# 安装包内 Python 的运行依赖（与 pump_test_bench/requirements.txt 一致，去掉测试，加上 waitress）
+flask>=2.3,<4
+itsdangerous>=2.1
+pandas>=2.0
+openpyxl>=3.1
+xlrd>=2.0
+python-docx>=1.0
+numpy>=1.24
+requests>=2.31
+fastapi>=0.100
+uvicorn>=0.23
+npTDMS>=1.7
+waitress>=3.0

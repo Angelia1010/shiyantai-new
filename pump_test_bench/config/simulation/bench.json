@@ -1,0 +1,271 @@
+{
+  "_说明": "标准台系统模型：按原理图（增压泵 → P9 → 供油流量1-2 → P1 → 被试泵（电传） → P5 → 回油流量1-2 → P6 → 油箱），给定电传转速、油温、P1 进口压力，给出两只流量计、P9、P5、P6、回油温度健康时的预期值。各输出用“自动拟合”由正常数据建立。诊断用它的预期值作为各信号的参照（diagnosis/expectation.py）。",
+  "id": "bench",
+  "name": "标准台系统模型",
+  "order": 1,
+  "description": "电传转速、油温、P1 进口压力 → 供油/回油流量、P9、P5、P6、回油温度",
+  "components": [
+    "供油管路",
+    "被试件1高低压双联泵",
+    "回油管路",
+    "回油流量计1"
+  ],
+  "default_mode": "decisive",
+  "engine": {
+    "type": "surrogate"
+  },
+  "active_if": [
+    {
+      "column": "供油流量1-2",
+      "min": 20,
+      "note": "主油路有流量"
+    }
+  ],
+  "inputs": [
+    {
+      "name": "电传转速",
+      "column": "电传实际转速",
+      "unit": "rpm",
+      "grid": [
+        1000,
+        1500,
+        2000,
+        2500,
+        3000
+      ],
+      "valid": [
+        10,
+        30000
+      ],
+      "system": "传动系统",
+      "role": "main"
+    },
+    {
+      "name": "油温",
+      "column": "供油温度1-2",
+      "unit": "℃",
+      "grid": [
+        15,
+        27,
+        37,
+        46
+      ],
+      "valid": [
+        -40,
+        120
+      ],
+      "role": "environment"
+    },
+    {
+      "name": "进口压力",
+      "column": "P1进口压力",
+      "unit": "MPa",
+      "grid": [
+        0.1,
+        0.15,
+        0.25
+      ],
+      "valid": [
+        0.0,
+        2.0
+      ],
+      "system": "被试件",
+      "role": "secondary"
+    }
+  ],
+  "outputs": [
+    {
+      "name": "供油流量",
+      "unit": "L/h",
+      "kind": "flow",
+      "columns": [
+        "供油流量1-2"
+      ],
+      "component": "供油管路",
+      "system": "供油系统",
+      "method": "autofit",
+      "autofit": {
+        "max_degree": 3,
+        "interactions": true,
+        "ridge": 0.0001
+      }
+    },
+    {
+      "name": "回油流量",
+      "unit": "L/h",
+      "kind": "flow",
+      "columns": [
+        "回油流量1-2"
+      ],
+      "component": "回油流量计1",
+      "system": "回油系统",
+      "method": "autofit",
+      "autofit": {
+        "max_degree": 3,
+        "interactions": true,
+        "ridge": 0.0001
+      }
+    },
+    {
+      "name": "P9控制腔压力",
+      "unit": "MPa",
+      "kind": "pressure",
+      "columns": [
+        "P9控制腔压力"
+      ],
+      "component": "供油管路",
+      "system": "供油系统",
+      "method": "autofit",
+      "autofit": {
+        "max_degree": 3,
+        "interactions": true,
+        "ridge": 0.0001
+      },
+      "residual": "absolute"
+    },
+    {
+      "name": "被试件出口压力",
+      "unit": "MPa",
+      "kind": "pressure",
+      "columns": [
+        "P5低压压力"
+      ],
+      "component": "被试件1高低压双联泵",
+      "system": "被试件",
+      "method": "autofit",
+      "autofit": {
+        "max_degree": 3,
+        "interactions": true,
+        "ridge": 0.0001
+      }
+    },
+    {
+      "name": "定压压力",
+      "unit": "MPa",
+      "kind": "pressure",
+      "columns": [
+        "P6定压压力"
+      ],
+      "component": "回油管路",
+      "system": "回油系统",
+      "method": "autofit",
+      "autofit": {
+        "max_degree": 3,
+        "interactions": true,
+        "ridge": 0.0001
+      }
+    },
+    {
+      "name": "回油温度",
+      "unit": "℃",
+      "kind": "temperature",
+      "columns": [
+        "回油温度1-1"
+      ],
+      "component": "回油管路",
+      "system": "回油系统",
+      "method": "autofit",
+      "autofit": {
+        "max_degree": 3,
+        "interactions": true,
+        "ridge": 0.0001
+      },
+      "residual": "absolute"
+    }
+  ],
+  "thresholds": {
+    "sigma_warn": 3,
+    "sigma_alarm": 5,
+    "floor_warn": {
+      "flow": 0.025,
+      "pressure": 0.04
+    },
+    "floor_alarm": {
+      "flow": 0.04,
+      "pressure": 0.07
+    },
+    "floor_warn_abs": {
+      "pressure": 0.02,
+      "flow": 5.0,
+      "other": 1.0
+    },
+    "floor_alarm_abs": {
+      "pressure": 0.04,
+      "flow": 10.0,
+      "other": 2.0
+    }
+  },
+  "amesim": {
+    "_说明": "接入原理图对应的 AMESim 整体模型时填写：电传转速、油温、P1 怎样设置到模型，各输出对应的变量路径",
+    "url": "http://127.0.0.1:5003",
+    "model_file": "待填写.ame",
+    "stop_time_s": 20,
+    "steady_tail_s": 5,
+    "parameters": [
+      {
+        "input": "电传转速",
+        "kind": "input_table",
+        "points": 150
+      },
+      {
+        "input": "电传转速",
+        "kind": "component",
+        "params": [
+          "ordiam@flowcontrol01",
+          "ordiam@flowcontrol01_1",
+          "ordiam@flowcontrol01_2"
+        ],
+        "lookup": {
+          "1000": [
+            2,
+            2,
+            2
+          ],
+          "1500": [
+            3,
+            5,
+            5
+          ],
+          "2000": [
+            7,
+            10,
+            10
+          ],
+          "2500": [
+            7,
+            7,
+            10
+          ],
+          "3000": [
+            6.5,
+            7,
+            7
+          ]
+        }
+      },
+      {
+        "input": "油温",
+        "kind": "global",
+        "derive": "temperature",
+        "params": [
+          "待填写_油温"
+        ]
+      },
+      {
+        "input": "进口压力",
+        "kind": "component",
+        "params": [
+          "待填写@P1进口压力"
+        ]
+      }
+    ],
+    "variables": {
+      "供油流量": "待填写",
+      "回油流量": "待填写",
+      "P9控制腔压力": "待填写",
+      "被试件出口压力": "待填写",
+      "定压压力": "待填写",
+      "回油温度": "待填写"
+    }
+  }
+}

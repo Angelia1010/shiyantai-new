@@ -19,7 +19,7 @@
           >
             <el-step title="数据监控" :description="getStepDesc(1)" />
             <el-step title="数据预处理" :description="getStepDesc(2)" />
-            <el-step title="系统仿真" :description="getStepDesc(3)" />
+            <el-step title="仿真模型对比" :description="getStepDesc(3)" />
             <el-step title="故障诊断" :description="getStepDesc(4)" />
             <el-step title="报告生成" :description="getStepDesc(5)" />
           </el-steps>
@@ -113,52 +113,22 @@
 export default {
   name: 'DiagnosisExecStep',
   props: {
-    config: {
-      type: Object,
-      required: true
-    },
-    selectedFiles: {
-      type: Array,
-      default: () => []
-    },
-    isRunning: {
-      type: Boolean,
-      default: false
-    },
-    logs: {
-      type: Array,
-      default: () => []
-    },
-    currentProcessStep: {
-      type: Number,
-      default: 0
-    },
-    statusMessage: {
-      type: String,
-      default: '等待启动'
-    },
-    featureMap: {
-      type: Object,
-      default: () => ({})
-    }
+    isRunning: { type: Boolean, default: false },
+    logs: { type: Array, default: () => [] },
+    currentProcessStep: { type: Number, default: 0 },
+    statusMessage: { type: String, default: '等待启动' }
   },
   computed: {
     getAlertType() {
-      if (this.isRunning) return 'info'
-      if (this.currentProcessStep >= 5) return 'success'
-      return 'info'
+      return !this.isRunning && this.currentProcessStep >= 5 ? 'success' : 'info'
     }
   },
   watch: {
-    logs: {
-      handler() {
-        this.$nextTick(() => {
-          if (this.$refs.logContainer) {
-            this.$refs.logContainer.scrollTop = this.$refs.logContainer.scrollHeight
-          }
-        })
-      },
-      deep: true
+    logs() {
+      this.$nextTick(() => {
+        const box = this.$refs.logContainer
+        if (box) box.scrollTop = box.scrollHeight
+      })
     }
   },
   methods: {
@@ -168,7 +138,7 @@ export default {
       return '已完成'
     },
     clearLogs() {
-      this.logs.length = 0
+      this.$emit('clear-logs')
     },
     handleNext() {
       this.$emit('next')

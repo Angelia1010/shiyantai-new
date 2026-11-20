@@ -1,0 +1,97 @@
+{
+  "_说明": "试验台诊断配置。诊断只使用 signals 中的 9 个信号（按标准台原理图：增压泵 → P9 → 供油温度/流量1-2 → P1 → 被试泵（电传） → P5 → 回油温度1-1/流量1-2 → P6 → 油箱）。修改后无需重启，下一次诊断即生效。",
+
+  "signals": [
+    {"key": "control_pressure", "column": "P9控制腔压力", "label": "P9控制腔压力", "unit": "MPa", "kind": "pressure",
+     "component": "供油管路", "position": "增压泵出口、供油流量计前", "checks": ["stuck", "frozen", "range", "spike"]},
+    {"key": "supply_temperature", "column": "供油温度1-2", "label": "供油温度1-2", "unit": "℃", "kind": "temperature",
+     "component": "供油管路", "position": "供油流量计处", "checks": ["stuck", "frozen", "range", "spike"]},
+    {"key": "supply_flow", "column": "供油流量1-2", "label": "供油流量1-2", "unit": "L/h", "kind": "flow",
+     "component": "供油管路", "position": "供油管路", "checks": ["stuck", "frozen", "range", "dropout", "noise", "spike"]},
+    {"key": "inlet_pressure", "column": "P1进口压力", "label": "P1进口压力", "unit": "MPa", "kind": "pressure",
+     "component": "被试件1高低压双联泵", "position": "被试泵进口",
+     "_说明": "P1 由增压泵闭环控制在设定值，分辨率 0.001 MPa，健康数据中读数可连续 20 秒不变，不做冻结、毛刺检查",
+     "checks": ["range", "setpoint"], "setpoints": [0.10, 0.15, 0.25]},
+    {"key": "speed", "column": "电传实际转速", "label": "电传转速", "unit": "rpm", "kind": "speed",
+     "component": "电传系统", "position": "被试泵驱动", "checks": ["stuck", "range"]},
+    {"key": "outlet_pressure", "column": "P5低压压力", "label": "P5低压压力", "unit": "MPa", "kind": "pressure",
+     "component": "被试件1高低压双联泵", "position": "被试泵出口", "checks": ["stuck", "frozen", "range", "spike"]},
+    {"key": "return_temperature", "column": "回油温度1-1", "label": "回油温度1-1", "unit": "℃", "kind": "temperature",
+     "component": "回油管路", "position": "回油流量计处", "checks": ["stuck", "frozen", "range", "spike"]},
+    {"key": "return_flow", "column": "回油流量1-2", "label": "回油流量1-2", "unit": "L/h", "kind": "flow",
+     "component": "回油流量计1", "position": "回油管路", "checks": ["stuck", "frozen", "range", "dropout", "noise", "spike"]},
+    {"key": "back_pressure", "column": "P6定压压力", "label": "P6定压压力", "unit": "MPa", "kind": "pressure",
+     "component": "回油管路", "position": "回油流量计后、油箱前", "checks": ["stuck", "frozen", "range", "spike"]}
+  ],
+
+  "model": {
+    "_说明": "给出各信号健康时预期值的仿真模型（config/simulation/bench.json：电传转速、油温、P1 → 两只流量计、P9、P5、P6、回油温度）。在“仿真模型”页面或用 tools/build_simulation_table 重建",
+    "id": "bench"
+  },
+
+  "turbine": {
+    "_说明": "涡轮流量计二级诊断：一级诊断怀疑某只流量计时，用涡轮流量计模型（回油质量流量、回油压力1-1、油温 → 叶轮转速 Hz）复核。依赖的回油质量流量2、回油压力1-1 不在 9 个主信号中，只在这一步使用。weight：并入故障隔离时的权重（<1 表示比主信号的证据弱）",
+    "model": "turbine_large",
+    "weight": 0.3,
+    "trigger_probability": 0.05,
+    "mass_column": "回油质量流量2",
+    "meters": {
+      "回油流量1-2": {"hz_column": "回油流量1-2转速", "temperature_column": "回油温度1-1"},
+      "供油流量1-2": {"hz_from": "回油流量1-2转速", "temperature_column": "供油温度1-2",
+                      "_说明": "供油侧没有质量流量计，借用回油质量流量作参照（有泄漏时隔离中会计入泄漏的影响）；转速按与回油流量1-2 相同的 K 系数公式由流量换算"}
+    }
+  },
+
+  "fuel": {
+    "_说明": "没有健康基准时用的密度模型 ρ = rho15 + slope·(T − 15)（只在涡轮流量计二级诊断中使用）。换了油品时在前端填写当前燃油的 20 ℃ 密度即可",
+    "rho15": 792.5,
+    "slope": -0.54
+  },
+
+  "steady": {
+    "_说明": "稳定段：以两只流量计的均值每 window_s 秒取均值，连续若干窗口的相对变化不超过 max_level_change、窗口内波动不超过 max_cv",
+    "window_s": 1.0,
+    "max_cv": 0.02,
+    "max_level_change": 0.02,
+    "min_duration_s": 5
+  },
+
+  "thresholds": {
+    "active_flow": 10.0,
+    "faults": {
+      "_说明": "故障隔离中各原因的预警/异常阈值（相对值）。有健康基准时阈值取 max(这里的值, 4/8 × 该原因的估计离散)",
+      "meter": {"warn": 0.015, "alarm": 0.03},
+      "meters_common": {"warn": 0.025, "alarm": 0.04},
+      "leak": {"warn": 0.015, "alarm": 0.03},
+      "flow_change": {"warn": 0.03, "alarm": 0.06},
+      "return_resistance": {"warn": 0.05, "alarm": 0.10},
+      "pressure_sensor": {"warn": 0.05, "alarm": 0.10}
+    },
+    "supply_drop": {"_说明": "P9 相对模型预期的偏离（MPa）：供油段阻力或 P9/P1 传感器", "warn": 0.010, "alarm": 0.020},
+    "temperature_rise": {"_说明": "回油温度1-1 相对模型预期的偏离（℃）：温升异常或温度传感器偏差", "warn": 3.0, "alarm": 6.0},
+    "setpoint": {"_说明": "P1 偏离最近的设定档位（MPa）", "warn": 0.01, "alarm": 0.02},
+    "noise": {"_说明": "流量计 1 秒内波动（变异系数）超过基准的倍数", "ratio": 5.0, "floor": 0.02},
+    "spike": {"_说明": "鲁棒 z 分数超过 z 的点占比超过 ratio 视为毛刺", "z": 8.0, "ratio": 0.005},
+    "frozen": {"_说明": "读数连续不变超过 max(min_s, min_ratio×稳定段时长) 视为冻结；健康数据中流量、压力、温度最长约 0.4 秒", "min_s": 2.0, "min_ratio": 0.2},
+    "dropout_ratio": 0.1
+  },
+
+  "isolation": {
+    "_说明": "故障隔离（diagnosis/isolation.py + hypotheses.py）：在单表偏离、两表同时偏、泄漏、实际流量变化（被试泵出力）、回油阻力变化、P5/P6 传感器偏离等假设中取 χ²+代价 最小的解释。cause_cost：每个原因的先验代价；group_cost：共因额外的代价；max_causes：最多同时解释几个原因；alternative_probability：其他解释的概率达到多少时列出；sigma：没有健康基准时各观测量的离散（相对）",
+    "cause_cost": 9.0, "group_cost": 3.0, "max_causes": 2, "alternative_probability": 0.05,
+    "sigma": {"供油流量1-2": 0.004, "回油流量1-2": 0.004, "P5低压压力": 0.012, "P6定压压力": 0.012, "实际流量": 0.010},
+    "sigma_floor": {"flow": 0.0025, "pressure": 0.006, "anchor": 0.006}
+  },
+
+  "changepoint": {
+    "_说明": "变点检测（diagnosis/changepoint.py）：稳定段内各信号相对模型预期的偏离突变或渐变时，只用变化之后（渐变取末段 tail）的数据判断当前状态",
+    "min_windows": 5, "min_shift": 0.5, "z": 6.0, "effect": 3.0, "tail": 0.2, "margin": 1
+  },
+
+  "sensor_ranges": [
+    {"match": "温度", "min": -40, "max": 120},
+    {"match": "压力", "min": -0.5, "max": 40},
+    {"match": "流量", "min": -5, "max": 20000},
+    {"match": "转速", "min": -10, "max": 30000}
+  ]
+}

@@ -1,0 +1,193 @@
+{
+  "_说明": "涡轮流量计模型（大流量管路）：内置公式（只在本文件中配置，页面上不显示）Y = a + b·质量流量 + c·密度（用户回归结果：质量流量 kg/s、密度 kg/m³ 为核心变量，黏度 P 值远大于 0.05 已移除），输出该管路两只涡轮流量计的转速（Hz）。系数固定；需要时把 fit 改为 true 由数据拟合。入口压力、温度保留为变量，供 AMESim 部件模型或改写公式时使用。",
+  "id": "turbine_large",
+  "name": "涡轮流量计模型（大流量管路）",
+  "order": 2,
+  "description": "大流量管路两只涡轮流量计：质量流量、介质密度 → 转速 Hz",
+  "components": [
+    "回油流量计1"
+  ],
+  "default_mode": "decisive",
+  "engine": {
+    "type": "surrogate"
+  },
+  "active_if": [
+    {
+      "column": "回油流量1-1",
+      "min": 20,
+      "note": "大流量管路工作"
+    }
+  ],
+  "inputs": [
+    {
+      "name": "入口压力",
+      "column": "回油压力1-1",
+      "unit": "MPa",
+      "grid": [
+        0.02,
+        0.06,
+        0.1,
+        0.16
+      ],
+      "valid": [
+        -0.5,
+        40
+      ]
+    },
+    {
+      "name": "质量流量",
+      "column": "回油质量流量2",
+      "scale": 0.0002777777777777778,
+      "unit": "kg/s",
+      "valid": [
+        1,
+        20000
+      ],
+      "grid": [
+        0.02778,
+        0.04167,
+        0.05556,
+        0.06944,
+        0.08333,
+        0.09722,
+        0.11111,
+        0.125
+      ]
+    },
+    {
+      "name": "温度",
+      "column": "回油温度1-1",
+      "fallback_columns": [
+        "回油温度1-2"
+      ],
+      "unit": "℃",
+      "grid": [
+        15,
+        25,
+        35,
+        45,
+        50
+      ],
+      "valid": [
+        -40,
+        120
+      ]
+    },
+    {
+      "name": "密度",
+      "derived": "density",
+      "temperature_column": "回油温度1-1",
+      "fallback_columns": [
+        "回油温度1-2"
+      ],
+      "unit": "kg/m³",
+      "grid": [
+        770,
+        780,
+        790
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "涡轮流量计转速",
+      "unit": "Hz",
+      "kind": "flow",
+      "columns": [
+        "回油流量1-1转速",
+        "回油流量1-2转速"
+      ],
+      "component": "回油流量计1",
+      "system": "回油系统（大流量管路）",
+      "method": "formula",
+      "formula": {
+        "expression": "a + b * 质量流量 + c * 密度",
+        "coefficients": {
+          "a": {
+            "value": 934.79,
+            "fit": false
+          },
+          "b": {
+            "value": 13217.85,
+            "fit": false
+          },
+          "c": {
+            "value": -1.18,
+            "fit": false
+          }
+        }
+      }
+    }
+  ],
+  "rules": {
+    "group_shift": {
+      "output": "涡轮流量计转速",
+      "min_columns": 2,
+      "meaning": "reference",
+      "component": "回油流量计1"
+    }
+  },
+  "thresholds": {
+    "sigma_warn": 3,
+    "sigma_alarm": 5,
+    "floor_warn": {
+      "flow": 0.02
+    },
+    "floor_alarm": {
+      "flow": 0.035
+    }
+  },
+  "media": {
+    "video": "videos/涡轮流量计仿真2.mp4",
+    "caption": "涡轮流量计 AMESim 仿真录屏（示意），不随本次计算变化"
+  },
+  "amesim": {
+    "_说明": "接入涡轮流量计 AMESim 部件模型时填写；质量流量为 kg/s（已由采集的 kg/h 换算），密度由油温换算",
+    "url": "http://127.0.0.1:5003",
+    "model_file": "待填写.ame",
+    "stop_time_s": 10,
+    "steady_tail_s": 3,
+    "parameters": [
+      {
+        "input": "入口压力",
+        "kind": "component",
+        "params": [
+          "待填写@入口压力"
+        ]
+      },
+      {
+        "input": "质量流量",
+        "kind": "component",
+        "params": [
+          "待填写@出口质量流量"
+        ]
+      },
+      {
+        "input": "温度",
+        "kind": "global",
+        "derive": "temperature",
+        "params": [
+          "待填写_温度"
+        ]
+      },
+      {
+        "input": "温度",
+        "kind": "global",
+        "derive": "viscosity",
+        "params": [
+          "待填写_黏度"
+        ]
+      },
+      {
+        "input": "密度",
+        "kind": "global",
+        "params": [
+          "待填写_密度"
+        ]
+      }
+    ],
+    "variables": {
+      "涡轮流量计转速": "待填写"
+    }
+  }
+}

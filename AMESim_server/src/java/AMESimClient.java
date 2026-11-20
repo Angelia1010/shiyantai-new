@@ -15,24 +15,28 @@ import com.google.gson.JsonArray;
  * 
  * 使用示例：
  * <pre>
- * AMESimClient client = new AMESimClient("http://localhost:5000");
+ * AMESimClient client = new AMESimClient("http://127.0.0.1:5003", "<登录令牌>");
  * client.initAPI();
  * client.openModel("Model.ame");
  * client.runSimulation();
- * JsonObject result = client.getSimulationResults("time", "speed", "height");
+ * Map<String, String> vars = new LinkedHashMap<>(); vars.put("speed", "pin@pump01");
+ * JsonObject result = client.getSimulationResults(vars);
  * </pre>
  */
 public class AMESimClient {
     private String baseUrl;
     private String apiBase;
+    private String token;
     private Gson gson;
     
     /**
      * 构造函数
-     * @param baseUrl 服务器基础URL，例如 "http://localhost:5000"
+     * @param baseUrl 服务器基础URL，例如 "http://127.0.0.1:5003"
+     * @param token   登录令牌：向任务服务 POST /auth/login 获取，所有请求都通过 X-Token 请求头携带
      */
-    public AMESimClient(String baseUrl) {
+    public AMESimClient(String baseUrl, String token) {
         this.baseUrl = baseUrl;
+        this.token = token;
         this.apiBase = baseUrl + "/api";
         this.gson = new Gson();
     }
@@ -45,6 +49,7 @@ public class AMESimClient {
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("GET");
         conn.setRequestProperty("Accept", "application/json");
+        conn.setRequestProperty("X-Token", token);
         
         int responseCode = conn.getResponseCode();
         if (responseCode >= 400) {
@@ -82,6 +87,7 @@ public class AMESimClient {
         conn.setRequestMethod("POST");
         conn.setRequestProperty("Content-Type", "application/json");
         conn.setRequestProperty("Accept", "application/json");
+        conn.setRequestProperty("X-Token", token);
         conn.setDoOutput(true);
         
         if (data != null) {
@@ -127,6 +133,7 @@ public class AMESimClient {
         conn.setRequestMethod("PUT");
         conn.setRequestProperty("Content-Type", "application/json");
         conn.setRequestProperty("Accept", "application/json");
+        conn.setRequestProperty("X-Token", token);
         conn.setDoOutput(true);
         
         if (data != null) {
@@ -264,20 +271,18 @@ public class AMESimClient {
     }
     
     /**
-     * 获取仿真结果（时间、速度、高度）
-     * @param timePath 时间变量路径
-     * @param speedPath 速度变量路径
-     * @param heightPath 高度变量路径
-     * @return 响应JSON对象，包含data字段，data是数组格式
+     * 获取仿真结果
+     * @param variables 别名 → 变量路径，例如 {"speed": "pin@pump01", "flow": "qout@pump01"}
+     * @return 响应JSON对象，data 为以时间为行的数组
      */
-    public JsonObject getSimulationResults(String timePath, String speedPath, String heightPath) throws Exception {
-        String encodedTimePath = java.net.URLEncoder.encode(timePath, StandardCharsets.UTF_8.toString());
-        String encodedSpeedPath = java.net.URLEncoder.encode(speedPath, StandardCharsets.UTF_8.toString());
-        String encodedHeightPath = java.net.URLEncoder.encode(heightPath, StandardCharsets.UTF_8.toString());
-        
-        String endpoint = String.format("/simulation/results?timePath=%s&speedPath=%s&heightPath=%s",
-            encodedTimePath, encodedSpeedPath, encodedHeightPath);
-        return sendGetRequest(endpoint);
+    public JsonObject getSimulationResults(java.util.Map<String, String> variables) throws Exception {
+        JsonObject vars = new JsonObject();
+        for (java.util.Map.Entry<String, String> e : variables.entrySet()) {
+            vars.addProperty(e.getKey(), e.getValue());
+        }
+        JsonObject body = new JsonObject();
+        body.add("variables", vars);
+        return sendPostRequest("/simulation/results", body);
     }
     
     /**
@@ -292,7 +297,7 @@ public class AMESimClient {
      * 使用示例
      */
     public static void main(String[] args) {
-        AMESimClient client = new AMESimClient("http://localhost:5000");
+        AMESimClient client = new AMESimClient("http://127.0.0.1:5003", "<登录令牌>");
         
         try {
             // 健康检查
@@ -308,11 +313,13 @@ public class AMESimClient {
             System.out.println("运行仿真: " + client.runSimulation());
             
             // 获取仿真结果（需要替换为实际的变量路径）
-            String timePath = "time";      // 替换为实际的时间变量路径
             String speedPath = "speed";    // 替换为实际的速度变量路径
             String heightPath = "height";  // 替换为实际的高度变量路径
             
-            JsonObject result = client.getSimulationResults(timePath, speedPath, heightPath);
+            java.util.Map<String, String> variables = new java.util.LinkedHashMap<>();
+            variables.put("speed", speedPath);
+            variables.put("height", heightPath);
+            JsonObject result = client.getSimulationResults(variables);
             System.out.println("仿真结果: " + result);
             
             // 如果成功，打印数据

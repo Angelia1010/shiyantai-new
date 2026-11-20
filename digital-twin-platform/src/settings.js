@@ -1,6 +1,6 @@
 module.exports = {
 
-  title: '数字孪生平台',
+  title: '标准试验台数字化校验系统',
 
   /**
    * @type {boolean} true | false
@@ -12,5 +12,5 @@ module.exports = {
    * @type {boolean} true | false
    * @description Whether show the logo in sidebar
    */
-  sidebarLogo: false
+  sidebarLogo: true
 }

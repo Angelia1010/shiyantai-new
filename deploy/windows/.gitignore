@@ -1,0 +1,5 @@
+# 打包过程的中间文件与产物
+build/
+cache/
+output/
+tools/

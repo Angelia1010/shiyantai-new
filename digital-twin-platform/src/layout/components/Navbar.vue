@@ -9,20 +9,18 @@
     <breadcrumb class="breadcrumb-container" />
 
     <div class="right-menu">
-      <template>
-        <screenfull id="screenfull" class="right-menu-item hover-effect" />
-      </template>
       <el-dropdown class="avatar-container" trigger="click">
         <div class="avatar-wrapper">
-          <img src="/model/img/head.png" class="user-avatar" />
+          <i class="el-icon-user-solid user-avatar" />
+          <span class="user-name">{{ name }}</span>
           <i class="el-icon-caret-bottom" />
         </div>
         <el-dropdown-menu slot="dropdown" class="user-dropdown">
           <router-link to="/">
-            <el-dropdown-item> Home </el-dropdown-item>
+            <el-dropdown-item>工作台</el-dropdown-item>
           </router-link>
           <el-dropdown-item divided @click.native="logout">
-            <span style="display: block">Log Out</span>
+            <span style="display: block">退出登录</span>
           </el-dropdown-item>
         </el-dropdown-menu>
       </el-dropdown>
@@ -34,24 +32,22 @@
 import { mapGetters } from "vuex";
 import Breadcrumb from "@/components/Breadcrumb";
 import Hamburger from "@/components/Hamburger";
-import Screenfull from "@/components/Screenfull";
 
 export default {
   components: {
     Breadcrumb,
     Hamburger,
-    Screenfull,
   },
   computed: {
-    ...mapGetters(["sidebar", "avatar"]),
+    ...mapGetters(["sidebar", "name"]),
   },
   methods: {
     toggleSideBar() {
       this.$store.dispatch("app/toggleSideBar");
     },
-    async logout() {
-      await this.$store.dispatch("user/logout");
-      this.$router.push(`/login?redirect=${this.$route.fullPath}`);
+    logout() {
+      this.$store.dispatch("user/logout");
+      this.$router.push(`/login?redirect=${encodeURIComponent(this.$route.fullPath)}`);
     },
   },
 };
@@ -62,8 +58,9 @@ export default {
   height: 50px;
   overflow: hidden;
   position: relative;
-  background: #fff;
-  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
+  background: #0b1626;
+  border-bottom: 1px solid rgba(56, 189, 248, 0.14);
+  color: #c7d2e0;
 
   .hamburger-container {
     line-height: 46px;
@@ -74,8 +71,17 @@ export default {
     -webkit-tap-highlight-color: transparent;
 
     &:hover {
-      background: rgba(0, 0, 0, 0.025);
+      background: rgba(255, 255, 255, 0.05);
     }
+  }
+
+  ::v-deep .hamburger {
+    fill: #c7d2e0;
+  }
+
+  ::v-deep .el-breadcrumb__inner,
+  ::v-deep .el-breadcrumb__inner a {
+    color: #c7d2e0;
   }
 
   .breadcrumb-container {
@@ -91,45 +97,31 @@ export default {
       outline: none;
     }
 
-    .right-menu-item {
-      display: inline-block;
-      padding: 0 8px;
-      height: 100%;
-      font-size: 18px;
-      color: #5a5e66;
-      vertical-align: text-bottom;
-
-      &.hover-effect {
-        cursor: pointer;
-        transition: background 0.3s;
-
-        &:hover {
-          background: rgba(0, 0, 0, 0.025);
-        }
-      }
-    }
-
     .avatar-container {
-      margin-right: 30px;
+      margin-right: 20px;
+      height: 100%;
 
       .avatar-wrapper {
-        margin-top: 5px;
-        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 50px;
+        cursor: pointer;
 
         .user-avatar {
-          cursor: pointer;
-          width: 40px;
-          height: 40px;
-          border-radius: 10px;
-          background-color: #409eff;
+          font-size: 18px;
+          color: #38bdf8;
+        }
+
+        .user-name {
+          color: #eef3fa;
+          font-size: 14px;
+          line-height: 1;
         }
 
         .el-icon-caret-bottom {
-          cursor: pointer;
-          position: absolute;
-          right: -20px;
-          top: 25px;
           font-size: 12px;
+          color: #7891ad;
         }
       }
     }
